@@ -101,6 +101,7 @@ impl Node {
             directory_version: self.directory_version,
             pending_control: self.export_pending_control(),
             pending_invites: self.export_pending_invites(),
+            poll_seed: Some(base64_handle(&self.poll_seed)),
         }
     }
 
@@ -299,6 +300,17 @@ impl Node {
         node.my_relays = state.my_relays.clone();
         node.discovered_relays = state.discovered_relays.clone();
         node.directory_version = state.directory_version;
+        // Keep the polling partition fixed across the restart (`mailbox.rs`). An older state file
+        // has none: the fresh random seed from `Node::new` stands, and is saved on the next write.
+        if let Some(seed) = state.poll_seed.as_deref().and_then(|b| {
+            use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+            use base64::Engine as _;
+            URL_SAFE_NO_PAD.decode(b).ok()?.try_into().ok()
+        }) {
+            node.poll_seed = seed;
+        } else {
+            node.dirty = true;
+        }
         node.pending_control = Self::import_pending_control(&state.pending_control);
         node.pending_invites = Self::import_pending_invites(&state.pending_invites);
         for chat in &state.chats {

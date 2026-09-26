@@ -99,6 +99,8 @@ impl Node {
         peer_address: &str,
         bundle: &PreKeyBundle,
     ) -> Result<String> {
+        // Before anything reaches the network: at the cap, nothing is sent.
+        self.check_contact_cap(&bundle.identity_key)?;
         let mut session = crypto::open_outbound(&self.identity, bundle)?;
         let hello = crypto::encrypt(&mut session, b"");
         let frame = Frame::Hello {

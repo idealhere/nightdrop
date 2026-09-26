@@ -285,6 +285,10 @@ pub struct PersistedState {
     /// not silently strand the joiner. `#[serde(default)]` for forward-compat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_invites: Vec<PersistedInvite>,
+    /// Base64 of the 32-byte seed keying our mailbox polling fragments (`node::mailbox`), so the
+    /// partition stays fixed for its epoch across restarts. `#[serde(default)]` for older files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_seed: Option<String>,
 }
 
 fn is_zero_u64(n: &u64) -> bool {
@@ -418,6 +422,7 @@ mod tests {
             directory_version: 0,
             pending_control: Vec::new(),
             pending_invites: Vec::new(),
+            poll_seed: None,
         };
 
         // A stale temp from a previously-crashed write must not break the next save.

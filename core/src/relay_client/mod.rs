@@ -140,6 +140,10 @@ struct ResponseLine {
     resp: Response,
 }
 
+/// Most handles one [`Request::TakeMany`] may name. A fragment holds ~8 (`node::mailbox`); the bound
+/// only stops a request from asking a relay for unbounded work.
+pub const MAX_TAKE_MANY: usize = 64;
+
 /// A request to the relay (one JSON line per request).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -157,6 +161,11 @@ pub enum Request {
     Fetch { handle: String },
     /// Remove and return all non-expired blobs under `handle` (rendezvous; ids not needed).
     Take { handle: String },
+    /// [`Take`](Request::Take) for several handles in one round-trip: one polling fragment
+    /// (`mailbox-handles.md` §5c), whose handles already share a circuit, so batching reveals
+    /// nothing the circuit did not. At most [`MAX_TAKE_MANY`] handles. A relay from before this
+    /// request answers "bad request"; clients then fall back to one `Take` per handle.
+    TakeMany { handles: Vec<String> },
     /// Delete one still-queued blob — authorised only by its `delete_token` (sender recall).
     Recall {
         handle: String,
@@ -801,6 +810,40 @@ fn process(
                 ev,
             )
         }
+        Request::TakeMany { handles } => {
+            if handles.len() > MAX_TAKE_MANY {
+                let ev = simple_ev("TAKE_MANY", "-", 0, "refused: too many handles".to_string());
+                return (
+                    Response::err(format!("at most {MAX_TAKE_MANY} handles")),
+                    ev,
+                );
+            }
+            let mut blobs: Vec<String> = Vec::new();
+            for handle in &handles {
+                let entries = inner.drain_handle(handle);
+                inner.dirty |= !entries.is_empty();
+                blobs.extend(
+                    entries
+                        .into_iter()
+                        .filter(|s| s.expiry > now)
+                        .map(|s| B64.encode(s.bytes)),
+                );
+            }
+            let ev = simple_ev(
+                "TAKE_MANY",
+                handles.first().map_or("-", String::as_str),
+                0,
+                format!("{} handles, {} blobs", handles.len(), blobs.len()),
+            );
+            (
+                Response {
+                    ok: true,
+                    blobs,
+                    ..Default::default()
+                },
+                ev,
+            )
+        }
         Request::Take { handle } => {
             let entries = inner.drain_handle(&handle);
             inner.dirty |= !entries.is_empty();
@@ -1014,14 +1057,16 @@ pub struct RelayClient {
 #[derive(Clone)]
 enum RelayInner {
     Tcp(String),
-    Dialer(RelayDialer),
+    /// The dialer, and the address it dials when known — kept so a caller can build a sibling
+    /// client for the same relay on an isolated circuit (`Transport::relay_dialer_isolated`).
+    Dialer(RelayDialer, Option<String>),
 }
 
 impl std::fmt::Debug for RelayClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.inner {
             RelayInner::Tcp(addr) => write!(f, "RelayClient(tcp:{addr})"),
-            RelayInner::Dialer(_) => write!(f, "RelayClient(tor)"),
+            RelayInner::Dialer(..) => write!(f, "RelayClient(tor)"),
         }
     }
 }
@@ -1037,7 +1082,24 @@ impl RelayClient {
     /// A relay reached through a [`RelayDialer`] — production dials its `.onion` over Tor.
     pub fn with_dialer(dialer: RelayDialer) -> Self {
         Self {
-            inner: RelayInner::Dialer(dialer),
+            inner: RelayInner::Dialer(dialer, None),
+        }
+    }
+
+    /// [`with_dialer`](Self::with_dialer), recording the address `dialer` reaches, so
+    /// [`addr`](Self::addr) can report it.
+    pub fn with_dialer_for(addr: impl Into<String>, dialer: RelayDialer) -> Self {
+        Self {
+            inner: RelayInner::Dialer(dialer, Some(addr.into())),
+        }
+    }
+
+    /// The relay's address, if this client knows it: always for TCP, for a dialer only when built
+    /// with [`with_dialer_for`](Self::with_dialer_for).
+    pub fn addr(&self) -> Option<&str> {
+        match &self.inner {
+            RelayInner::Tcp(addr) => Some(addr),
+            RelayInner::Dialer(_, addr) => addr.as_deref(),
         }
     }
 
@@ -1103,6 +1165,52 @@ impl RelayClient {
             .collect()
     }
 
+    /// Drain several handles in one round-trip ([`Request::TakeMany`]), falling back to one
+    /// [`take`](Self::take) per handle against a relay that predates it. Partial failure in the
+    /// fallback keeps what did arrive: a take that errors removed nothing, so nothing is lost.
+    pub fn take_many(&self, handles: &[String]) -> Result<Vec<Vec<u8>>> {
+        if handles.len() <= 1 || handles.len() > MAX_TAKE_MANY {
+            return self.take_each(handles);
+        }
+        let response = self.round_trip(&Request::TakeMany {
+            handles: handles.to_vec(),
+        })?;
+        if !response.ok {
+            if response
+                .error
+                .as_deref()
+                .is_some_and(|e| e.starts_with("bad request"))
+            {
+                return self.take_each(handles); // an older relay
+            }
+            anyhow::bail!("relay take_many failed: {:?}", response.error);
+        }
+        response
+            .blobs
+            .iter()
+            .map(|b| B64.decode(b.as_bytes()).map_err(Into::into))
+            .collect()
+    }
+
+    fn take_each(&self, handles: &[String]) -> Result<Vec<Vec<u8>>> {
+        let mut out = Vec::new();
+        let mut answered = handles.is_empty();
+        let mut last_err = None;
+        for handle in handles {
+            match self.take(handle) {
+                Ok(blobs) => {
+                    answered = true;
+                    out.extend(blobs);
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+        match (answered, last_err) {
+            (false, Some(e)) => Err(e),
+            _ => Ok(out),
+        }
+    }
+
     /// Recall (delete) a still-queued blob using the token from its [`PostReceipt`]. Returns
     /// `Ok(true)` if it was removed, `Ok(false)` if it was already delivered/expired.
     pub fn recall(&self, handle: &str, receipt: &PostReceipt) -> Result<bool> {
@@ -1128,7 +1236,7 @@ impl RelayClient {
         let line = request_line(request)?;
         let response_line = match &self.inner {
             RelayInner::Tcp(addr) => tcp_round_trip(addr, &line)?,
-            RelayInner::Dialer(dial) => dial(&line)?,
+            RelayInner::Dialer(dial, _) => dial(&line)?,
         };
         parse_response_line(&response_line)
     }
@@ -1178,6 +1286,74 @@ fn tcp_round_trip(addr: &str, line: &str) -> Result<String> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    /// A client on an in-process relay; `old` makes it answer `take_many` as a relay from before
+    /// that request does (a genuine "bad request", produced by the relay's own parser).
+    fn in_process(old: bool) -> (Arc<RelayCore>, RelayClient) {
+        let core = Arc::new(RelayCore::new(None));
+        let c = Arc::clone(&core);
+        let client = RelayClient::with_dialer(Arc::new(move |line: &str| {
+            if old && line.contains("\"take_many\"") {
+                return Ok(c.handle_line("{not a request}"));
+            }
+            Ok(c.handle_line(line))
+        }));
+        (core, client)
+    }
+
+    #[test]
+    fn take_many_drains_every_handle_in_one_round_trip() {
+        let (_core, relay) = in_process(false);
+        let ttl = Duration::from_secs(60);
+        relay.post("mbx:a", b"one", ttl).unwrap();
+        relay.post("mbx:b", b"two", ttl).unwrap();
+        relay.post("mbx:c", b"not asked for", ttl).unwrap();
+        let mut got = relay
+            .take_many(&["mbx:a".into(), "mbx:b".into(), "mbx:none".into()])
+            .unwrap();
+        got.sort();
+        assert_eq!(got, vec![b"one".to_vec(), b"two".to_vec()]);
+        assert!(
+            relay
+                .take_many(&["mbx:a".into(), "mbx:b".into()])
+                .unwrap()
+                .is_empty(),
+            "drained"
+        );
+        assert_eq!(
+            relay.take("mbx:c").unwrap(),
+            vec![b"not asked for".to_vec()],
+            "untouched"
+        );
+    }
+
+    #[test]
+    fn take_many_falls_back_on_a_relay_that_predates_it() {
+        let (_core, relay) = in_process(true);
+        let ttl = Duration::from_secs(60);
+        relay.post("mbx:a", b"one", ttl).unwrap();
+        relay.post("mbx:b", b"two", ttl).unwrap();
+        let mut got = relay.take_many(&["mbx:a".into(), "mbx:b".into()]).unwrap();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![b"one".to_vec(), b"two".to_vec()],
+            "one take per handle instead"
+        );
+    }
+
+    #[test]
+    fn take_many_is_bounded() {
+        let core = RelayCore::new(None);
+        let handles: Vec<String> = (0..=MAX_TAKE_MANY).map(|i| format!("mbx:{i}")).collect();
+        let line = serde_json::to_string(&RequestLineRef {
+            v: RELAY_VERSION,
+            req: &Request::TakeMany { handles },
+        })
+        .unwrap();
+        let reply = core.handle_line(&line);
+        assert!(reply.contains("\"ok\":false"), "{reply}");
+    }
 
     #[test]
     fn read_line_capped_splits_lines_and_bounds_length() {

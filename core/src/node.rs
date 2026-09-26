@@ -121,7 +121,7 @@ fn relay_unwrap(own_identity_key: &str, blob: &[u8]) -> Result<Vec<u8>> {
 /// (tests/TCP). Free fn (not a method) so call sites keep disjoint field borrows (#17).
 fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
     match transport.relay_dialer(addr) {
-        Some(dialer) => RelayClient::with_dialer(dialer),
+        Some(dialer) => RelayClient::with_dialer_for(addr, dialer),
         None => RelayClient::new(addr),
     }
 }
@@ -162,12 +162,21 @@ fn write_private_file(path: &std::path::Path, data: &[u8]) -> Result<()> {
 /// TCP address or an `Arc` dialer). Built by [`Node::relay_drain_plan`], consumed by
 /// [`drain_relay_mailboxes`].
 pub(crate) struct RelayDrainPlan {
-    /// Every handle our mail may sit under: v1, plus the v2 handles of each agreed pair
-    /// (`mailbox.rs`). **Not yet isolated per fragment** — `mailbox-handles.md` §5c; until that
-    /// lands, one client polls them all, and a relay can see they share a reader.
+    /// One job per (relay, polling fragment), in this round's random order. Each carries a client on
+    /// its fragment's isolated circuits (`mailbox.rs`, `poll_fragments`), so a relay sees one reader
+    /// per fragment, never one reader of everything (`mailbox-handles.md` §5a/§5c).
+    jobs: Vec<DrainJob>,
+    /// Pause a random moment between jobs. Only where circuits are really isolated (Tor): the point
+    /// is that fragments do not arrive at fixed offsets from each other, and without isolation there
+    /// is nothing to protect — tests would only be slowed down.
+    stagger: bool,
+}
+
+pub(crate) struct DrainJob {
+    /// `None` = the primary relay; `Some(addr)` = an advertised extra.
+    addr: Option<String>,
+    client: RelayClient,
     handles: Vec<String>,
-    /// `(advertised-address, client)` per relay; `None` address = the primary/default relay.
-    clients: Vec<(Option<String>, RelayClient)>,
 }
 
 /// The result of draining the relay mailboxes lock-free: the raw blobs (fan-out duplicates still
@@ -182,25 +191,44 @@ pub(crate) struct RelayHarvest {
 /// held (§1.5.2), so UI calls aren't stalled for seconds behind an in-flight Tor relay poll. A
 /// relay that errors is recorded unreachable and skipped, never aborting the drain from the rest.
 pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
+    use rand::Rng as _;
     let mut blobs = Vec::new();
-    let mut reachability = Vec::new();
-    for (addr, client) in &plan.clients {
-        // A relay is reachable if any take on it answered. One failed take must not stop the rest:
-        // the others may hold mail, and a take that errors has not removed anything.
-        let mut answered = false;
-        for handle in &plan.handles {
-            if let Ok(taken) = client.take(handle) {
-                answered = true;
-                blobs.extend(taken);
-            }
+    // A relay is reachable if any take on it answered. One failed take must not stop the rest: the
+    // others may hold mail, and a take that errors has not removed anything.
+    let mut answered: Vec<(String, bool)> = Vec::new();
+    // Relays that have failed this round. The rest of their fragments are skipped: each would open
+    // a fresh isolated circuit and wait out the full dial timeout, so one dead relay would hold up
+    // every other relay's mail for fragments × timeout. Skipping loses nothing — the failed take
+    // removed nothing, and the next round asks again.
+    let mut failed: Vec<&Option<String>> = Vec::new();
+    for (i, job) in plan.jobs.iter().enumerate() {
+        if failed.contains(&&job.addr) {
+            continue;
         }
-        if let Some(addr) = addr {
-            reachability.push((addr.clone(), answered));
+        if plan.stagger && i > 0 {
+            std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(0..=300)));
+        }
+        // One request per fragment where the relay supports it (`take_many`).
+        let ok = match job.client.take_many(&job.handles) {
+            Ok(taken) => {
+                blobs.extend(taken);
+                true
+            }
+            Err(_) => {
+                failed.push(&job.addr);
+                false
+            }
+        };
+        if let Some(addr) = &job.addr {
+            match answered.iter_mut().find(|(a, _)| a == addr) {
+                Some((_, seen)) => *seen |= ok,
+                None => answered.push((addr.clone(), ok)),
+            }
         }
     }
     RelayHarvest {
         blobs,
-        reachability,
+        reachability: answered,
     }
 }
 
@@ -222,8 +250,13 @@ fn queue_on_relays(
     bytes: &[u8],
 ) -> Result<Vec<QueuedReceipt>> {
     let sealed = relay_wrap(contact_id, bytes)?;
+    // Each recipient on its own circuits: posts for two people over one circuit would tell the
+    // relay they share a correspondent — the contact graph per-pair handles exist to hide
+    // (`mailbox.rs`, `post_group`). A no-op off Tor.
+    let group = mailbox::post_group(contact_id);
     let mut copies = Vec::new();
     if let Some(primary) = primary {
+        let primary = mailbox::isolated(transport, primary, group);
         if let Ok(r) = primary.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {
                 relay_addr: None,
@@ -234,7 +267,7 @@ fn queue_on_relays(
         }
     }
     for addr in peer_relays {
-        let relay = build_relay(transport, addr);
+        let relay = mailbox::isolated(transport, &build_relay(transport, addr), group);
         if let Ok(r) = relay.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {
                 relay_addr: Some(addr.clone()),
@@ -266,10 +299,18 @@ fn recall_receipts(
         return false;
     }
     let mut all_recalled = true;
+    let group = mailbox::post_group(contact_id);
     for r in receipts {
+        // On the recipient's posting circuits, like the post itself.
         let relay = match &r.relay_addr {
-            None => primary.clone(),
-            Some(addr) => Some(build_relay(transport, addr)),
+            None => primary
+                .as_ref()
+                .map(|p| mailbox::isolated(transport, p, group)),
+            Some(addr) => Some(mailbox::isolated(
+                transport,
+                &build_relay(transport, addr),
+                group,
+            )),
         };
         let Some(relay) = relay else {
             all_recalled = false;
@@ -417,6 +458,9 @@ pub struct Node {
     /// Per run, like [`burns_announced`](Self::burns_announced): an unconfirmed pair is retried on
     /// every launch, which is what heals a lost frame.
     mailbox_announced: std::collections::HashSet<String>,
+    /// Keys our polling-fragment partition (`mailbox.rs`, `poll_fragments`). Random per device,
+    /// persisted, so a partition stays fixed for its epoch across restarts.
+    poll_seed: [u8; 32],
     /// Tests only: behave like a build from before v2 mailboxes — never send a
     /// [`Frame::MailboxKey`], and drop any that arrive undecoded, as an older build does.
     #[cfg(test)]
@@ -727,6 +771,12 @@ impl Node {
             captures_visible: None,
             burns_announced: std::collections::HashSet::new(),
             mailbox_announced: std::collections::HashSet::new(),
+            poll_seed: {
+                use rand::RngCore;
+                let mut seed = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut seed);
+                seed
+            },
             #[cfg(test)]
             legacy_v1_only: false,
             burn_receipts: false,
@@ -846,6 +896,9 @@ impl Node {
                 chat.authorized,
             )
         };
+        if !already_authorized {
+            self.check_contact_cap(contact_id)?;
+        }
         // Idempotent: a second approval (e.g. an impatient double-tap while the Approved
         // signal is still going out over Tor) must NOT send another Approved frame.
         if already_authorized {

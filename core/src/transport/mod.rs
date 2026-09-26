@@ -80,6 +80,22 @@ pub trait Transport: Send + Sync {
         false
     }
 
+    /// Like [`relay_dialer`](Transport::relay_dialer), but every dialer built for the same `group`
+    /// shares circuits only with that group — never with other groups or with default traffic.
+    /// `None` where the transport has no circuits to isolate (tests/TCP); callers then fall back to
+    /// the ordinary client, which is correct there.
+    ///
+    /// What lets per-pair mailbox handles stay unlinked on the relay: polls in one fragment, or
+    /// posts to one recipient, cannot be tied to another fragment or recipient by the circuit they
+    /// arrived on (`docs/design/mailbox-handles.md` §5a/§5c).
+    fn relay_dialer_isolated(
+        &self,
+        _addr: &str,
+        _group: u64,
+    ) -> Option<crate::relay_client::RelayDialer> {
+        None
+    }
+
     /// A call that makes this transport abandon network work already in flight —
     /// a peer dial or a relay request — instead of running it to its timeout. `None` for
     /// transports with nothing slow to abandon (tests, TCP).

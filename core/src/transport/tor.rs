@@ -176,7 +176,15 @@ pub struct TorTransport {
     /// Whether the service has ever been fully reachable this run — see
     /// [`published`](Transport::published) for why that answer is monotonic.
     ever_published: std::sync::atomic::AtomicBool,
+    /// One arti isolation token per caller-chosen group (`relay_dialer_isolated`). Streams with the
+    /// same token may share circuits; different tokens never do. Bounded: cleared past
+    /// [`MAX_ISOLATION_GROUPS`], which only costs fresh circuits.
+    isolation: Mutex<HashMap<u64, arti_client::IsolationToken>>,
 }
+
+/// Enough for a day's polling fragments on every epoch, plus one posting group per contact, with
+/// room to spare; beyond it the map is cleared rather than grown.
+const MAX_ISOLATION_GROUPS: usize = 512;
 
 impl Drop for TorTransport {
     fn drop(&mut self) {
@@ -346,6 +354,7 @@ impl TorTransport {
             nickname: nickname_owned,
             last_state: Mutex::new(String::from("<start>")),
             ever_published: std::sync::atomic::AtomicBool::new(false),
+            isolation: Mutex::new(HashMap::new()),
         })
     }
 
@@ -400,6 +409,19 @@ impl TorTransport {
     ///
     /// [`NightdropCore::shutdown`]: crate::api::NightdropCore::shutdown
     pub fn make_relay_dialer(&self, relay_onion: String) -> crate::relay_client::RelayDialer {
+        self.relay_dialer_with(relay_onion, None)
+    }
+
+    /// [`make_relay_dialer`](Self::make_relay_dialer) on the circuits of one isolation group.
+    fn relay_dialer_with(
+        &self,
+        relay_onion: String,
+        isolation: Option<arti_client::IsolationToken>,
+    ) -> crate::relay_client::RelayDialer {
+        let mut prefs = arti_client::StreamPrefs::new();
+        if let Some(token) = isolation {
+            prefs.set_isolation(token);
+        }
         let client = Arc::clone(&self.client);
         let runtime = Arc::clone(&self.runtime);
         let closing = Arc::clone(&self.closing);
@@ -413,7 +435,7 @@ impl TorTransport {
                 let exchange = async {
                     let mut stream = tokio::time::timeout(
                         RELAY_DIAL_TIMEOUT,
-                        client.connect((relay_onion.as_str(), RELAY_PORT)),
+                        client.connect_with_prefs((relay_onion.as_str(), RELAY_PORT), &prefs),
                     )
                     .await
                     .map_err(|_| anyhow::anyhow!("relay dial timed out"))?
@@ -531,6 +553,22 @@ impl Transport for TorTransport {
     /// chosen relay set (#17).
     fn relay_dialer(&self, addr: &str) -> Option<crate::relay_client::RelayDialer> {
         Some(self.make_relay_dialer(addr.to_string()))
+    }
+
+    fn relay_dialer_isolated(
+        &self,
+        addr: &str,
+        group: u64,
+    ) -> Option<crate::relay_client::RelayDialer> {
+        let token = {
+            let mut map = self.isolation.lock().unwrap_or_else(|e| e.into_inner());
+            if map.len() >= MAX_ISOLATION_GROUPS && !map.contains_key(&group) {
+                map.clear();
+            }
+            *map.entry(group)
+                .or_insert_with(arti_client::IsolationToken::new)
+        };
+        Some(self.relay_dialer_with(addr.to_string(), Some(token)))
     }
 
     /// Fetch a small static file from an onion over Tor (the update check, `crate::update`).

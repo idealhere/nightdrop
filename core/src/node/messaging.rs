@@ -1120,23 +1120,45 @@ impl Node {
     /// **without** the core lock ([`drain_relay_mailboxes`], §1.5.2). Includes the primary relay
     /// plus our advertised extras (#17). `None` if no relay is configured (nothing to drain).
     pub(crate) fn relay_drain_plan(&self) -> Option<RelayDrainPlan> {
-        let mut clients: Vec<(Option<String>, RelayClient)> = Vec::new();
+        use rand::seq::SliceRandom as _;
+        let mut relays: Vec<(Option<String>, RelayClient)> = Vec::new();
         if let Some(primary) = &self.relay {
-            clients.push((None, primary.clone()));
+            relays.push((None, primary.clone()));
         }
         for addr in self.my_relays.iter().chain(self.discovered_relays.iter()) {
-            clients.push((
+            relays.push((
                 Some(addr.clone()),
                 build_relay(self.transport.as_ref(), addr),
             ));
         }
-        if clients.is_empty() {
+        if relays.is_empty() {
             return None;
         }
-        Some(RelayDrainPlan {
-            handles: self.drain_handles(),
-            clients,
-        })
+        let fragments = self.poll_fragments();
+        let mut stagger = false;
+        let mut jobs = Vec::new();
+        for (addr, base) in &relays {
+            for fragment in &fragments {
+                let client =
+                    super::mailbox::isolated(self.transport.as_ref(), base, fragment.group);
+                // Isolation happened only if a sibling client was built; `isolated` returns the base
+                // unchanged otherwise. Tell by the transport, not by comparing clients.
+                stagger |= base.addr().is_some_and(|a| {
+                    self.transport
+                        .relay_dialer_isolated(a, fragment.group)
+                        .is_some()
+                });
+                jobs.push(DrainJob {
+                    addr: addr.clone(),
+                    client,
+                    handles: fragment.handles.clone(),
+                });
+            }
+        }
+        // A new order every round: a fragment that always followed another would announce their
+        // relationship without ever sharing a circuit (§5c).
+        jobs.shuffle(&mut rand::thread_rng());
+        Some(RelayDrainPlan { jobs, stagger })
     }
 
     /// Apply blobs drained lock-free by [`drain_relay_mailboxes`]: record relay reachability,

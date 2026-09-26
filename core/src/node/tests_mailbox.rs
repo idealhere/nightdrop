@@ -1,7 +1,7 @@
 //! v2 mailbox handles (`docs/design/mailbox-handles.md`, `mailbox.rs`). The property that matters
 //! most is the one the design puts first: **no message is ever addressed to a handle its recipient
 //! cannot compute.** Each test here is a way that could go wrong.
-use super::mailbox::{current_epoch, pair_secret, v2_handle, MailboxPair};
+use super::mailbox::{current_epoch, pair_secret, v2_handle, MailboxPair, POLL_PAD};
 use super::*;
 use crate::relay_client::{RelayClient, RelayServer};
 use crate::transport::MemoryNetwork;
@@ -229,4 +229,322 @@ fn an_edit_recalls_a_copy_posted_under_v2() {
         !got.contains(&"first draft".to_string()),
         "the recalled draft never arrives"
     );
+}
+
+// ---- Stage 2: fragmented, isolated polling and per-recipient posting (§5a/§5c, §8) ----
+
+use crate::relay_client::RelayDialer;
+use crate::transport::{Address, MemoryTransport, Transport};
+use std::sync::{Arc, Mutex};
+
+/// (isolation group — `None` for the default circuits, op, handle), one per relay request.
+type Log = Arc<Mutex<Vec<(Option<u64>, String, String)>>>;
+
+fn recording_dialer(log: &Log, group: Option<u64>) -> RelayDialer {
+    let log = Arc::clone(log);
+    Arc::new(move |line: &str| {
+        let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        let op = v
+            .as_object()
+            .and_then(|o| {
+                o.get("op")
+                    .or_else(|| o.keys().next().and_then(|k| o.get(k)))
+            })
+            .map(|x| x.to_string())
+            .unwrap_or_default();
+        // `take_many` names a list; everything else one `handle`. One log row per handle.
+        let req = v.get("req").unwrap_or(&v);
+        let handles: Vec<String> = match req.get("handles") {
+            Some(list) => list
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|h| h.as_str().unwrap().to_string())
+                .collect(),
+            None => vec![req
+                .get("handle")
+                .and_then(|h| h.as_str())
+                .unwrap_or_default()
+                .to_string()],
+        };
+        for handle in handles {
+            log.lock().unwrap().push((group, op.clone(), handle));
+        }
+        // A well-formed reply: a malformed one reads as a dead relay, whose remaining fragments
+        // the drain then skips for the round.
+        Ok(format!(
+            r#"{{"v":{},"resp":{{"ok":true,"msg_id":"m","delete_token":"t"}}}}"#,
+            crate::relay_client::RELAY_VERSION
+        ))
+    })
+}
+
+/// A memory transport whose isolated relay dialers record which group carried what.
+struct Recording {
+    inner: MemoryTransport,
+    log: Log,
+}
+
+impl Transport for Recording {
+    fn address(&self) -> Address {
+        self.inner.address()
+    }
+    fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.inner.send(peer, frame)
+    }
+    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
+        self.inner.try_recv()
+    }
+    fn is_synchronous(&self) -> bool {
+        self.inner.is_synchronous()
+    }
+    fn published(&self) -> bool {
+        self.inner.published()
+    }
+    fn relay_dialer_isolated(&self, _addr: &str, group: u64) -> Option<RelayDialer> {
+        Some(recording_dialer(&self.log, Some(group)))
+    }
+}
+
+/// Alice on a recording transport, paired (and agreed) with each of `names`.
+fn recorded(names: &[&str]) -> (Node, Log, Vec<(Node, String)>, MemoryNetwork) {
+    let net = MemoryNetwork::new();
+    let log: Log = Arc::new(Mutex::new(Vec::new()));
+    let mut alice = Node::new(Box::new(Recording {
+        inner: net.endpoint("alice"),
+        log: Arc::clone(&log),
+    }));
+    alice.set_relay(RelayClient::with_dialer_for(
+        "relay.onion",
+        recording_dialer(&log, None),
+    ));
+    let mut peers = Vec::new();
+    for name in names {
+        let mut peer = Node::new(Box::new(net.endpoint(name)));
+        let bundle = alice.publish_bundle();
+        peer.connect_with_bundle("alice", &bundle).unwrap();
+        for _ in 0..3 {
+            alice.pump().unwrap();
+            peer.pump().unwrap();
+        }
+        let id = peer.identity_key();
+        assert!(confirmed(&alice, &id), "{name} agreed with Alice");
+        peers.push((peer, id));
+    }
+    log.lock().unwrap().clear();
+    (alice, log, peers, net)
+}
+
+#[test]
+fn every_poll_rides_its_fragment_and_v1_rides_alone() {
+    let (alice, log, peers, _net) = recorded(&["bob", "carol"]);
+    crate::node::drain_relay_mailboxes(&alice.relay_drain_plan().unwrap());
+    let takes: Vec<_> = log.lock().unwrap().clone();
+    assert!(!takes.is_empty());
+    assert!(
+        takes.iter().all(|(g, _, _)| g.is_some()),
+        "no poll uses the shared default circuits"
+    );
+
+    let v1 = mailbox_handle(&alice.identity_key());
+    let v1_group = takes.iter().find(|(_, _, h)| *h == v1).unwrap().0;
+    assert!(
+        takes
+            .iter()
+            .filter(|(g, _, _)| *g == v1_group)
+            .all(|(_, _, h)| *h == v1),
+        "the static v1 handle shares its circuits with nothing"
+    );
+
+    // One pair's handles for neighbouring days never share a fragment.
+    let (_, bob_id) = &peers[0];
+    let pair = alice.chats[bob_id].mailbox.clone().unwrap();
+    let secret = pair_secret(
+        &alice.identity_key(),
+        bob_id,
+        &pair.own,
+        &pair.peer.unwrap(),
+    );
+    let today = current_epoch();
+    let groups: Vec<_> = [today - 1, today, today + 1]
+        .iter()
+        .map(|e| {
+            let h = v2_handle(&secret, &alice.identity_key(), *e);
+            takes.iter().find(|(_, _, x)| *x == h).expect("polled").0
+        })
+        .collect();
+    assert!(
+        groups[0] != groups[1] && groups[1] != groups[2] && groups[0] != groups[2],
+        "yesterday, today and tomorrow are in different fragments"
+    );
+}
+
+#[test]
+fn the_partition_is_fixed_for_the_epoch_and_survives_a_restart() {
+    let (alice, _log, _peers, net) = recorded(&["bob", "carol", "dave"]);
+    let shape = |n: &Node| {
+        let mut v: Vec<(u64, Vec<String>)> = n
+            .poll_fragments()
+            .into_iter()
+            .map(|f| {
+                let mut h = f.handles;
+                h.sort();
+                (f.group, h)
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(shape(&alice), shape(&alice), "the same every round");
+    let key = [3u8; 32];
+    let restored =
+        Node::restore(&alice.export(&key), Box::new(net.endpoint("alice2")), &key).unwrap();
+    assert_eq!(
+        shape(&restored),
+        shape(&alice),
+        "a restart must not re-draw it — a fresh partition mid-epoch is the §5c trap"
+    );
+}
+
+#[test]
+fn each_epoch_is_padded_so_one_round_does_not_count_contacts() {
+    for names in [&[][..], &["bob"][..], &["bob", "carol", "dave"][..]] {
+        let (alice, _log, _peers, _net) = recorded(names);
+        let v1 = mailbox_handle(&alice.identity_key());
+        let polled: Vec<String> = alice
+            .poll_fragments()
+            .into_iter()
+            .flat_map(|f| f.handles)
+            .filter(|h| *h != v1)
+            .collect();
+        assert_eq!(
+            polled.len(),
+            3 * POLL_PAD,
+            "{} contact(s) poll the same {} v2 handles as nobody",
+            names.len(),
+            3 * POLL_PAD
+        );
+        let mut unique = polled.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), polled.len(), "no dummy repeats a real handle");
+    }
+}
+
+#[test]
+fn posts_for_different_recipients_never_share_circuits() {
+    let (mut alice, log, peers, net) = recorded(&["bob", "carol"]);
+    net.disconnect("bob");
+    net.disconnect("carol");
+    let (bob, carol) = (&peers[0].1, &peers[1].1);
+    alice.send(bob, "one for bob").unwrap();
+    alice.send(bob, "another for bob").unwrap();
+    alice.send(carol, "one for carol").unwrap();
+    let posts: Vec<_> = log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, op, _)| op.contains("post") || op.contains("Post"))
+        .cloned()
+        .collect();
+    let group_for = |h: &str| -> Vec<Option<u64>> {
+        posts
+            .iter()
+            .filter(|(_, _, x)| x == h)
+            .map(|(g, _, _)| *g)
+            .collect()
+    };
+    let to_bob = group_for(&alice.post_handle(bob));
+    let to_carol = group_for(&alice.post_handle(carol));
+    assert_eq!(to_bob.len(), 2);
+    assert_eq!(to_carol.len(), 1);
+    assert!(
+        to_bob.iter().chain(&to_carol).all(Option::is_some),
+        "posts are isolated"
+    );
+    assert_eq!(
+        to_bob[0], to_bob[1],
+        "one recipient keeps one set of circuits"
+    );
+    assert_ne!(to_bob[0], to_carol[0], "two recipients never share");
+}
+
+#[test]
+fn the_contact_cap_refuses_a_new_contact_and_says_why() {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut peers = Vec::new();
+    for i in 0..super::mailbox::MAX_CONTACTS {
+        let mut peer = Node::new(Box::new(net.endpoint(&format!("p{i}"))));
+        let bundle = peer.publish_bundle();
+        alice
+            .connect_with_bundle(&format!("p{i}"), &bundle)
+            .unwrap();
+        peers.push(peer);
+    }
+    let mut one_more = Node::new(Box::new(net.endpoint("late")));
+    let bundle = one_more.publish_bundle();
+    let err = alice
+        .connect_with_bundle("late", &bundle)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("50 contacts") && err.contains("relay"),
+        "{err}"
+    );
+    assert!(
+        one_more.pump().unwrap().is_empty(),
+        "nothing reached the network for the refused contact"
+    );
+    // Re-pairing someone already in the list is not a new contact.
+    let bundle = peers[0].publish_bundle();
+    alice
+        .connect_with_bundle("p0", &bundle)
+        .expect("re-pairing an existing contact at the cap is allowed");
+}
+
+#[test]
+fn a_dead_relay_costs_one_attempt_per_round_not_one_per_fragment() {
+    // A relay that never answers: every dial fails, and each would wait out the full timeout.
+    let attempts = Arc::new(Mutex::new(0usize));
+    let counter = Arc::clone(&attempts);
+    let dead_dialer: RelayDialer = Arc::new(move |_line: &str| {
+        *counter.lock().unwrap() += 1;
+        anyhow::bail!("relay dial timed out")
+    });
+    let dead = RelayClient::with_dialer_for("dead.onion", dead_dialer);
+    let live = RelayClient::new(RelayServer::spawn("127.0.0.1:0").unwrap().to_string());
+    live.post("mbx:live", b"mail", Duration::from_secs(60))
+        .unwrap();
+
+    let job = |addr: &str, client: &RelayClient, handle: &str| DrainJob {
+        addr: Some(addr.to_string()),
+        client: client.clone(),
+        handles: vec![handle.to_string()],
+    };
+    let mut jobs: Vec<DrainJob> = (0..5)
+        .map(|i| job("dead.onion", &dead, &format!("mbx:d{i}")))
+        .collect();
+    jobs.insert(2, job("live.onion", &live, "mbx:live"));
+    let harvest = drain_relay_mailboxes(&RelayDrainPlan {
+        jobs,
+        stagger: false,
+    });
+
+    assert_eq!(
+        *attempts.lock().unwrap(),
+        1,
+        "the dead relay was tried once"
+    );
+    assert_eq!(
+        harvest.blobs,
+        vec![b"mail".to_vec()],
+        "the live relay still delivered"
+    );
+    assert!(harvest
+        .reachability
+        .contains(&("dead.onion".to_string(), false)));
+    assert!(harvest
+        .reachability
+        .contains(&("live.onion".to_string(), true)));
 }

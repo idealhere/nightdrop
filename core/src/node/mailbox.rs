@@ -146,6 +146,66 @@ pub(super) fn current_epoch() -> u64 {
     crate::api::now_secs() / EPOCH_SECS
 }
 
+/// Fixed number of polling fragments per epoch (§5c, §8). At the 50-contact cap that is ~7
+/// handles per fragment; below it, fragments are smaller, never more numerous. Fixed rather than
+/// derived from the contact count, so adding a contact moves nobody else.
+pub(super) const POLL_FRAGMENTS: u64 = 7;
+
+/// The polled set of each epoch is padded with dummy handles to a multiple of this (and to at least
+/// this), so one round does not reveal how many contacts we have. §5c: it keeps the count fuzzy, it
+/// does not make it private — a handle that is polled all day and never receives looks like a dummy.
+pub(super) const POLL_PAD: usize = 8;
+
+/// The most contacts the app allows (§8). A product limit, not a protocol one: it bounds how many
+/// handles a relay watches one reader collect, and what a phone polls over Tor each round.
+pub const MAX_CONTACTS: usize = 50;
+
+/// One group of handles polled together, on circuits no other group shares.
+pub(crate) struct PollFragment {
+    /// The isolation group ([`Transport::relay_dialer_isolated`]).
+    pub(crate) group: u64,
+    pub(crate) handles: Vec<String>,
+}
+
+/// A stable 64-bit id from labelled parts — isolation groups and fragment buckets.
+pub(super) fn group_id(parts: &[&[u8]]) -> u64 {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    for part in parts {
+        h.update((part.len() as u64).to_be_bytes());
+        h.update(part);
+    }
+    u64::from_be_bytes(h.finalize()[..8].try_into().expect("8 bytes"))
+}
+
+/// The isolation group for **posting** to one recipient: each recipient on its own circuits, so a
+/// relay cannot see that deposits for two people came from one sender.
+pub(super) fn post_group(recipient_ik: &str) -> u64 {
+    group_id(&[b"nightdrop/isolation/post", recipient_ik.as_bytes()])
+}
+
+/// `relay`, or its sibling on the circuits of `group` when the transport can isolate (Tor). A
+/// client whose address is unknown, or a transport that cannot isolate, is returned as is.
+pub(super) fn isolated(transport: &dyn Transport, relay: &RelayClient, group: u64) -> RelayClient {
+    match relay
+        .addr()
+        .and_then(|addr| Some((addr, transport.relay_dialer_isolated(addr, group)?)))
+    {
+        Some((addr, dialer)) => RelayClient::with_dialer_for(addr, dialer),
+        None => relay.clone(),
+    }
+}
+
+/// 15 handle bytes for a dummy, so it has exactly the shape of a real handle.
+fn dummy_bytes(id: u64, seed: &[u8; 32]) -> [u8; 15] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"nightdrop/poll/dummy-handle");
+    h.update(seed);
+    h.update(id.to_be_bytes());
+    h.finalize()[..15].try_into().expect("15 bytes")
+}
+
 /// Encode a contribution (and, once known, our confirmation) for [`Frame::MailboxKey`].
 fn encode_payload(own: &[u8; 32], confirm: Option<&[u8; 32]>) -> Vec<u8> {
     let mut p = Vec::with_capacity(MARK_MAILBOX_V2.len() + 64);
@@ -170,7 +230,34 @@ fn decode_payload(p: &[u8]) -> Option<([u8; 32], Option<[u8; 32]>)> {
     }
 }
 
+/// Refusal at the contact cap (§8). Said plainly, because the reason explains the product.
+pub(super) const AT_CONTACT_CAP: &str =
+    "You have 50 contacts, the most Night Drop allows. Delete a \
+    chat to add a new one. The limit keeps a relay from rebuilding your contact list from the \
+    mailboxes your device checks.";
+
 impl Node {
+    /// Open, approved chats — what the contact cap counts. A request still awaiting approval is not
+    /// a contact yet, and a closed chat polls nothing.
+    pub(super) fn open_contacts(&self) -> usize {
+        self.chats
+            .values()
+            .filter(|c| c.authorized && !c.closed)
+            .count()
+    }
+
+    /// Refuse a **new** contact at the cap. Re-pairing someone already in the list is not new.
+    pub(super) fn check_contact_cap(&self, contact_id: &str) -> Result<()> {
+        let existing = self
+            .chats
+            .get(contact_id)
+            .is_some_and(|c| c.authorized && !c.closed);
+        if !existing && self.open_contacts() >= MAX_CONTACTS {
+            anyhow::bail!(AT_CONTACT_CAP);
+        }
+        Ok(())
+    }
+
     /// The handle to post mail for `contact_id` under **right now**: v2 once the pair is
     /// confirmed, v1 otherwise (and for any contact we no longer have a chat with).
     pub(super) fn post_handle(&self, contact_id: &str) -> String {
@@ -183,25 +270,76 @@ impl Node {
         mailbox_handle(contact_id)
     }
 
-    /// Every handle our mail may sit under: v1, plus yesterday's, today's and tomorrow's v2 handle
-    /// for each open chat whose secret we hold — confirmed or not, since the peer may already be
-    /// posting to it.
+    /// Every handle we poll, flattened (dummies included). Tests only — production drains by
+    /// fragment ([`poll_fragments`](Self::poll_fragments)).
+    #[cfg(test)]
     pub(super) fn drain_handles(&self) -> Vec<String> {
+        self.poll_fragments()
+            .into_iter()
+            .flat_map(|f| f.handles)
+            .collect()
+    }
+
+    /// Our mailboxes in polling fragments (§5c), fixed for each handle's epoch.
+    ///
+    /// * **v1 alone.** Our static handle is tied to our identity for good; polled beside anything,
+    ///   it would name the owner of that fragment's v2 handles.
+    /// * **Each epoch in its own fragments.** Yesterday's, today's and tomorrow's handles for one
+    ///   pair are polled in *their own day's* partition — together they would link the pair across
+    ///   days, which is what rotation exists to prevent.
+    /// * **A contact's bucket** comes from a keyed hash of our persisted seed, the epoch and the
+    ///   contact, so the partition is the same every round of that epoch and survives a restart.
+    ///   Re-drawing it per round is the trap §5c describes: a relay intersects the fragments it sees
+    ///   and reassembles the whole set.
+    /// * **Padded with dummies** per epoch, stable for that epoch like real handles.
+    pub(crate) fn poll_fragments(&self) -> Vec<PollFragment> {
         let me = self.identity_key();
-        let mut handles = vec![mailbox_handle(&me)];
+        let mut fragments = vec![PollFragment {
+            group: group_id(&[b"nightdrop/isolation/poll-v1", &self.poll_seed]),
+            handles: vec![mailbox_handle(&me)],
+        }];
         let today = current_epoch();
-        for (contact_id, chat) in &self.chats {
-            if chat.closed {
-                continue;
+        for epoch in [today.saturating_sub(1), today, today + 1] {
+            let e = epoch.to_be_bytes();
+            let mut buckets: Vec<Vec<String>> = vec![Vec::new(); POLL_FRAGMENTS as usize];
+            let bucket_of = |label: &[u8]| {
+                (group_id(&[b"nightdrop/poll/bucket", &self.poll_seed, &e, label]) % POLL_FRAGMENTS)
+                    as usize
+            };
+            let mut real = 0usize;
+            for (contact_id, chat) in &self.chats {
+                if chat.closed {
+                    continue;
+                }
+                let Some(pair) = &chat.mailbox else { continue };
+                let Some(peer) = &pair.peer else { continue };
+                let secret = pair_secret(&me, contact_id, &pair.own, peer);
+                buckets[bucket_of(contact_id.as_bytes())].push(v2_handle(&secret, &me, epoch));
+                real += 1;
             }
-            let Some(pair) = &chat.mailbox else { continue };
-            let Some(peer) = &pair.peer else { continue };
-            let secret = pair_secret(&me, contact_id, &pair.own, peer);
-            for epoch in [today.saturating_sub(1), today, today + 1] {
-                handles.push(v2_handle(&secret, &me, epoch));
+            let padded = real.max(1).div_ceil(POLL_PAD) * POLL_PAD;
+            for i in 0..(padded - real) as u64 {
+                let label = [b"dummy".as_slice(), &i.to_be_bytes()].concat();
+                let id = group_id(&[b"nightdrop/poll/dummy", &self.poll_seed, &e, &label]);
+                let dummy = format!("mbx:{}", base64_handle(&dummy_bytes(id, &self.poll_seed)));
+                buckets[bucket_of(&label)].push(dummy);
+            }
+            for (b, handles) in buckets.into_iter().enumerate() {
+                if handles.is_empty() {
+                    continue;
+                }
+                fragments.push(PollFragment {
+                    group: group_id(&[
+                        b"nightdrop/isolation/poll",
+                        &self.poll_seed,
+                        &e,
+                        &(b as u64).to_be_bytes(),
+                    ]),
+                    handles,
+                });
             }
         }
-        handles
+        fragments
     }
 
     /// Send our contribution to every open, authorized chat that is not yet confirmed. Once per

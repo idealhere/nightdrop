@@ -22,7 +22,7 @@ use anyhow::Context as _;
 use arti_client::config::pt::TransportConfigBuilder;
 use arti_client::config::{BridgeConfigBuilder, PtTransportName, TorClientConfigBuilder};
 use arti_client::{DataStream, TorClient, TorClientConfig};
-use futures::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt};
+use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use safelog::DisplayRedacted as _;
 use tokio::runtime::Runtime;
 use tor_cell::relaycell::msg::Connected;
@@ -146,6 +146,54 @@ const PEER_DIAL_TIMEOUT: Duration = Duration::from_secs(15);
 /// that need to punch through a flaky path (pairing's `run_join_handshake`, the relay-retry
 /// poller) loop over their own schedule, each iteration a fresh, individually-bounded attempt.
 const RELAY_DIAL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Cap how long a **connected** relay exchange — or a peer send — may go without moving a byte. Without it, a circuit
+/// that stalls after the connect hangs the calling thread for good — and that thread is the poller,
+/// which then drains, sends and retries nothing for the rest of the run (hit on a Galaxy S25,
+/// 2026-09-26: a message sat "Held for delivery" while the log went silent). A stall bound, not a
+/// total one, so a legitimately large blob (up to the relay's 150 MB) still completes.
+const RELAY_STALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Write `bytes`, failing if any chunk makes no progress within `stall`.
+async fn write_all_stalling<W: futures::AsyncWrite + Unpin>(
+    w: &mut W,
+    bytes: &[u8],
+    stall: Duration,
+) -> Result<()> {
+    for chunk in bytes.chunks(64 * 1024) {
+        tokio::time::timeout(stall, w.write_all(chunk))
+            .await
+            .map_err(|_| anyhow::anyhow!("relay request stalled while sending"))??;
+    }
+    tokio::time::timeout(stall, w.flush())
+        .await
+        .map_err(|_| anyhow::anyhow!("relay request stalled while sending"))??;
+    Ok(())
+}
+
+/// Read one `\n`-terminated line, failing if no byte arrives within `stall`. EOF before the newline
+/// returns what arrived, as `read_line` did.
+async fn read_line_stalling<R: futures::AsyncRead + Unpin>(
+    r: &mut R,
+    stall: Duration,
+) -> Result<String> {
+    let mut line = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let n = tokio::time::timeout(stall, r.read(&mut chunk))
+            .await
+            .map_err(|_| anyhow::anyhow!("relay response stalled"))??;
+        if n == 0 {
+            break;
+        }
+        if let Some(end) = chunk[..n].iter().position(|&b| b == b'\n') {
+            line.extend_from_slice(&chunk[..=end]);
+            break;
+        }
+        line.extend_from_slice(&chunk[..n]);
+    }
+    String::from_utf8(line).map_err(|_| anyhow::anyhow!("relay response was not UTF-8"))
+}
 
 /// Outbound streams we hold open per peer to avoid re-dialing the onion for every frame.
 type OutStreams = Arc<Mutex<HashMap<Address, (DataStream, Instant)>>>;
@@ -418,12 +466,8 @@ impl TorTransport {
                     .await
                     .map_err(|_| anyhow::anyhow!("relay dial timed out"))?
                     .with_context(|| format!("relay connect {relay_onion}"))?;
-                    stream.write_all(req.as_bytes()).await?;
-                    stream.flush().await?;
-                    let mut reader = futures::io::BufReader::new(stream);
-                    let mut line = String::new();
-                    reader.read_line(&mut line).await?;
-                    Ok(line)
+                    write_all_stalling(&mut stream, req.as_bytes(), RELAY_STALL_TIMEOUT).await?;
+                    read_line_stalling(&mut stream, RELAY_STALL_TIMEOUT).await
                 };
                 // `futures::select` rather than `tokio::select!` so this needs no new dependency
                 // (tokio's `macros` feature); the two futures are pinned locally and neither is
@@ -775,7 +819,7 @@ impl Transport for TorTransport {
         let stream = self.runtime.block_on(async move {
             let exchange = async {
                 if let Some(mut s) = existing.take() {
-                    if write_frame(&mut s, &frame).await.is_ok() && s.flush().await.is_ok() {
+                    if write_frame(&mut s, &frame).await.is_ok() {
                         return Ok::<DataStream, anyhow::Error>(s);
                     }
                     // stale (peer closed it / circuit gone): drop and reconnect.
@@ -788,7 +832,6 @@ impl Transport for TorTransport {
                 .map_err(|_| anyhow::anyhow!("peer dial timed out"))?
                 .context("dial peer onion")?;
                 write_frame(&mut s, &frame).await?;
-                s.flush().await?;
                 Ok(s)
             };
             // Raced against `closing`, as relay requests are (see `make_relay_dialer`). A send runs
@@ -1234,11 +1277,17 @@ fn onion_service_config(
     builder.build().context("onion service config")
 }
 
-/// Write a `u32` big-endian length prefix followed by the frame bytes.
-async fn write_frame<W: AsyncWriteExt + Unpin>(w: &mut W, frame: &[u8]) -> Result<()> {
-    w.write_all(&(frame.len() as u32).to_be_bytes()).await?;
-    w.write_all(frame).await?;
-    Ok(())
+/// Write a `u32` big-endian length prefix followed by the frame bytes, then flush — failing if
+/// the stream stops accepting bytes for [`RELAY_STALL_TIMEOUT`]. A warm stream whose circuit has
+/// died otherwise blocks the write forever, and the poller that called it with it.
+async fn write_frame<W: futures::AsyncWrite + Unpin>(w: &mut W, frame: &[u8]) -> Result<()> {
+    tokio::time::timeout(
+        RELAY_STALL_TIMEOUT,
+        w.write_all(&(frame.len() as u32).to_be_bytes()),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("peer send stalled"))??;
+    write_all_stalling(w, frame, RELAY_STALL_TIMEOUT).await
 }
 
 /// Read one length-prefixed frame.
@@ -1457,5 +1506,75 @@ mod bridge_tests {
         assert_eq!(apply_transports(&mut b2, empty.to_str().unwrap()), 0);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod stall_tests {
+    use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    /// A connected stream whose far end has gone quiet: never a byte, never EOF, never an error.
+    struct Stalled;
+
+    impl futures::AsyncRead for Stalled {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Pending
+        }
+    }
+
+    impl futures::AsyncWrite for Stalled {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Pending
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Pending
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Pending
+        }
+    }
+
+    fn rt() -> Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+    }
+
+    // The poller hung for good on exactly this (device, 2026-09-26).
+    #[test]
+    fn a_stalled_relay_exchange_fails_instead_of_hanging() {
+        let stall = Duration::from_millis(100);
+        let read = rt().block_on(read_line_stalling(&mut Stalled, stall));
+        assert!(read.unwrap_err().to_string().contains("stalled"));
+        let write = rt().block_on(write_all_stalling(&mut Stalled, b"req\n", stall));
+        assert!(write.unwrap_err().to_string().contains("stalled"));
+    }
+
+    #[test]
+    fn a_line_arriving_in_pieces_is_read_whole_and_no_further() {
+        let mut src = futures::io::Cursor::new(b"{\"ok\":tr".to_vec());
+        let got = rt()
+            .block_on(read_line_stalling(&mut src, Duration::from_secs(1)))
+            .unwrap();
+        assert_eq!(
+            got, "{\"ok\":tr",
+            "EOF before the newline returns what arrived"
+        );
+        let mut src = futures::io::Cursor::new(b"line one\nline two\n".to_vec());
+        let got = rt()
+            .block_on(read_line_stalling(&mut src, Duration::from_secs(1)))
+            .unwrap();
+        assert_eq!(got, "line one\n");
     }
 }

@@ -168,6 +168,7 @@ impl Node {
                     client_key: None, // minted and announced immediately after pairing
                     local_name: String::new(),
                     remote_storage_healthy: true,
+                    mailbox: None,
                 },
             );
         }
@@ -178,6 +179,9 @@ impl Node {
         // otherwise never learn it, and be left reading our silence as "they'd be told".
         self.announce_captures_to(&contact_id);
         self.announce_burns_to(&contact_id);
+        // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
+        // Refused for a chat still awaiting approval; the relay tick picks it up once approved.
+        self.send_mailbox_key(&contact_id);
         Ok(contact_id)
     }
 }

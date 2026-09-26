@@ -678,6 +678,10 @@ impl Inner {
             // a chat paired before the feature shipped would otherwise never hear it, leaving
             // burn unavailable for precisely the contacts someone already talks to.
             self.me.announce_burns();
+            // v2 mailbox handles (`mailbox-handles.md`): offer our contribution to every chat not
+            // yet confirmed. Once per run per chat, retried while undelivered — the same shape as
+            // the burn announce, and the heal for a lost agreement frame.
+            self.me.announce_mailbox();
             // Inviter side of short-code pairing: answer any joiner's SPAKE2 opener (§5b).
             self.me.service_pending_invites();
             // Retry messages that couldn't reach the peer or any relay when first sent (arti was

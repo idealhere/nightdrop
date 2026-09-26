@@ -59,6 +59,10 @@ impl Node {
                 peer_captures_silent: chat.contact.peer_captures_silent,
                 peer_relays: chat.contact.peer_relays.clone(),
                 peer_supports_burn: chat.contact.peer_supports_burn,
+                mailbox_own: super::mailbox::to_persisted(&chat.mailbox).0,
+                mailbox_peer: super::mailbox::to_persisted(&chat.mailbox).1,
+                mailbox_peer_confirmed: super::mailbox::to_persisted(&chat.mailbox).2,
+                mailbox_confirm_sent: super::mailbox::to_persisted(&chat.mailbox).3,
                 // Persist recall receipts for still-queued messages so an edit/unsend can pull an
                 // undelivered blob off the relay even after a restart (§1.1). Flatten the
                 // by-msg_id map into a list carrying its target.
@@ -71,6 +75,7 @@ impl Node {
                             .map(move |r| crate::storage::PersistedReceipt {
                                 target_msg_id: target.clone(),
                                 relay_addr: r.relay_addr.clone(),
+                                handle: r.handle.clone(),
                                 msg_id: r.msg_id.clone(),
                                 delete_token: r.delete_token.clone(),
                             })
@@ -310,6 +315,7 @@ impl Node {
                     .or_default()
                     .push(QueuedReceipt {
                         relay_addr: pr.relay_addr.clone(),
+                        handle: pr.handle.clone(),
                         msg_id: pr.msg_id.clone(),
                         delete_token: pr.delete_token.clone(),
                     });
@@ -376,6 +382,7 @@ impl Node {
                     closed: chat.closed,
                     relay_receipts,
                     remote_storage_healthy: true,
+                    mailbox: super::mailbox::from_persisted(chat),
                 },
             );
         }
@@ -442,6 +449,7 @@ impl Node {
                                     .and_then(|v| v.try_into().ok())
                             }),
                             remote_storage_healthy: true,
+                            mailbox: super::mailbox::from_persisted(pchat),
                         },
                     );
                 }

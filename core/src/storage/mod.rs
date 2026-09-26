@@ -107,6 +107,20 @@ pub struct PersistedChat {
     /// to a request the user has to re-approve. Files written from now on carry the truth.
     #[serde(default = "yes")]
     pub authorized: bool,
+    /// Our 32-byte contribution to the chat's v2 mailbox secret, base64 (`mailbox-handles.md`).
+    /// Absent on older state files and on chats that have not agreed yet — they post and poll v1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_own: Option<String>,
+    /// The peer's contribution, base64, once received.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_peer: Option<String>,
+    /// The peer proved it holds the same secret, so we post v2 to it. Persisted: forgetting it
+    /// only costs privacy (back to v1), but a restart must not re-open the agreement needlessly.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mailbox_peer_confirmed: bool,
+    /// We have sent our own confirmation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mailbox_confirm_sent: bool,
 }
 
 /// `serde` default for [`PersistedChat::authorized`] — see the field's note on why absence must
@@ -124,6 +138,10 @@ pub struct PersistedReceipt {
     pub target_msg_id: String,
     #[serde(default)]
     pub relay_addr: Option<String>,
+    /// The mailbox handle the copy was posted under, for recall. Absent on receipts saved before v2
+    /// handles, which were all posted to v1 — an empty string means exactly that.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub handle: String,
     pub msg_id: String,
     pub delete_token: String,
 }

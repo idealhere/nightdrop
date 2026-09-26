@@ -140,6 +140,7 @@ impl Node {
     /// [`apply_send_outcomes`](Self::apply_send_outcomes)), because dialling here holds the core
     /// lock. No-op if the chat was deleted before delivery ran.
     pub(crate) fn attempt_delivery(&mut self, contact_id: &str, msg_id: &str, bytes: &[u8]) {
+        let handle = self.post_handle(contact_id);
         let Some(chat) = self.chats.get_mut(contact_id) else {
             return;
         };
@@ -159,6 +160,7 @@ impl Node {
                 &self.relay,
                 &targets,
                 contact_id,
+                &handle,
                 bytes,
             ) {
                 Ok(copies) => {
@@ -242,6 +244,7 @@ impl Node {
                 still_waiting.push(a);
                 continue;
             }
+            let handle = self.post_handle(&a.contact_id);
             let Some(chat) = self.chats.get_mut(&a.contact_id) else {
                 continue; // chat deleted while we waited
             };
@@ -278,6 +281,7 @@ impl Node {
                 &self.relay,
                 &targets,
                 &a.contact_id,
+                &handle,
                 &bytes,
             ) {
                 Ok(copies) => {
@@ -393,6 +397,7 @@ impl Node {
                 }
             }
             items.push(PlannedSend {
+                handle: self.post_handle(&p.contact_id),
                 contact_id: p.contact_id,
                 msg_id: p.msg_id,
                 bytes: p.bytes,
@@ -497,6 +502,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 &p.contact_id,
+                &self.post_handle(&p.contact_id),
                 &p.bytes,
             ) {
                 Ok(copies) => {
@@ -532,6 +538,8 @@ impl Node {
                 &self.relay,
                 &p.relays,
                 &p.recipient_ik,
+                // v1: the chat is already gone, and the peer polls v1 throughout the transition.
+                &mailbox_handle(&p.recipient_ik),
                 &p.bytes,
             )
             .is_ok();
@@ -574,7 +582,16 @@ impl Node {
         // indistinguishable from real traffic leaves nothing else to observe: without this line
         // "cover traffic costs nothing measurable" and "cover traffic never ran" are the same
         // reading, which is exactly the trap the relay watchdog fell into.
-        match queue_on_relays(self.transport.as_ref(), &Some(relay), &targets, &me, &blob) {
+        // Our own v1 mailbox, which we poll throughout the transition (`mailbox-handles.md`).
+        let own = mailbox_handle(&me);
+        match queue_on_relays(
+            self.transport.as_ref(),
+            &Some(relay),
+            &targets,
+            &me,
+            &own,
+            &blob,
+        ) {
             Ok(receipts) => crate::diag!(
                 "cover: posted a dummy to our own mailbox ({} relay(s))",
                 receipts.len()
@@ -667,6 +684,8 @@ impl Node {
     ///   frame naming the `msg_id`; the peer replaces the text and shows "edited".
     pub fn edit_message(&mut self, contact_id: &str, msg_id: &str, new_text: &str) -> Result<()> {
         let from = self.identity_key();
+        // Chosen before the chat is borrowed mutably: a replacement copy goes where new mail goes.
+        let handle = self.post_handle(contact_id);
         let chat = self
             .chats
             .get_mut(contact_id)
@@ -711,6 +730,7 @@ impl Node {
                     &self.relay,
                     &chat.contact.peer_relays,
                     contact_id,
+                    &handle,
                     &wire::encode(&frame),
                 )?;
                 chat.relay_receipts.insert(msg_id.to_string(), new_copies);
@@ -879,9 +899,10 @@ impl Node {
                 (chat.peer_address.clone(), bytes)
             };
             if self.transport.send(&peer_address, &incoming).is_err() {
+                let handle = self.post_handle(contact_id);
                 if let Some(relay) = &self.relay {
                     if let Ok(sealed) = relay_wrap(contact_id, &incoming) {
-                        let _ = relay.post(&mailbox_handle(contact_id), &sealed, RELAY_TTL);
+                        let _ = relay.post(&handle, &sealed, RELAY_TTL);
                     }
                 }
             }
@@ -942,6 +963,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 contact_id,
+                &self.post_handle(contact_id),
                 &media_bytes,
             );
             if !delivered {
@@ -1112,7 +1134,7 @@ impl Node {
             return None;
         }
         Some(RelayDrainPlan {
-            handle: mailbox_handle(&self.identity_key()),
+            handles: self.drain_handles(),
             clients,
         })
     }
@@ -1510,6 +1532,7 @@ impl Node {
     /// see [`Node::mark_burn_viewed`].
     pub(super) fn send_burn_receipt(&mut self, contact_id: &str, target_id: &str) {
         let from = self.identity_key();
+        let handle = self.post_handle(contact_id);
         let Some(chat) = self.chats.get_mut(contact_id) else {
             return;
         };
@@ -1523,6 +1546,7 @@ impl Node {
             primary: self.relay.clone(),
             peer_relays: chat.contact.peer_relays.clone(),
             recipient_ik: contact_id.to_string(),
+            handle,
             peer_address: chat.peer_address.clone(),
             bytes: wire::encode(&frame),
         };

@@ -162,7 +162,10 @@ fn write_private_file(path: &std::path::Path, data: &[u8]) -> Result<()> {
 /// TCP address or an `Arc` dialer). Built by [`Node::relay_drain_plan`], consumed by
 /// [`drain_relay_mailboxes`].
 pub(crate) struct RelayDrainPlan {
-    handle: String,
+    /// Every handle our mail may sit under: v1, plus the v2 handles of each agreed pair
+    /// (`mailbox.rs`). **Not yet isolated per fragment** — `mailbox-handles.md` §5c; until that
+    /// lands, one client polls them all, and a relay can see they share a reader.
+    handles: Vec<String>,
     /// `(advertised-address, client)` per relay; `None` address = the primary/default relay.
     clients: Vec<(Option<String>, RelayClient)>,
 }
@@ -182,18 +185,17 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
     let mut blobs = Vec::new();
     let mut reachability = Vec::new();
     for (addr, client) in &plan.clients {
-        match client.take(&plan.handle) {
-            Ok(taken) => {
-                if let Some(addr) = addr {
-                    reachability.push((addr.clone(), true));
-                }
+        // A relay is reachable if any take on it answered. One failed take must not stop the rest:
+        // the others may hold mail, and a take that errors has not removed anything.
+        let mut answered = false;
+        for handle in &plan.handles {
+            if let Ok(taken) = client.take(handle) {
+                answered = true;
                 blobs.extend(taken);
             }
-            Err(_) => {
-                if let Some(addr) = addr {
-                    reachability.push((addr.clone(), false));
-                }
-            }
+        }
+        if let Some(addr) = addr {
+            reachability.push((addr.clone(), answered));
         }
     }
     RelayHarvest {
@@ -207,20 +209,25 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
 /// fan-out). Best-effort: succeeds if ≥1 relay accepts. Returns each `(relay, receipt)` so an
 /// edit/unsend can later recall every copy. Posting the identical sealed bytes to all relays
 /// lets the receiver de-duplicate by blob hash.
+///
+/// `handle` is the mailbox to post under — [`Node::post_handle`] for a live chat (v2 once the pair
+/// is confirmed), v1 where there is no chat state to consult. It is recorded in each receipt, so a
+/// later recall targets the handle the copy actually went to.
 fn queue_on_relays(
     transport: &dyn Transport,
     primary: &Option<RelayClient>,
     peer_relays: &[String],
     contact_id: &str,
+    handle: &str,
     bytes: &[u8],
 ) -> Result<Vec<QueuedReceipt>> {
     let sealed = relay_wrap(contact_id, bytes)?;
-    let handle = mailbox_handle(contact_id);
     let mut copies = Vec::new();
     if let Some(primary) = primary {
-        if let Ok(r) = primary.post(&handle, &sealed, RELAY_TTL) {
+        if let Ok(r) = primary.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {
                 relay_addr: None,
+                handle: handle.to_string(),
                 msg_id: r.msg_id,
                 delete_token: r.delete_token,
             });
@@ -228,9 +235,10 @@ fn queue_on_relays(
     }
     for addr in peer_relays {
         let relay = build_relay(transport, addr);
-        if let Ok(r) = relay.post(&handle, &sealed, RELAY_TTL) {
+        if let Ok(r) = relay.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {
                 relay_addr: Some(addr.clone()),
+                handle: handle.to_string(),
                 msg_id: r.msg_id,
                 delete_token: r.delete_token,
             });
@@ -254,7 +262,6 @@ fn recall_receipts(
     contact_id: &str,
     receipts: &[QueuedReceipt],
 ) -> bool {
-    let handle = mailbox_handle(contact_id);
     if receipts.is_empty() {
         return false;
     }
@@ -271,6 +278,11 @@ fn recall_receipts(
         let receipt = crate::relay_client::PostReceipt {
             msg_id: r.msg_id.clone(),
             delete_token: r.delete_token.clone(),
+        };
+        let handle = if r.handle.is_empty() {
+            mailbox_handle(contact_id)
+        } else {
+            r.handle.clone()
         };
         if !relay.recall(&handle, &receipt).unwrap_or(false) {
             all_recalled = false;
@@ -309,6 +321,9 @@ fn random_msg_id() -> String {
 struct QueuedReceipt {
     /// `None` = the primary (baked-in) relay; `Some(addr)` = an advertised extra relay.
     relay_addr: Option<String>,
+    /// The mailbox handle the copy was posted under (v1 or a v2 day handle), so a recall targets
+    /// it. Empty on receipts persisted before v2, which were all v1.
+    handle: String,
     /// The relay's own id for the queued blob.
     msg_id: String,
     /// The secret token that authorizes deleting (recalling) the blob.
@@ -358,6 +373,8 @@ struct Chat {
     /// the UI downgrades the storage banner instead of silently pretending the copy exists.
     /// In-memory only (recomputed on the next send); starts optimistic.
     remote_storage_healthy: bool,
+    /// Our side of the v2 mailbox agreement (`mailbox.rs`). `None` until we first announce.
+    mailbox: Option<mailbox::MailboxPair>,
 }
 
 /// One device. Owns the identity, the transport endpoint, and all chats. A contact is
@@ -396,6 +413,14 @@ pub struct Node {
     /// for that chat until the app is restarted. Not persisted — re-announcing on a fresh launch
     /// is cheap and self-heals.
     burns_announced: std::collections::HashSet<String>,
+    /// Contacts this run has sent our v2 mailbox contribution to (see [`Node::announce_mailbox`]).
+    /// Per run, like [`burns_announced`](Self::burns_announced): an unconfirmed pair is retried on
+    /// every launch, which is what heals a lost frame.
+    mailbox_announced: std::collections::HashSet<String>,
+    /// Tests only: behave like a build from before v2 mailboxes — never send a
+    /// [`Frame::MailboxKey`], and drop any that arrive undecoded, as an older build does.
+    #[cfg(test)]
+    legacy_v1_only: bool,
     /// Where media attachments are stored at rest: `(dir, key)`. Each attachment is sealed
     /// under `key` into its own file in `dir`, and the message only references its id — so
     /// large media never inflates the JSON state blob. `None` disables media (demo/tests).
@@ -521,6 +546,8 @@ pub(crate) struct SendPlan {
 
 struct PlannedSend {
     contact_id: String,
+    /// The mailbox handle for a relay copy, chosen under the lock ([`Node::post_handle`]).
+    handle: String,
     msg_id: String,
     bytes: Vec<u8>,
     peer_address: String,
@@ -563,6 +590,7 @@ pub(crate) fn execute_sends(plan: &SendPlan) -> SendOutcomes {
                 &plan.primary,
                 &p.relay_targets,
                 &p.contact_id,
+                &p.handle,
                 &p.bytes,
             ) {
                 Ok(c) => copies = Some(c),
@@ -594,6 +622,8 @@ pub(crate) struct DetachedSend {
     primary: Option<RelayClient>,
     peer_relays: Vec<String>,
     recipient_ik: String,
+    /// The mailbox handle for a relay copy, chosen under the lock ([`Node::post_handle`]).
+    handle: String,
     peer_address: String,
     bytes: Vec<u8>,
 }
@@ -607,6 +637,7 @@ impl DetachedSend {
                 &self.primary,
                 &self.peer_relays,
                 &self.recipient_ik,
+                &self.handle,
                 &self.bytes,
             )
             .is_ok()
@@ -668,6 +699,7 @@ struct PendingInvite {
 
 mod backup;
 mod frames;
+mod mailbox;
 mod messaging;
 mod pairing;
 
@@ -694,6 +726,9 @@ impl Node {
             last_invite_code: None,
             captures_visible: None,
             burns_announced: std::collections::HashSet::new(),
+            mailbox_announced: std::collections::HashSet::new(),
+            #[cfg(test)]
+            legacy_v1_only: false,
             burn_receipts: false,
             media_store: None,
             pending_media: Vec::new(),
@@ -889,6 +924,7 @@ impl Node {
                 &self.relay,
                 &targets,
                 contact_id,
+                &self.post_handle(contact_id),
                 &bytes,
             )
             .is_ok();
@@ -1154,6 +1190,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 id,
+                &self.post_handle(id),
                 &bytes,
             )
             .is_ok();
@@ -1244,6 +1281,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 recipient_ik,
+                &self.post_handle(recipient_ik),
                 &bytes,
             )
             .inspect_err(|_| {
@@ -1874,3 +1912,5 @@ fn base64_handle(bytes: &[u8]) -> String {
 mod tests_a;
 #[cfg(test)]
 mod tests_b;
+#[cfg(test)]
+mod tests_mailbox;

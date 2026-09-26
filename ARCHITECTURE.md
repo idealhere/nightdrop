@@ -20,7 +20,7 @@ marked _(planned)_ describe intended structure, not existing code.
   space, with a **visible in-chat warning to both parties** while it is active.
 - Cross-platform: iOS, Android, Windows, Linux, macOS — from one codebase.
 - Communication tunneled through **Tor** (pluggable for other anonymity networks).
-- Accept **privacy-coin** donations (e.g. Monero).
+- Accept donations without accounts: **privacy coins** (Monero, Zcash) and Bitcoin via **silent payments**.
 
 **Non-Goals (v1)**
 - Group chats (the design leaves room for MLS later; v1 is strictly 1:1).
@@ -39,7 +39,7 @@ marked _(planned)_ describe intended structure, not existing code.
 | E2E protocol | **Signal Double Ratchet** via `vodozemac` | Audited, forward secrecy + post-compromise security; ideal for 1:1. X3DH-style initial agreement. |
 | Stranger authorization | **PAKE (e.g. SPAKE2)** for short codes | Shared "bouncer" secret is proven, never transmitted; also defeats MITM. |
 | Local storage | Encrypted local DB (key in OS keystore) | At-rest protection of message history and identity keys. |
-| Donations | Privacy coins (Monero first) | Anonymity for donors; no custody, just published addresses. |
+| Donations | Monero, shielded Zcash, Bitcoin silent payments | No custody, just published addresses; Bitcoin for reach, stated as less private. |
 
 The **golden rule:** anything security-critical (keys, ratchet state, plaintext,
 transport, at-rest encryption) lives in the Rust core. Dart/Flutter never touches
@@ -687,8 +687,18 @@ E2E blobs — but observation ≠ decryption):
 
 ## 9. Donations
 
-Published privacy-coin addresses (Monero first; optionally others). No custody, no
-tracking, no identity linkage. Surfaced in-app and on the website.
+Published addresses, no custody, no tracking, no identity linkage. Surfaced in-app and on the
+website, from `config/app_config.json`.
+
+- **Monero** and **Zcash** (a shielded-only unified address — Sapling + Orchard, no transparent
+  receiver) keep sender, receiver and amount private.
+- **Bitcoin** is accepted only as a BIP352 **silent payment** address, for donors who hold no
+  privacy coin. Each payment lands at a fresh output, so donations cannot be linked to each other or
+  to the published address — but amounts and the donor's inputs are public. The site and app say
+  so; a plain reused Bitcoin address was rejected because it publishes every donation on one list.
+- Every address is checked against its spec before publishing (ZIP 316 / BIP352: checksum, network,
+  receiver types, keys on curve), and the website carries them in static HTML, since Tor Browser's
+  Safest level runs no JavaScript.
 
 ---
 

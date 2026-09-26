@@ -13,7 +13,7 @@ List<dynamic> _configDonations() =>
         as Map<String, dynamic>)['donations'] as List<dynamic>;
 
 void main() {
-  testWidgets('donations screen lists privacy-coin addresses', (tester) async {
+  testWidgets('donations screen lists every donation address', (tester) async {
     await tester.pumpWidget(const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
@@ -24,6 +24,9 @@ void main() {
     await tester.scrollUntilVisible(find.text('Zcash (ZEC)'), 300,
         scrollable: find.byType(Scrollable).first);
     expect(find.text('Zcash (ZEC)'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Bitcoin (BTC)'), 300,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Bitcoin (BTC)'), findsOneWidget);
   });
 
   // `make config` copies the JSON for the app and the site, but not into this compiled fallback,
@@ -37,6 +40,10 @@ void main() {
       expect([d.name, d.ticker, d.address, d.note],
           [c['name'], c['ticker'], c['address'], c['note']]);
     }
+    final app = (jsonDecode(File('../config/app_config.json').readAsStringSync())
+        as Map<String, dynamic>)['app'] as Map<String, dynamic>;
+    expect(AppConfig.current.blurb, app['blurb'],
+        reason: 'the blurb is what tells donors how private each option is');
   });
 
   // Tor Browser's "Safest" level disables JavaScript, so the onion site's visitors may only ever

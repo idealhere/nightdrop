@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
-/// A privacy-coin donation address. Addresses are non-custodial — published only.
+/// A donation address. Addresses are non-custodial — published only.
 class DonationCoin {
   const DonationCoin({
     required this.name,
@@ -42,6 +42,15 @@ const List<DonationCoin> kDefaultDonations = [
         'u1q6yxrsr95z7md9fgsnxhjc39dsqd4yvtedhkxq5hmackxxf38pfp8p7jdv0fs6uhp5wzxycykw7s4hyzgcyprkcue87f8afq3fhl0hg4fr8c6h7nalhhnx62qrzt3ucfjpxq6mx4cxmxy0q70ef5yhf4dhen6fgslsntl85zju00ulhk',
     note:
         'Shielded-only address. Send from a shielded wallet (e.g. Zodl) so the payment stays private.',
+  ),  DonationCoin(
+    name: 'Bitcoin',
+    ticker: 'BTC',
+    address:
+        'sp1qqvf5treewvewtlyvqggffn2maf44m5xgfrglaelw9yr59x9ehjrhcqeteyf7pznevdrt43xn60q3nesh9a3szvs37se3rhs8ugeuw2rxtqayfsuu',
+    note: "Silent payment address: each donation lands at a fresh address, so donations can't be "
+        'linked to each other. Amounts and the sending wallet stay public, as with any Bitcoin '
+        'payment. Needs a wallet that can send to sp1 addresses (e.g. Cake, Sparrow, BlueWallet, '
+        'Wasabi).',
   ),
 ];
 
@@ -71,9 +80,10 @@ class AppConfig {
         'Like a night deposit box: every message is a sealed envelope, dropped for one '
         'person only, opened by no one in between. Anonymous, end-to-end encrypted 1:1 '
         'chat over Tor. No accounts. No phone number. No server-side keys. No logs.',
-    blurb:
-        "Night Drop is free. If it's useful to you, a donation keeps it alive. We accept "
-        'privacy coins so giving stays anonymous — no accounts, no tracking, no trail.',
+    blurb: "Night Drop is free. If it's useful to you, a donation keeps it alive. Monero and "
+        "Zcash keep a donation fully private. Bitcoin goes to a silent-payment address, so "
+        "donations can't be linked to each other, though amounts stay public. No accounts, no "
+        'tracking.',
     donations: kDefaultDonations,
   );
 

@@ -11,7 +11,7 @@ export '../../core/app_config.dart' show DonationCoin;
 /// Edit addresses there, not here. Falls back to compiled-in defaults until the asset loads.
 List<DonationCoin> get kDonationCoins => AppConfig.current.donations;
 
-/// Lists privacy-coin donation addresses with copy + QR. No custody, no tracking.
+/// Lists donation addresses with copy + QR. No custody, no tracking.
 class DonationsScreen extends StatelessWidget {
   const DonationsScreen({super.key});
 

@@ -259,11 +259,21 @@
         Night Drop is free. If it’s useful to you, a donation keeps it alive. We accept
         privacy coins so giving stays anonymous — no accounts, no tracking, no trail.
       </p>
+      <!-- Static copies of config/app_config.json's donations, for visitors without JavaScript —
+           Tor Browser's "Safest" level disables it, and the onion site is where those visitors
+           are. config.js re-renders the same list when scripts run. A placeholder here once showed
+           Safest-mode visitors no Monero address at all; app/test/donations_test.dart now fails
+           if any address in the config is missing from this page. -->
       <div class="grid" id="donate-grid">
         <article class="card coin">
           <h3>Monero (XMR)</h3>
-          <p class="muted">Strong sender, receiver, and amount privacy.</p>
-          <code class="addr">replace-with-your-XMR-address</code>
+          <p class="muted">Default. Strong sender/receiver/amount privacy.</p>
+          <code class="addr">49yRv29r6yHYBGZH4z1uGTXg68VFYX4Zf1cWopevd32YLUwj86mXddNe8bCTaZKcRQYDRdHJrcL6uAiCRKH1AMrDTQNNZZm</code>
+        </article>
+        <article class="card coin">
+          <h3>Zcash (ZEC)</h3>
+          <p class="muted">Shielded-only address. Send from a shielded wallet (e.g. Zodl) so the payment stays private.</p>
+          <code class="addr">u1q6yxrsr95z7md9fgsnxhjc39dsqd4yvtedhkxq5hmackxxf38pfp8p7jdv0fs6uhp5wzxycykw7s4hyzgcyprkcue87f8afq3fhl0hg4fr8c6h7nalhhnx62qrzt3ucfjpxq6mx4cxmxy0q70ef5yhf4dhen6fgslsntl85zju00ulhk</code>
         </article>
       </div>
       <!--<p class="fineprint">Addresses are non-custodial and published as-is. Edit them in one

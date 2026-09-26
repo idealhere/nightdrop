@@ -25,7 +25,8 @@ class DonationCoin {
 }
 
 /// Built-in fallback used when the bundled config can't be read (e.g. widget tests). The
-/// canonical values live in `config/app_config.json` and are synced here by `make config`.
+/// canonical values live in `config/app_config.json`. `make config` does NOT sync this list — it is
+/// kept in step by hand, and `test/donations_test.dart` fails if the two differ.
 const List<DonationCoin> kDefaultDonations = [
   DonationCoin(
     name: 'Monero',
@@ -33,6 +34,14 @@ const List<DonationCoin> kDefaultDonations = [
     address:
         '49yRv29r6yHYBGZH4z1uGTXg68VFYX4Zf1cWopevd32YLUwj86mXddNe8bCTaZKcRQYDRdHJrcL6uAiCRKH1AMrDTQNNZZm',
     note: 'Default. Strong sender/receiver/amount privacy.',
+  ),
+  DonationCoin(
+    name: 'Zcash',
+    ticker: 'ZEC',
+    address:
+        'u1q6yxrsr95z7md9fgsnxhjc39dsqd4yvtedhkxq5hmackxxf38pfp8p7jdv0fs6uhp5wzxycykw7s4hyzgcyprkcue87f8afq3fhl0hg4fr8c6h7nalhhnx62qrzt3ucfjpxq6mx4cxmxy0q70ef5yhf4dhen6fgslsntl85zju00ulhk',
+    note:
+        'Shielded-only address. Send from a shielded wallet (e.g. Zodl) so the payment stays private.',
   ),
 ];
 

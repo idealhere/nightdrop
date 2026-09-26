@@ -404,6 +404,7 @@ impl Node {
             return false;
         }
         let me = self.identity_key();
+        let frame_confirms: bool;
         let (addr, frame) = {
             let Some(chat) = self.chats.get_mut(contact_id) else {
                 return false;
@@ -422,6 +423,7 @@ impl Node {
             if confirm.is_some() {
                 pair.confirm_sent = true;
             }
+            frame_confirms = confirm.is_some();
             let payload = encode_payload(&pair.own, confirm.as_ref());
             let message = crypto::encrypt(&mut chat.session, &payload);
             (
@@ -434,6 +436,15 @@ impl Node {
         };
         self.dirty = true;
         let taken = self.deliver(&addr, contact_id, &frame).is_ok();
+        crate::diag!(
+            "mailbox: sent our contribution{} — {}",
+            if frame_confirms {
+                " + confirmation"
+            } else {
+                ""
+            },
+            if taken { "taken" } else { "not delivered" }
+        );
         if taken {
             if let Some(pair) = self
                 .chats
@@ -479,13 +490,26 @@ impl Node {
             if pair.peer != Some(theirs) {
                 // New or changed: a changed contribution means they lost the old secret (a restore),
                 // so stop posting v2 to them at once and re-agree.
+                crate::diag!(
+                    "mailbox: {} peer contribution",
+                    if pair.peer.is_some() {
+                        "CHANGED"
+                    } else {
+                        "new"
+                    }
+                );
                 pair.peer = Some(theirs);
                 pair.peer_confirmed = false;
                 pair.confirm_sent = false;
             }
             let secret = pair_secret(&me, from, &pair.own, &theirs);
             if their_confirm == Some(confirm_hash(&secret)) {
+                if !pair.peer_confirmed {
+                    crate::diag!("mailbox: peer confirmed the secret — posting v2 from now on");
+                }
                 pair.peer_confirmed = true;
+            } else if their_confirm.is_some() {
+                crate::diag!("mailbox: peer confirmation did not match — staying on v1");
             }
             // Reply when they have not confirmed (they need ours), or when we have not yet sent our
             // confirmation (they need that). A confirm-bearing frame after both sides confirmed

@@ -226,6 +226,13 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
             }
         }
     }
+    crate::diag!(
+        "relay: drained {} fragment jobs ({} handles), {} blobs, {} relay(s) skipped after failing",
+        plan.jobs.len(),
+        plan.jobs.iter().map(|j| j.handles.len()).sum::<usize>(),
+        blobs.len(),
+        failed.len()
+    );
     RelayHarvest {
         blobs,
         reachability: answered,
@@ -250,6 +257,14 @@ fn queue_on_relays(
     bytes: &[u8],
 ) -> Result<Vec<QueuedReceipt>> {
     let sealed = relay_wrap(contact_id, bytes)?;
+    crate::diag!(
+        "relay: queueing a copy under a {} handle",
+        if handle == mailbox_handle(contact_id) {
+            "v1"
+        } else {
+            "v2"
+        }
+    );
     // Each recipient on its own circuits: posts for two people over one circuit would tell the
     // relay they share a correspondent — the contact graph per-pair handles exist to hide
     // (`mailbox.rs`, `post_group`). A no-op off Tor.

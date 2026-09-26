@@ -36,6 +36,10 @@ pub(super) struct MailboxPair {
     pub(super) peer_confirmed: bool,
     /// We have sent a frame carrying *our* confirmation. Governs replies, so they terminate.
     pub(super) confirm_sent: bool,
+    /// When our contribution first reached the peer or a relay (unix secs). Against the peer's
+    /// later activity, this is what tells an older build from an offline one
+    /// ([`Node::peer_on_old_version`]).
+    pub(super) announced_at: Option<u64>,
 }
 
 impl MailboxPair {
@@ -48,6 +52,7 @@ impl MailboxPair {
             peer: None,
             peer_confirmed: false,
             confirm_sent: false,
+            announced_at: None,
         }
     }
 }
@@ -74,20 +79,23 @@ pub(super) fn from_persisted(chat: &crate::storage::PersistedChat) -> Option<Mai
         // Never confirmed without the contribution it confirms.
         peer_confirmed: peer.is_some() && chat.mailbox_peer_confirmed,
         confirm_sent: peer.is_some() && chat.mailbox_confirm_sent,
+        announced_at: chat.mailbox_announced_at,
     })
 }
 
-/// The persisted fields for a chat's agreement state: `(own, peer, peer_confirmed, confirm_sent)`.
+/// The persisted fields for a chat's agreement state:
+/// `(own, peer, peer_confirmed, confirm_sent, announced_at)`.
 pub(super) fn to_persisted(
     pair: &Option<MailboxPair>,
-) -> (Option<String>, Option<String>, bool, bool) {
+) -> (Option<String>, Option<String>, bool, bool, Option<u64>) {
     match pair {
-        None => (None, None, false, false),
+        None => (None, None, false, false, None),
         Some(p) => (
             Some(b64_32(&p.own)),
             p.peer.as_ref().map(b64_32),
             p.peer_confirmed,
             p.confirm_sent,
+            p.announced_at,
         ),
     }
 }
@@ -230,6 +238,12 @@ fn decode_payload(p: &[u8]) -> Option<([u8; 32], Option<[u8; 32]>)> {
     }
 }
 
+/// How long after our contribution went out a peer's activity still proves nothing (§5.4): time
+/// for their reply to cross a relay (a 5-minute poll round, twice) and arrive behind frames they
+/// sent before reading ours. A false notice inside this window would tell someone their contact
+/// needs an update when the reply was simply still on its way.
+pub(super) const OLD_VERSION_GRACE_SECS: u64 = 10 * 60;
+
 /// Refusal at the contact cap (§8). Said plainly, because the reason explains the product.
 pub(super) const AT_CONTACT_CAP: &str =
     "You have 50 contacts, the most Night Drop allows. Delete a \
@@ -256,6 +270,24 @@ impl Node {
             anyhow::bail!(AT_CONTACT_CAP);
         }
         Ok(())
+    }
+
+    /// Whether `chat`'s peer is on a build from before v2 mailboxes (§5.4). The evidence: they have
+    /// been active — any authenticated frame, a silent ack included — well after our contribution
+    /// reached them, and never sent theirs. A current build replies to a contribution on receipt
+    /// and announces its own on every launch, so the silence means it dropped the frame undecoded.
+    /// A peer that is merely offline has shown no activity since, and does not qualify.
+    pub(super) fn peer_on_old_version(chat: &Chat) -> bool {
+        let Some(pair) = &chat.mailbox else {
+            return false;
+        };
+        let (Some(announced), Some(seen)) = (pair.announced_at, chat.last_seen) else {
+            return false;
+        };
+        chat.authorized
+            && !chat.closed
+            && pair.peer.is_none()
+            && seen > announced.saturating_add(OLD_VERSION_GRACE_SECS)
     }
 
     /// The handle to post mail for `contact_id` under **right now**: v2 once the pair is
@@ -401,7 +433,17 @@ impl Node {
             )
         };
         self.dirty = true;
-        self.deliver(&addr, contact_id, &frame).is_ok()
+        let taken = self.deliver(&addr, contact_id, &frame).is_ok();
+        if taken {
+            if let Some(pair) = self
+                .chats
+                .get_mut(contact_id)
+                .and_then(|c| c.mailbox.as_mut())
+            {
+                pair.announced_at.get_or_insert_with(crate::api::now_secs);
+            }
+        }
+        taken
     }
 
     /// A [`Frame::MailboxKey`] from `from`. Stores their contribution, checks their confirmation,

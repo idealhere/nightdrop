@@ -1,6 +1,7 @@
 # Design — Per-pair, epoch-rotating mailbox handles
 
-**Status:** design agreed 2026-09-22, not yet implemented. Targets 0.1.23.
+**Status:** design agreed 2026-09-22; implemented on branch `mailbox-v2` 2026-09-26 for 0.1.25. Where
+the build departs from or sharpens the text below, §9 says so.
 **Relates to:** `ARCHITECTURE.md` §6 (relay, store-and-forward) and §11.2, `multi-relay-mailboxes.md`
 (#17), `cover-traffic.md` (#4). Group chat (0.3) depends on this but does not block it.
 
@@ -217,3 +218,51 @@ limit is honest; implying the protocol enforces it would not be.
 At the cap the app should refuse a new contact with a reason, not fail quietly — and the reason is
 worth giving plainly, because "this app limits you to 50 contacts so that a relay cannot rebuild
 your address book" is a sentence that explains the product.
+
+## 9. As built (0.1.25)
+
+Where the implementation differs from, or makes concrete, the sections above.
+
+**Switching is gated on proof, not on an announcement (§5.1–5.2).** Each side contributes 32 random
+bytes in a `Frame::MailboxKey` over the existing session; the secret is HKDF over both, bound to
+both identity keys. A side posts v2 only after the peer sends a confirmation hash proving it
+derived the same secret. Announcing a capability alone would let a sender post before the
+recipient could compute the handle. A changed contribution (a peer restored an old backup) drops
+the pair back to v1 at once and re-agrees. An older build drops the frame undecoded and never
+confirms, so it stays on v1 in both directions with no further signalling.
+
+**The notice cannot be on both sides (§5.4).** The side that can act is running a build that has
+no such notice and cannot be given one. So the newer side shows a persistent banner worded to be
+passed on ("ask them to update"). The only other path to the older side is its own update prompt.
+The banner is raised only on evidence: the peer has been active (any authenticated frame, a silent
+ack included) more than 10 minutes after our contribution reached them or a relay, and has never
+sent theirs. A current build replies to a contribution on receipt and announces its own on every
+launch, so that silence means the frame was dropped. A contact who is merely offline shows no
+activity and is never flagged. The 10 minutes cover a reply crossing a relay behind frames sent
+before ours was read.
+
+**Fragments (§5c).** Seven buckets per epoch, chosen by a keyed hash of a persisted per-device seed,
+the epoch and the contact, so a contact's bucket is fixed for the day, survives a restart, and
+adding a contact moves nobody else. Each bucket is an arti isolation group. The static v1 handle is
+polled in a group of its own, since beside anything it would name the owner of those v2 handles.
+Yesterday's, today's and tomorrow's handles each poll in **their own day's** partition, never
+together, which would link a pair across days. Each epoch is padded with dummies to a multiple of
+8 (minimum 8), stable for the epoch like real handles. Job order is shuffled every round with a
+0–300 ms random gap (Tor only). A relay that fails is skipped for the rest of the round; otherwise
+each fragment would wait out the 30 s dial timeout in turn. A new relay request, `take_many`,
+drains one fragment in one round-trip; older relays get one `take` per handle.
+
+**The cost is higher than §8 estimated.** §8 counts 7 circuits per round per relay. Because each day
+of the three-day window needs its own partition, the build uses up to **1 + 3 × 7 = 22** isolation
+groups per relay. arti reuses a group's circuit until it goes dirty (about 10 minutes), so the real
+cost is circuit builds per ~10 minutes, not per round. Still roughly three times the estimate.
+The cheapest reduction, if it proves heavy on phones: poll d+1 only in the last hours of the UTC
+day. It exists only for clock skew, and d−1 cannot be dropped, because mail posted just before
+midnight waits under it for up to 24 hours.
+
+**Posting is isolated too.** Posts and recalls ride one isolation group per recipient, so a relay
+cannot tell that deposits for two people came from one sender by the circuit they share.
+
+**The cap (§8)** is 50 open, approved chats. A pending request is not a contact yet, and
+re-pairing an existing contact is not new. It is checked before anything reaches the network,
+both when connecting and when approving, and the refusal states the reason.

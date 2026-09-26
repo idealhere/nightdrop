@@ -682,6 +682,10 @@
   "@peerCapturesSilentBanner": {
     "description": "Shown to the sender when the peer's device (Android below 14) cannot report screen captures, so the peer's silence carries no information."
   },
+  "peerOnOldVersionBanner": "This person is using an older version of Night Drop, so messages that wait on a relay for either of you are addressed less privately. Their app can't tell them — ask them to update. Support for their version will end in a future release.",
+  "@peerOnOldVersionBanner": {
+    "description": "Shown when the peer's app predates private mailbox addressing. The peer's older app cannot display this, so the text asks the reader to tell them."
+  },
   "updateDownloading": "Downloading over Tor…",
   "@updateDownloading": {
     "description": "Shown while the update APK is downloading."

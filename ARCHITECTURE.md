@@ -395,17 +395,21 @@ on a re-pair (new session) exactly like `verified`.
   server storage to save device space.
   - The relay never holds keys and cannot read content.
   - Metadata is minimized; blobs are addressed by derived handles that carry no identity
-    key and no onion address. **As shipped through 0.1.22 a handle is a static hash of the
-    recipient's long-term identity key, so it is stable for the life of that identity** — the
-    relay cannot tell *who* a mailbox belongs to, but it can tell that two deposits are for the
-    same person, and build a contact graph from co-occurrence. `docs/design/mailbox-handles.md`
-    replaces this with a per-pair, daily-rotating handle; until that ships, do not describe these
-    as ephemeral or unlinkable.
+    key and no onion address. **Through 0.1.24 a handle was a static hash of the recipient's
+    long-term identity key**, stable for the life of that identity: the relay could not tell
+    *who* a mailbox belonged to, but could tell that two deposits were for the same person and
+    build a contact graph from co-occurrence. **From 0.1.25** each chat agrees its own secret and
+    mail goes to a handle derived from it, the recipient and the UTC day
+    (`docs/design/mailbox-handles.md`): unlinkable across senders and across days, but **not**
+    within one pair-day, and never "ephemeral" — §5b of that doc defines both words. Polling is
+    fragmented onto isolated Tor circuits (§5c), without which collection would re-link what the
+    deposits hide. A chat with a peer on an older build stays on the static handle both ways,
+    and the newer side is told (§5.4).
   - When server storage is active, **both parties see a persistent in-chat warning**
     that messages are stored remotely.
 - **Multi-relay / self-hosting (#17):** a recipient may advertise an **extra relay set** on
   top of the shared primary default (`my_relays`, announced in-band as `Frame::Relays`, held by
-  the peer as a contact's `peer_relays`). Because `mailbox_handle(recipient_ik)` is
+  the peer as a contact's `peer_relays`). Because a mailbox handle (v1 or v2) is
   **relay-agnostic** (the same handle works on every relay) and every queued blob is already
   sealed under a recipient-derived key, a sender simply seals **once** and posts the identical
   blob to the primary **plus** the recipient's set (`queue_on_relays`); the recipient drains all
@@ -610,8 +614,9 @@ Design record, including how this constrains the planned duress wipe: `docs/desi
 
 **Protect against**
 - Network observers / the relay operator reading message content → E2E + Tor.
-- The relay correlating who-talks-to-whom → minimized metadata, unlinkable handles,
-  onion addressing, 24h cap.
+- The relay correlating who-talks-to-whom → minimized metadata, per-pair daily handles polled
+  in isolated fragments (`mailbox-handles.md`; linkable within a pair-day, and a static handle
+  for peers on builds before 0.1.25), onion addressing, 24h cap.
 - Stranger spam / unsolicited contact → QR pre-auth and short-code PAKE gating.
 - Device theft (at rest) → encrypted local store, keys in OS keystore.
 - MITM during pairing → PAKE for short codes; scanned bundle for QR.
@@ -882,15 +887,25 @@ restarts; its address goes in config (`config/app_config.json` `relay` field, ov
 `NIGHTDROP_RELAY`). Ships externally unchanged (drop on a VPS; same onion via its state dir).
 
 All payloads are opaque E2E blobs; the relay learns no keys, no plaintext, no identity. Mailbox
-handle = an unlinkable derived key both peers can compute (per §5c style), never the
-identity/onion. **Implemented** (`node::mailbox_handle` / `relay_wrap`): the handle is a
-truncated, domain-separated SHA-256 of the recipient's long-term identity key (senders know
-their contact's key; the receiver knows its own), and every queued frame is additionally
+handle = a derived key both peers can compute, never the identity/onion. Two exist
+(`docs/design/mailbox-handles.md`). **v2** (`node::mailbox`, from 0.1.25): HKDF over a per-chat
+secret agreed in-band (`Frame::MailboxKey`), the recipient's key and the UTC day — different per
+sender and per day, so a relay cannot link two senders' deposits for one person or one day's to
+the next; it can still link one pair's deposits within a day. A side posts v2 only once the peer
+has proven it holds the secret; readers poll v1 plus d-1/d/d+1 of every pair, in fragments fixed
+for the epoch, each on its own Tor isolation group, padded with dummy handles (§5c); the 50-contact
+cap bounds that work (§8). **v1** (`node::mailbox_handle`), still posted to peers on older builds
+and still polled: a truncated, domain-separated SHA-256 of the recipient's long-term identity key
+— static, so linkable for the life of the identity. Either way, every queued frame is additionally
 **sealed** (ChaCha20-Poly1305 under a key derived from the recipient's identity key) before
 posting — wire frames carry routing metadata (sender identity keys; the sender's onion in
 `Hello`) that is fine peer-to-peer but must not sit readable on the relay. Only the recipient
 (or a party who already knows their identity key, i.e. their contacts) can even parse an
 envelope; message content inside remains Double-Ratchet E2E as always.
+
+`take_many(handles)` drains one polling fragment (at most 64 handles) in one round-trip; a relay
+that predates it answers "bad request" and the client falls back to one `take` per handle. The
+handles in it already share a circuit, so batching tells the relay nothing the circuit did not.
 
 The relay enforces **resource limits** (`RelayLimits`): a max blob size, per-mailbox depth and
 byte caps, and a global byte ceiling — all **reject-new**, so a flooder can neither OOM the
@@ -1113,7 +1128,8 @@ and stripped from production. Build order: flow-log first (raw source), dashboar
 
 ### 11.10 Invariant compliance
 All of the above keep: opaque E2E blobs only, no server-side keys/logs, no persistent
-identity-linked metadata (mailbox handles are unlinkable, capability tokens carry no identity),
+identity-linked metadata (mailbox handles carry no identity — rotating per pair and day from 0.1.25,
+see §11.2 for what a relay can still link — and capability tokens carry no identity),
 opt-in + 24h cap + persistent warning for server storage, Tor by default. The one area needing
 care is the **notification path**: keep it **content-free** (local notifications generated
 on-device; the relay only ever returns a `peek` count). Timely push to a **killed** app (esp.

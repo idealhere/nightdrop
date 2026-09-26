@@ -522,6 +522,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This person\'s device can\'t tell them about screenshots, so it won\'t tell you either. If they capture what you send, you won\'t hear about it.';
 
   @override
+  String get peerOnOldVersionBanner =>
+      'This person is using an older version of Night Drop, so messages that wait on a relay for either of you are addressed less privately. Their app can\'t tell them — ask them to update. Support for their version will end in a future release.';
+
+  @override
   String get updateDownloading => 'Downloading over Tor…';
 
   @override

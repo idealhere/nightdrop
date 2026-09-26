@@ -121,6 +121,10 @@ pub struct PersistedChat {
     /// We have sent our own confirmation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub mailbox_confirm_sent: bool,
+    /// When our contribution first reached the peer or a relay (unix secs) — with the peer's later
+    /// activity, what tells an older build from an offline one (`mailbox.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_announced_at: Option<u64>,
 }
 
 /// `serde` default for [`PersistedChat::authorized`] — see the field's note on why absence must

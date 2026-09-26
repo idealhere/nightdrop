@@ -112,6 +112,7 @@ impl Node {
                                 last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                                 local_name: String::new(),
                                 identity_tag: String::new(),
+                                peer_on_old_version: false,
                             },
                             peer_address: peer_address.clone(),
                             session: accepted.session,

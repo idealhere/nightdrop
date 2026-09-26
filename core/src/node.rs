@@ -1495,6 +1495,7 @@ impl Node {
                 dto.last_seen_secs = c.last_seen.unwrap_or(0);
                 dto.local_name = c.local_name.clone();
                 dto.identity_tag = identity_tag(&c.contact.id);
+                dto.peer_on_old_version = Self::peer_on_old_version(c);
                 dto
             })
             .collect()

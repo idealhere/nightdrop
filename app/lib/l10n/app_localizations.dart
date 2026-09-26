@@ -964,6 +964,12 @@ abstract class AppLocalizations {
   /// **'This person\'s device can\'t tell them about screenshots, so it won\'t tell you either. If they capture what you send, you won\'t hear about it.'**
   String get peerCapturesSilentBanner;
 
+  /// Shown when the peer's app predates private mailbox addressing. The peer's older app cannot display this, so the text asks the reader to tell them.
+  ///
+  /// In en, this message translates to:
+  /// **'This person is using an older version of Night Drop, so messages that wait on a relay for either of you are addressed less privately. Their app can\'t tell them — ask them to update. Support for their version will end in a future release.'**
+  String get peerOnOldVersionBanner;
+
   /// Shown while the update APK is downloading.
   ///
   /// In en, this message translates to:

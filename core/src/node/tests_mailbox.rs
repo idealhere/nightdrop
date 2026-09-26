@@ -1,7 +1,9 @@
 //! v2 mailbox handles (`docs/design/mailbox-handles.md`, `mailbox.rs`). The property that matters
 //! most is the one the design puts first: **no message is ever addressed to a handle its recipient
 //! cannot compute.** Each test here is a way that could go wrong.
-use super::mailbox::{current_epoch, pair_secret, v2_handle, MailboxPair, POLL_PAD};
+use super::mailbox::{
+    current_epoch, pair_secret, v2_handle, MailboxPair, OLD_VERSION_GRACE_SECS, POLL_PAD,
+};
 use super::*;
 use crate::relay_client::{RelayClient, RelayServer};
 use crate::transport::MemoryNetwork;
@@ -547,4 +549,83 @@ fn a_dead_relay_costs_one_attempt_per_round_not_one_per_fragment() {
     assert!(harvest
         .reachability
         .contains(&("live.onion".to_string(), true)));
+}
+
+// ---- Stage 3: telling the user their contact is on an older version (§5.4) ----
+
+/// Move the pairing — our contribution's send time and the peer's activity so far — `secs` into
+/// the past, standing in for the wait.
+fn backdate_announce(node: &mut Node, contact: &str, secs: u64) {
+    let chat = node.chats.get_mut(contact).unwrap();
+    chat.last_seen = chat.last_seen.map(|t| t - secs);
+    let pair = chat.mailbox.as_mut().unwrap();
+    pair.announced_at = Some(pair.announced_at.expect("announced") - secs);
+}
+
+fn flagged_old(node: &Node, contact: &str) -> bool {
+    node.contacts()
+        .iter()
+        .find(|c| c.id == contact)
+        .unwrap()
+        .peer_on_old_version
+}
+
+#[test]
+fn an_old_peer_is_flagged_once_it_is_active_and_still_silent() {
+    let mut p = pair(true);
+    assert!(
+        !flagged_old(&p.alice, &p.bob_id),
+        "not while their reply could still be on its way"
+    );
+    backdate_announce(&mut p.alice, &p.bob_id, OLD_VERSION_GRACE_SECS + 60);
+    assert!(
+        !flagged_old(&p.alice, &p.bob_id),
+        "not on activity from before the grace ran out"
+    );
+    // Bob is active now, long after Alice's contribution reached him, and never answered it.
+    p.bob.send(&p.alice_id, "still here").unwrap();
+    p.alice.pump().unwrap();
+    assert!(flagged_old(&p.alice, &p.bob_id));
+
+    // It survives a restart: the send time is persisted with the agreement.
+    let key = [5u8; 32];
+    let saved = p.alice.export(&key);
+    let restored = Node::restore(&saved, Box::new(p.net.endpoint("alice2")), &key).unwrap();
+    assert!(flagged_old(&restored, &p.bob_id), "after a restart");
+}
+
+#[test]
+fn a_current_peer_is_never_flagged_even_long_after() {
+    let mut p = pair(false);
+    backdate_announce(&mut p.alice, &p.bob_id, 24 * 60 * 60);
+    p.bob.send(&p.alice_id, "hi").unwrap();
+    p.alice.pump().unwrap();
+    assert!(!flagged_old(&p.alice, &p.bob_id));
+}
+
+#[test]
+fn an_offline_peer_is_not_mistaken_for_an_old_one() {
+    let mut p = pair(true);
+    // A day has passed and Bob has sent nothing since: silence proves nothing about his version.
+    backdate_announce(&mut p.alice, &p.bob_id, 24 * 60 * 60);
+    assert!(!flagged_old(&p.alice, &p.bob_id));
+}
+
+#[test]
+fn the_notice_clears_when_the_old_peer_updates() {
+    let mut p = pair(true);
+    backdate_announce(&mut p.alice, &p.bob_id, OLD_VERSION_GRACE_SECS + 60);
+    p.bob.send(&p.alice_id, "old").unwrap();
+    p.alice.pump().unwrap();
+    assert!(flagged_old(&p.alice, &p.bob_id));
+
+    // Bob updates: his next launch announces his contribution, and the pair agrees.
+    p.bob.legacy_v1_only = false;
+    p.bob.announce_mailbox();
+    for _ in 0..3 {
+        p.alice.pump().unwrap();
+        p.bob.pump().unwrap();
+    }
+    assert!(confirmed(&p.alice, &p.bob_id));
+    assert!(!flagged_old(&p.alice, &p.bob_id));
 }

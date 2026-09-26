@@ -1728,6 +1728,7 @@ class RustNightdropCore extends NightdropCore {
         peerRelays: c.peerRelays,
         remoteStorageHealthy: c.remoteStorageHealthy,
         lastSeenSecs: c.lastSeenSecs.toInt(),
+        peerOnOldVersion: c.peerOnOldVersion,
         localName: c.localName,
         identityTag: c.identityTag,
       );

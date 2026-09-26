@@ -861,6 +861,7 @@ class _ChatScreenState extends State<ChatScreen> {
               // means "they have not told us" and deliberately shows nothing — claiming either
               // answer without evidence is worse than staying quiet.
               if (contact.peerCapturesSilent == true) const _PeerCapturesSilentBanner(),
+              if (contact.peerOnOldVersion) const _PeerOnOldVersionBanner(),
               _SilenceBanner(lastSeenSecs: contact.lastSeenSecs),
               Expanded(
                 child: visibleMessages.isEmpty
@@ -1073,6 +1074,37 @@ class _PeerCapturesSilentBanner extends StatelessWidget {
           Expanded(
             child: Text(
               AppLocalizations.of(context)!.peerCapturesSilentBanner,
+              style:
+                  TextStyle(color: scheme.onSecondaryContainer, fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "This person is on an older version" (`mailbox-handles.md` §5.4). The design wants the notice on
+/// both sides, but the side that can act is running a build that cannot show it — so it is shown
+/// here, worded to be passed on.
+class _PeerOnOldVersionBanner extends StatelessWidget {
+  const _PeerOnOldVersionBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: scheme.secondaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(Icons.system_update_outlined,
+              size: 18, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              AppLocalizations.of(context)!.peerOnOldVersionBanner,
               style:
                   TextStyle(color: scheme.onSecondaryContainer, fontSize: 12.5),
             ),

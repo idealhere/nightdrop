@@ -315,6 +315,12 @@ pub struct Contact {
     /// a seized phone, a lost phone and a flat battery all look the same from here, and the UI must
     /// not imply otherwise. That ambiguity is deliberate — see `docs/design/silence-detection.md`.
     pub last_seen_secs: u64,
+    /// This contact's app predates private mailbox addressing (`docs/design/mailbox-handles.md`
+    /// §5.4): offline mail between you still goes to their permanent address, which a relay can
+    /// link across senders and days. Set only on evidence — they have been active well after our
+    /// agreement frame reached them and never answered it — so an offline contact is never
+    /// reported as outdated. Their app cannot show a notice of its own; this is how they hear.
+    pub peer_on_old_version: bool,
 }
 
 /// Reachability of one of our advertised extra relays (#17), for the UI's relay-status surface.

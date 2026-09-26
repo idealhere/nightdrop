@@ -71,6 +71,7 @@ class Contact {
     this.peerRelays = const [],
     this.remoteStorageHealthy = true,
     this.lastSeenSecs = 0,
+    this.peerOnOldVersion = false,
     this.localName = '',
     this.identityTag = '',
   });
@@ -142,6 +143,13 @@ class Contact {
   /// identity, a seized phone and a holiday are indistinguishable from here. See
   /// `docs/design/silence-detection.md`.
   int lastSeenSecs;
+
+  /// The peer's app predates private mailbox addressing, so offline mail between you still goes to
+  /// permanent addresses a relay can link. Set only on evidence (they were active well after our
+  /// agreement frame reached them and never answered), so an offline contact is never flagged.
+  /// Their older app cannot show a notice of its own — this banner is how they hear, through you.
+  /// See `docs/design/mailbox-handles.md` §5.4.
+  bool peerOnOldVersion;
 
   /// A nickname **you** gave this contact. Local only — never sent, never announced. Takes
   /// precedence over [theirName], which is whatever the peer chose (or "Anon" forever).

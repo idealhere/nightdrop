@@ -2753,8 +2753,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Contact dco_decode_contact(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 17)
+      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
     return Contact(
       id: dco_decode_String(arr[0]),
       theirName: dco_decode_String(arr[1]),
@@ -2772,6 +2772,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       localName: dco_decode_String(arr[13]),
       identityTag: dco_decode_String(arr[14]),
       lastSeenSecs: dco_decode_u_64(arr[15]),
+      peerOnOldVersion: dco_decode_bool(arr[16]),
     );
   }
 
@@ -3132,6 +3133,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     final var_localName = sse_decode_String(deserializer);
     final var_identityTag = sse_decode_String(deserializer);
     final var_lastSeenSecs = sse_decode_u_64(deserializer);
+    final var_peerOnOldVersion = sse_decode_bool(deserializer);
     return Contact(
         id: var_id,
         theirName: var_theirName,
@@ -3148,7 +3150,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         remoteStorageHealthy: var_remoteStorageHealthy,
         localName: var_localName,
         identityTag: var_identityTag,
-        lastSeenSecs: var_lastSeenSecs);
+        lastSeenSecs: var_lastSeenSecs,
+        peerOnOldVersion: var_peerOnOldVersion);
   }
 
   @protected
@@ -3531,6 +3534,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.localName, serializer);
     sse_encode_String(self.identityTag, serializer);
     sse_encode_u_64(self.lastSeenSecs, serializer);
+    sse_encode_bool(self.peerOnOldVersion, serializer);
   }
 
   @protected

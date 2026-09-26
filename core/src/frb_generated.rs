@@ -3962,6 +3962,7 @@ impl SseDecode for crate::api::Contact {
         let mut var_localName = <String>::sse_decode(deserializer);
         let mut var_identityTag = <String>::sse_decode(deserializer);
         let mut var_lastSeenSecs = <u64>::sse_decode(deserializer);
+        let mut var_peerOnOldVersion = <bool>::sse_decode(deserializer);
         return crate::api::Contact {
             id: var_id,
             their_name: var_theirName,
@@ -3979,6 +3980,7 @@ impl SseDecode for crate::api::Contact {
             local_name: var_localName,
             identity_tag: var_identityTag,
             last_seen_secs: var_lastSeenSecs,
+            peer_on_old_version: var_peerOnOldVersion,
         };
     }
 }
@@ -4553,6 +4555,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::Contact {
             self.local_name.into_into_dart().into_dart(),
             self.identity_tag.into_into_dart().into_dart(),
             self.last_seen_secs.into_into_dart().into_dart(),
+            self.peer_on_old_version.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4788,6 +4791,7 @@ impl SseEncode for crate::api::Contact {
         <String>::sse_encode(self.local_name, serializer);
         <String>::sse_encode(self.identity_tag, serializer);
         <u64>::sse_encode(self.last_seen_secs, serializer);
+        <bool>::sse_encode(self.peer_on_old_version, serializer);
     }
 }
 

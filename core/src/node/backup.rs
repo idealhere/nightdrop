@@ -63,6 +63,7 @@ impl Node {
                 mailbox_peer: super::mailbox::to_persisted(&chat.mailbox).1,
                 mailbox_peer_confirmed: super::mailbox::to_persisted(&chat.mailbox).2,
                 mailbox_confirm_sent: super::mailbox::to_persisted(&chat.mailbox).3,
+                mailbox_announced_at: super::mailbox::to_persisted(&chat.mailbox).4,
                 // Persist recall receipts for still-queued messages so an edit/unsend can pull an
                 // undelivered blob off the relay even after a restart (§1.1). Flatten the
                 // by-msg_id map into a list carrying its target.
@@ -352,6 +353,7 @@ impl Node {
                         last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                         local_name: String::new(),
                         identity_tag: String::new(),
+                        peer_on_old_version: false,
                     },
                     peer_address: chat.peer_address.clone(),
                     session,
@@ -441,6 +443,7 @@ impl Node {
                                 last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                                 local_name: String::new(),
                                 identity_tag: String::new(),
+                                peer_on_old_version: false,
                             },
                             peer_address: pchat.peer_address.clone(),
                             session,

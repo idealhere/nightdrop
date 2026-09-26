@@ -938,6 +938,13 @@ class Contact {
   /// not imply otherwise. That ambiguity is deliberate — see `docs/design/silence-detection.md`.
   final BigInt lastSeenSecs;
 
+  /// This contact's app predates private mailbox addressing (`docs/design/mailbox-handles.md`
+  /// §5.4): offline mail between you still goes to their permanent address, which a relay can
+  /// link across senders and days. Set only on evidence — they have been active well after our
+  /// agreement frame reached them and never answered it — so an offline contact is never
+  /// reported as outdated. Their app cannot show a notice of its own; this is how they hear.
+  final bool peerOnOldVersion;
+
   const Contact({
     required this.id,
     required this.theirName,
@@ -955,6 +962,7 @@ class Contact {
     required this.localName,
     required this.identityTag,
     required this.lastSeenSecs,
+    required this.peerOnOldVersion,
   });
 
   @override
@@ -974,7 +982,8 @@ class Contact {
       remoteStorageHealthy.hashCode ^
       localName.hashCode ^
       identityTag.hashCode ^
-      lastSeenSecs.hashCode;
+      lastSeenSecs.hashCode ^
+      peerOnOldVersion.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -996,7 +1005,8 @@ class Contact {
           remoteStorageHealthy == other.remoteStorageHealthy &&
           localName == other.localName &&
           identityTag == other.identityTag &&
-          lastSeenSecs == other.lastSeenSecs;
+          lastSeenSecs == other.lastSeenSecs &&
+          peerOnOldVersion == other.peerOnOldVersion;
 }
 
 /// An anonymous, device-held identity handle (just its public id for the UI).

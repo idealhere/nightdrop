@@ -1066,6 +1066,13 @@ service; it then stops itself (`TaskStarter.system`) instead of showing "Watchin
 over nothing. Verified on an S25 (2026-09-26): task removed, service and process alive a minute
 later, a message sent from the desktop notified.
 
+**Not covered: a reboot or an app update.** Both end the process, and nothing brings delivery back
+until the user opens the app once. `autoRunOnBoot`/`autoRunOnMyPackageReplaced` stay off on purpose:
+they restart only the service, not the engine that runs the core, which is the "watching over
+nothing" case the service now refuses. Covering it means running the core in the service's own
+background engine instead of the UI's — a larger change, not yet made. Seen on the S25 when a
+reinstall at 14:41 left nothing running until the app was opened at 15:10.
+
 **Exit** (home menu, issue #15) is the deliberate way to stop: it stops the service, shuts the core
 down (Tor closed, pending saves written — `shutdown` now flushes the save debounce), then ends the
 process. The identity is untouched. Its dialog states the cost: mail sent meanwhile waits on the

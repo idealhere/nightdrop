@@ -4,6 +4,8 @@ A privacy-first **1:1** messenger: anonymous identities, end-to-end encryption w
 only sender and receiver can read messages, P2P over Tor, and **local-first** storage.
 No accounts, no server-side keys, no logs.
 
+Free, with no accounts and nothing to sell — it runs on donations: see [Support](#support).
+
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design and threat model, and
 [`MAINTENANCE.md`](MAINTENANCE.md) for how to update, verify, and release the app
 (toolchain, dependency upgrades, rename variables, release checklist).
@@ -196,18 +198,37 @@ promising and improving, not battle-tested, until that's done.
 ## Support
 
 Night Drop takes no payments, runs no accounts, and has nothing to sell — so donations are the
-only funding. **Monero (XMR):**
+only funding. Monero and Zcash keep a donation fully private; Bitcoin is accepted through a
+silent payment address, which keeps donations unlinkable but not invisible.
+
+**Monero (XMR)** — the default: it doesn't leak the sender, the receiver, or the amount to anyone
+watching the chain.
 
 ```
 49yRv29r6yHYBGZH4z1uGTXg68VFYX4Zf1cWopevd32YLUwj86mXddNe8bCTaZKcRQYDRdHJrcL6uAiCRKH1AMrDTQNNZZm
 ```
 
-Monero is the default for the same reason the app exists: it doesn't leak the sender, the
-receiver, or the amount to anyone watching the chain. This is the same address shown in the app
-(**Support Night Drop**) and on the website: the canonical copy lives in
-[`config/app_config.json`](config/app_config.json) and `make config` syncs it into
-`app/assets/app_config.json` and `website/config.js`. Change it there and re-run `make config` —
-this README is the one copy that isn't generated, so update it in the same commit.
+**Zcash (ZEC)** — a shielded-only address (Sapling + Orchard). Send from a shielded wallet, such as
+Zodl, so the payment stays private.
+
+```
+u1q6yxrsr95z7md9fgsnxhjc39dsqd4yvtedhkxq5hmackxxf38pfp8p7jdv0fs6uhp5wzxycykw7s4hyzgcyprkcue87f8afq3fhl0hg4fr8c6h7nalhhnx62qrzt3ucfjpxq6mx4cxmxy0q70ef5yhf4dhen6fgslsntl85zju00ulhk
+```
+
+**Bitcoin (BTC)** — a [silent payment](https://bips.dev/352/) address: each donation lands at a
+fresh address, so donations can't be linked to each other. Amounts and the sending wallet stay
+public, as with any Bitcoin payment. Your wallet must be able to send to `sp1` addresses (for
+example Cake, Sparrow, BlueWallet or Wasabi).
+
+```
+sp1qqvf5treewvewtlyvqggffn2maf44m5xgfrglaelw9yr59x9ehjrhcqeteyf7pznevdrt43xn60q3nesh9a3szvs37se3rhs8ugeuw2rxtqayfsuu
+```
+
+These are the same addresses shown in the app (**Support Night Drop**) and on the website: the
+canonical copy lives in [`config/app_config.json`](config/app_config.json) and `make config` syncs
+it into `app/assets/app_config.json` and `website/config.js`. Change them there and re-run
+`make config` — this README is the one copy that isn't generated, so update it in the same commit
+(`app/test/donations_test.dart` fails if it drifts).
 
 ## License
 

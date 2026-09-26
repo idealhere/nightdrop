@@ -1,0 +1,4 @@
+# Shows the Sponsor button on the repository page. GitHub cannot list crypto addresses here, so it
+# links to the site's donate section; the addresses themselves are in README.md#support and
+# config/app_config.json.
+custom: ["https://nightdrop.app/#donate"]

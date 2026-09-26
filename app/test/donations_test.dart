@@ -48,6 +48,16 @@ void main() {
 
   // Tor Browser's "Safest" level disables JavaScript, so the onion site's visitors may only ever
   // see the static HTML. It used to carry a placeholder instead of the Monero address.
+  // The README is the one copy that `make config` does not generate, and GitHub is where many
+  // people first look.
+  test('every donation address is in the README', () {
+    final readme = File('../README.md').readAsStringSync();
+    for (final c in _configDonations()) {
+      final address = (c as Map<String, dynamic>)['address'] as String;
+      expect(readme.contains(address), isTrue, reason: '${c['name']} address missing from README.md');
+    }
+  });
+
   test('every donation address is in the website without JavaScript', () {
     final html = File('../website/index.html').readAsStringSync();
     expect(html.contains('replace-with-'), isFalse, reason: 'no placeholder addresses');

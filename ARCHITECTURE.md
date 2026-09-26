@@ -1080,9 +1080,11 @@ relay for 24h (`RELAY_TTL`) and then expires.
 
 The persistent notification cannot be hidden by the app — Android requires one for a foreground
 service and raises its channel to at least LOW (a MIN channel was stored as importance 2 on the
-S25). On Android 13+ the user should be able to turn off the "Background delivery" category while
-the service runs on, since message notifications use a separate channel — **not yet confirmed on
-hardware**.
+S25). The user can hide it instead: turning off the "Background delivery" notification category
+leaves the service running, and message notifications are a separate channel. Confirmed on the S25
+(2026-09-26): category at importance 0, service up, a message from the desktop notified. On Samsung
+the category sits under App info › Notifications › *Notification categories*, not on the first
+screen; long-pressing the notification also reaches it, and *Minimize* is the middle ground.
 
 ### 11.9 Dev observability (relay flow log)
 A relay **flow log**, gated by a dev flag (`--dev` / `NIGHTDROP_RELAY_DEV=1`), **off in production**:

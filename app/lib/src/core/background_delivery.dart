@@ -110,10 +110,14 @@ class BackgroundDelivery {
           // user CAN do is turn this one category off in the app's notification settings — on
           // Android 13+ the service keeps running without it, and message notifications are a
           // separate channel.
+          // Named "…status", not "Background delivery": that is the in-app switch, and sharing the
+          // name sent a user to turn off delivery itself when they only meant to hide this. The id
+          // is unchanged, so Android renames the existing channel and keeps the user's settings.
           channelId: 'nightdrop_background',
-          channelName: 'Background delivery',
+          channelName: 'Background delivery status',
           channelDescription:
-              'Keeps Night Drop checking for messages over Tor while backgrounded.',
+              'Shows that Night Drop is checking for messages in the background. Turning this off '
+              'only hides the notification — messages keep arriving.',
           channelImportance: NotificationChannelImportance.LOW,
           priority: NotificationPriority.LOW,
           onlyAlertOnce: true,

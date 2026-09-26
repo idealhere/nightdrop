@@ -137,12 +137,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Undo a test build's short-lived MIN channel (Android raised it to LOW anyway, so it was
-        // reverted). A no-op on any install that never had it.
-        if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager::class.java)
-                ?.deleteNotificationChannel("nightdrop_background_quiet")
-        }
+        renameBackgroundDeliveryChannel()
         if (Build.VERSION.SDK_INT >= 33) {
             // Never snapshot this activity for Recents. Permanent, and independent of FLAG_SECURE,
             // so screenshots keep working.
@@ -192,6 +187,25 @@ class MainActivity : FlutterActivity() {
         // Left installed when the engine is kept: it works on the application context, and an
         // update download can still be finishing in the background.
         downloads = null
+    }
+
+    /**
+     * Rename an existing background-delivery notification channel to match the Dart side
+     * (`BackgroundDelivery.init` — keep the two in step).
+     *
+     * The plugin creates the channel only if it is missing, so installs that already have it would
+     * keep the old name, "Background delivery" — the same as the in-app switch, which sent a user
+     * to turn off delivery itself when they meant to hide this notification. Re-registering an
+     * existing id updates its name and description and leaves the user's settings alone.
+     */
+    private fun renameBackgroundDeliveryChannel() {
+        if (Build.VERSION.SDK_INT < 26) return
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        val channel = nm.getNotificationChannel("nightdrop_background") ?: return
+        channel.name = "Background delivery status"
+        channel.description = "Shows that Night Drop is checking for messages in the background. " +
+            "Turning this off only hides the notification — messages keep arriving."
+        nm.createNotificationChannel(channel)
     }
 
     /// The package that installed this app, or null if unknown. `getInstallSourceInfo` replaced the

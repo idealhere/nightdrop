@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../rust/api.dart' as rust;
+import 'app_process.dart';
 import 'background_delivery.dart';
 import 'app_version.dart';
 import 'nightdrop_core.dart';
@@ -313,6 +314,17 @@ class RustNightdropCore extends NightdropCore {
   /// With background delivery **on** the key has to stay resident or the foreground service
   /// couldn't decrypt anything it receives while locked — the same trade Signal makes. With it
   /// off, nothing needs the store until the next unlock, so the key goes.
+  @override
+  Future<void> exitApp() async {
+    // In this order. The service first, forced past any download hold: the user asked for
+    // everything to stop. Then the core, awaited, because `_closeCore` is what closes Tor and
+    // writes pending saves — ending the process before it returns would be the unclean
+    // disconnect this exists to avoid. Only then the process.
+    await BackgroundDelivery.stop(force: true);
+    await _closeCore();
+    await AppProcess.exit();
+  }
+
   @override
   Future<void> lockStore() async {
     if (!await isStoreLocked()) return;

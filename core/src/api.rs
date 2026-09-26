@@ -585,6 +585,15 @@ impl Inner {
         }
     }
 
+    /// Write a pending debounced save **now**, ignoring the window. For teardown: a core being shut
+    /// down has no poller left to flush it later, so a save still waiting out [`PERSIST_DEBOUNCE`]
+    /// — a delivery receipt, a burn clock — would otherwise be lost with the process.
+    fn flush_pending(&mut self) {
+        if self.persist.as_ref().is_some_and(|p| p.pending) {
+            self.save();
+        }
+    }
+
     /// Flush a pending debounced write once its window has elapsed (called by the poller each tick).
     fn maybe_flush(&mut self) {
         let due = self
@@ -2358,7 +2367,8 @@ fn shutdown_core(inner: &Arc<Mutex<Inner>>, poller: Option<&Arc<StopSignal>>) {
     }
 }
 
-/// Close the transport if the core lock can be taken within `bound`. `false` = it could not.
+/// Close the transport — and write any save still waiting on its debounce — if the core lock can
+/// be taken within `bound`. `false` = it could not.
 ///
 /// Deliberately never blocks: see [`NightdropCore::shutdown`] for what blocking here cost.
 fn try_close_transport(inner: &Mutex<Inner>, bound: Duration) -> bool {
@@ -2367,12 +2377,15 @@ fn try_close_transport(inner: &Mutex<Inner>, bound: Duration) -> bool {
         match inner.try_lock() {
             Ok(mut g) => {
                 g.me.close_transport();
+                g.flush_pending();
                 return true;
             }
             // Poisoned: some thread panicked holding it. Recover rather than give up — the
             // whole point of §1.5.3 is that a panic must not brick the core.
             Err(std::sync::TryLockError::Poisoned(e)) => {
-                e.into_inner().me.close_transport();
+                let mut g = e.into_inner();
+                g.me.close_transport();
+                g.flush_pending();
                 return true;
             }
             Err(std::sync::TryLockError::WouldBlock) => {
@@ -3113,6 +3126,37 @@ mod tests {
             "pending change flushed after the debounce window"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A save still inside its debounce window when the core is shut down must be written, not
+    /// dropped: there is no poller left to flush it later, and Exit ends the process right after.
+    #[test]
+    fn shutdown_writes_a_save_still_waiting_on_its_debounce() {
+        let dir = std::env::temp_dir().join(format!("nightdrop-flush-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state").to_string_lossy().into_owned();
+        let net = MemoryNetwork::new();
+        let me = Node::with_identity(LocalIdentity::generate(), Box::new(net.endpoint("me")));
+        let inner = Arc::new(Mutex::new(Inner {
+            me,
+            demo: None,
+            pending_backup: None,
+            persist: Some(Persist::new(path.clone(), [4u8; 32])),
+        }));
+        {
+            let mut g = inner.lock().unwrap();
+            g.save();
+            g.save_soon(); // inside the window: marked pending, not written
+            assert!(g.persist.as_ref().unwrap().pending);
+        }
+
+        shutdown_core(&inner, None);
+
+        assert!(
+            !inner.lock().unwrap().persist.as_ref().unwrap().pending,
+            "the pending save was written during shutdown"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

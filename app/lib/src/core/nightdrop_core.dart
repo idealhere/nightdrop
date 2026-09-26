@@ -244,6 +244,14 @@ abstract class NightdropCore extends ChangeNotifier {
   /// must be created to keep talking (TODO #1).
   Future<void> deleteChat(String contactId);
 
+  /// Close the app cleanly **without** touching the identity (issue #15): stop background
+  /// delivery, shut the core down — Tor closed, pending saves written — then end the process.
+  /// The next launch opens the same identity as usual.
+  ///
+  /// The counterpart to background delivery surviving a swipe: with that on, closing the screen
+  /// no longer stops anything, so this is how a user takes the app off the network on purpose.
+  Future<void> exitApp() async {}
+
   /// Terminate this device's identity: wipe the identity, contacts, and messages from the
   /// device and return to onboarding. Irreversible unless a backup was made — the only way
   /// back to these chats is restoring that backup. Peers must re-pair.

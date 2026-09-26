@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
@@ -66,6 +67,7 @@ class HomeScreen extends StatelessWidget {
               if (value == 'resettor') _confirmResetTor(context, core);
               if (value == 'update') _updateApp(context, core);
               if (value == 'about') _showAbout(context);
+              if (value == 'exit') _confirmExit(context, core);
               if (value == 'logout') _confirmLogout(context, core);
             },
             itemBuilder: (context) => [
@@ -86,6 +88,9 @@ class HomeScreen extends StatelessWidget {
               PopupMenuItem(value: 'resettor', child: Text(l10n.resetTorMenu)),
               PopupMenuItem(value: 'update', child: Text(l10n.updateApp)),
               PopupMenuItem(value: 'about', child: Text(l10n.aboutMenu)),
+              // Issue #15: leave the network and close, keeping the identity. Next to "Log out"
+              // on purpose, so the harmless way out is found before the destructive one.
+              PopupMenuItem(value: 'exit', child: Text(l10n.exitMenu)),
               PopupMenuItem(
                   value: 'logout', child: Text(l10n.logoutDeleteMenu)),
             ],
@@ -997,6 +1002,49 @@ void _showAbout(BuildContext context) {
       ],
     ),
   );
+}
+
+/// Confirm, then disconnect from Tor and close the app (issue #15). The identity is untouched.
+Future<void> _confirmExit(BuildContext context, NightdropCore core) async {
+  final l10n = AppLocalizations.of(context)!;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(l10n.exitTitle),
+      content: Text(l10n.exitBody),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(l10n.exitConfirm),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  // The shutdown waits for Tor to let go — a few seconds at worst — so say what is happening
+  // rather than leave a frozen-looking screen. Not dismissible: there is nothing to go back to.
+  unawaited(showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(
+          children: [
+            const SizedBox(
+                width: 24, height: 24, child: CircularProgressIndicator()),
+            const SizedBox(width: 16),
+            Expanded(child: Text(l10n.exitDisconnecting)),
+          ],
+        ),
+      ),
+    ),
+  ));
+  await core.exitApp();
 }
 
 /// Confirm and perform a logout / identity termination, spelling out the consequences.

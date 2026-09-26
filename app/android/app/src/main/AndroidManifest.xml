@@ -89,11 +89,15 @@
              do not ship on Play — F-Droid, GitHub releases and the onion site are unaffected — so
              the trade is a permission reviewers may ask about (answered by the subtype below)
              against background delivery that actually stays on. -->
+        <!-- stopWithTask="false": swiping the app away must not stop delivery. With "true" Android
+             stops the service itself on a swipe and never calls onTaskRemoved, so the plugin's own
+             stopWithTask option cannot override it. MainActivity keeps the engine alive for the
+             same reason, and Exit in the menu is how the user stops everything (issue #15). -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="specialUse"
             android:exported="false"
-            android:stopWithTask="true">
+            android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Maintains the user's own anonymous Tor onion service so that

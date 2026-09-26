@@ -574,6 +574,26 @@
   "@aboutMenu": {
     "description": "Menu item opening the about dialog (app name, version, license)."
   },
+  "exitMenu": "Exit",
+  "@exitMenu": {
+    "description": "Menu item that disconnects from Tor and closes the app, keeping the identity (issue #15)."
+  },
+  "exitTitle": "Exit Night Drop?",
+  "@exitTitle": {
+    "description": "Title of the Exit confirmation."
+  },
+  "exitBody": "Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Drop within that time to receive them — after that they expire, and the sender sees them as not delivered.",
+  "@exitBody": {
+    "description": "Body of the Exit confirmation: what stops, and what is kept."
+  },
+  "exitConfirm": "Exit",
+  "@exitConfirm": {
+    "description": "Confirm button of the Exit dialog."
+  },
+  "exitDisconnecting": "Disconnecting from Tor…",
+  "@exitDisconnecting": {
+    "description": "Shown while Exit shuts Tor down, which can take a few seconds."
+  },
   "logoutDeleteMenu": "Log out / delete identity",
   "@logoutDeleteMenu": {
     "description": "Menu item to log out and delete the identity."

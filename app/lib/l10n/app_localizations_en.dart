@@ -438,6 +438,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutMenu => 'About Night Drop';
 
   @override
+  String get exitMenu => 'Exit';
+
+  @override
+  String get exitTitle => 'Exit Night Drop?';
+
+  @override
+  String get exitBody =>
+      'Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Drop within that time to receive them — after that they expire, and the sender sees them as not delivered.';
+
+  @override
+  String get exitConfirm => 'Exit';
+
+  @override
+  String get exitDisconnecting => 'Disconnecting from Tor…';
+
+  @override
   String get logoutDeleteMenu => 'Log out / delete identity';
 
   @override

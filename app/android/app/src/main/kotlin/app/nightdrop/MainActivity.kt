@@ -1,11 +1,17 @@
 package app.nightdrop
 
 import android.app.Activity
+import android.app.NotificationManager
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
 
 /**
@@ -56,8 +62,55 @@ class MainActivity : FlutterActivity() {
             null
         }
 
+    // Lets Dart say whether the engine should outlive this screen, and end the app on Exit.
+    private var process: MethodChannel? = null
+
+    /**
+     * One engine for the whole process, not one per screen.
+     *
+     * The Dart side is not just UI: it runs the Tor core's poller and posts the notifications.
+     * Owned by the activity, it died whenever the activity did — swipe the app away and background
+     * delivery stopped receiving while its "Watching for messages" notification said otherwise,
+     * and reopening built a second core over the one still shutting down (see
+     * docs/advisories/2026-09-26-reopen-after-swipe-showed-recovery-screen.md). Cached here, a new
+     * screen reattaches to the running engine instead.
+     *
+     * Whether it is *kept* when the screen goes is [keepEngine]'s call, made in [onDestroy].
+     */
+    override fun provideFlutterEngine(context: Context): FlutterEngine =
+        FlutterEngineCache.getInstance().get(ENGINE_ID)
+            ?: FlutterEngine(context.applicationContext).also {
+                FlutterEngineCache.getInstance().put(ENGINE_ID, it)
+            }
+
+    // The engine is ours (cached above), not the screen's: onDestroy decides its fate.
+    override fun shouldDestroyEngineWithHost(): Boolean = false
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        process = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PROCESS_CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // True while background delivery is on: the engine then outlives the screen.
+                    "setKeepAlive" -> {
+                        keepEngine = call.arguments as? Boolean ?: false
+                        result.success(null)
+                    }
+                    // Issue #15. Dart has already stopped the service and shut the core down (Tor
+                    // closed, saves written); all that is left is the process. Ended outright rather
+                    // than left cached, so "Exit" cannot mean "still running somewhere".
+                    "exit" -> {
+                        result.success(null)
+                        Handler(Looper.getMainLooper()).post {
+                            finishAndRemoveTask()
+                            FlutterEngineCache.getInstance().remove(ENGINE_ID)
+                            Process.killProcess(Process.myPid())
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).apply {
             setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -84,6 +137,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Undo a test build's short-lived MIN channel (Android raised it to LOW anyway, so it was
+        // reverted). A no-op on any install that never had it.
+        if (Build.VERSION.SDK_INT >= 26) {
+            getSystemService(NotificationManager::class.java)
+                ?.deleteNotificationChannel("nightdrop_background_quiet")
+        }
         if (Build.VERSION.SDK_INT >= 33) {
             // Never snapshot this activity for Recents. Permanent, and independent of FLAG_SECURE,
             // so screenshots keep working.
@@ -119,9 +178,20 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         channel?.setMethodCallHandler(null)
         channel = null
-        downloads?.setMethodCallHandler(null)
-        downloads = null
+        process?.setMethodCallHandler(null)
+        process = null
+        val engine = flutterEngine
         super.onDestroy()
+        // Kept only when background delivery needs it; otherwise the engine goes with the screen,
+        // as it always did. Never on a configuration change, which recreates the screen at once.
+        if (!keepEngine && !isChangingConfigurations) {
+            downloads?.setMethodCallHandler(null)
+            FlutterEngineCache.getInstance().remove(ENGINE_ID)
+            engine?.destroy()
+        }
+        // Left installed when the engine is kept: it works on the application context, and an
+        // update download can still be finishing in the background.
+        downloads = null
     }
 
     /// The package that installed this app, or null if unknown. `getInstallSourceInfo` replaced the
@@ -140,5 +210,11 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         const val CHANNEL = "app.nightdrop/screenshots"
+        const val PROCESS_CHANNEL = "app.nightdrop/process"
+        private const val ENGINE_ID = "main"
+
+        /** Set from Dart via `setKeepAlive`; process-wide, since the engine outlives any screen. */
+        @Volatile
+        private var keepEngine = false
     }
 }

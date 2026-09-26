@@ -826,6 +826,36 @@ abstract class AppLocalizations {
   /// **'About Night Drop'**
   String get aboutMenu;
 
+  /// Menu item that disconnects from Tor and closes the app, keeping the identity (issue #15).
+  ///
+  /// In en, this message translates to:
+  /// **'Exit'**
+  String get exitMenu;
+
+  /// Title of the Exit confirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit Night Drop?'**
+  String get exitTitle;
+
+  /// Body of the Exit confirmation: what stops, and what is kept.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Drop within that time to receive them — after that they expire, and the sender sees them as not delivered.'**
+  String get exitBody;
+
+  /// Confirm button of the Exit dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit'**
+  String get exitConfirm;
+
+  /// Shown while Exit shuts Tor down, which can take a few seconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnecting from Tor…'**
+  String get exitDisconnecting;
+
   /// Menu item to log out and delete the identity.
   ///
   /// In en, this message translates to:

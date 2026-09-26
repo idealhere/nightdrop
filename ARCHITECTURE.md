@@ -1052,9 +1052,30 @@ already-running main-isolate poller keeps doing its Tor `peek` + local notificat
 task itself does nothing (`ForegroundTaskEventAction.nothing()`), so there is **no second Tor
 core** and no push provider. Started/stopped from the app lifecycle (`app.dart`), toggled by a
 "Background delivery…" home-menu switch (prompts for the Android-13+ notification permission), and
-stopped on logout. Manifest declares a typed `dataSync` foreground service + `FOREGROUND_SERVICE`,
-`FOREGROUND_SERVICE_DATA_SYNC`, `WAKE_LOCK`. Build-verified; on-device confirmation of background
-wake (especially once the Activity is swiped away and the engine may detach) is still pending.
+stopped on logout. The service is `specialUse` (a `dataSync` one is capped at six hours a day on
+Android 15 — see the manifest).
+
+**Swiping the app away keeps delivering** (0.1.24). Two things used to stop it: the service was
+`stopWithTask="true"`, and the Flutter engine — which runs the poller and posts the notifications —
+belonged to the activity and died with it. Now the service is `stopWithTask="false"` (manifest *and*
+plugin option: with the manifest flag set, Android stops the service itself and never asks the
+plugin), and `MainActivity` caches one engine per process, destroying it with the screen only when
+background delivery is off. Reopening reattaches to the running engine rather than building a
+second core. If Android kills the process anyway, the plugin's restart alarm brings back only the
+service; it then stops itself (`TaskStarter.system`) instead of showing "Watching for messages"
+over nothing. Verified on an S25 (2026-09-26): task removed, service and process alive a minute
+later, a message sent from the desktop notified.
+
+**Exit** (home menu, issue #15) is the deliberate way to stop: it stops the service, shuts the core
+down (Tor closed, pending saves written — `shutdown` now flushes the save debounce), then ends the
+process. The identity is untouched. Its dialog states the cost: mail sent meanwhile waits on the
+relay for 24h (`RELAY_TTL`) and then expires.
+
+The persistent notification cannot be hidden by the app — Android requires one for a foreground
+service and raises its channel to at least LOW (a MIN channel was stored as importance 2 on the
+S25). On Android 13+ the user should be able to turn off the "Background delivery" category while
+the service runs on, since message notifications use a separate channel — **not yet confirmed on
+hardware**.
 
 ### 11.9 Dev observability (relay flow log)
 A relay **flow log**, gated by a dev flag (`--dev` / `NIGHTDROP_RELAY_DEV=1`), **off in production**:

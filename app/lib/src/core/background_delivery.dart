@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+
+import 'app_process.dart';
 
 /// Opt-in **Android foreground-service background delivery** (§11.8, TODO #13).
 ///
@@ -15,9 +18,11 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 /// by design, so this is a no-op there. Everything is best-effort and guarded — a missing plugin
 /// or permission must never crash the app.
 ///
-/// Note: if the user *swipes the app away* (Activity destroyed) the Flutter engine may detach and
-/// the poller pause even though the process lives; reliable delivery covers the backgrounded (not
-/// force-closed) case. This needs on-device validation.
+/// **Swiping the app away keeps delivering.** The service is `stopWithTask: false`, and while this
+/// is on `MainActivity` keeps the Flutter engine — which runs the poller and posts notifications —
+/// alive when the screen goes ([AppProcess.setKeepAlive]). Before that, a swipe stopped the service
+/// and destroyed the engine, so nothing arrived until the app was reopened (S25, 2026-09-26). The
+/// way to stop everything is now **Exit** in the menu (issue #15).
 @pragma('vm:entry-point')
 void nightdropBackgroundCallback() {
   FlutterForegroundTask.setTaskHandler(_KeepAliveTaskHandler());
@@ -26,7 +31,17 @@ void nightdropBackgroundCallback() {
 /// A do-nothing handler: the foreground service exists purely to keep the process alive.
 class _KeepAliveTaskHandler extends TaskHandler {
   @override
-  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {}
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // `system` = Android restarted the service by itself, after the process was killed. The app
+    // is not running then — no engine, no Tor core — so the service would sit there saying
+    // "Watching for messages" while watching nothing, which is the one failure this feature must
+    // never have. Stop instead; opening the app starts it again properly.
+    if (starter == TaskStarter.system) {
+      try {
+        await FlutterForegroundTask.stopService();
+      } catch (_) {}
+    }
+  }
 
   @override
   void onRepeatEvent(DateTime timestamp) {}
@@ -90,6 +105,11 @@ class BackgroundDelivery {
       FlutterForegroundTask.initCommunicationPort();
       FlutterForegroundTask.init(
         androidNotificationOptions: AndroidNotificationOptions(
+          // LOW, and not MIN: Android raises a foreground service's channel to LOW regardless
+          // (measured on the S25, 2026-09-26: a MIN channel was stored as importance 2). What the
+          // user CAN do is turn this one category off in the app's notification settings — on
+          // Android 13+ the service keeps running without it, and message notifications are a
+          // separate channel.
           channelId: 'nightdrop_background',
           channelName: 'Background delivery',
           channelDescription:
@@ -105,6 +125,8 @@ class BackgroundDelivery {
           eventAction: ForegroundTaskEventAction.nothing(),
           autoRunOnBoot: false,
           autoRunOnMyPackageReplaced: false,
+          // Survive the app being swiped away (overrides the manifest). See the class comment.
+          stopWithTask: false,
           allowWakeLock: true,
           allowWifiLock: true,
         ),
@@ -112,6 +134,7 @@ class BackgroundDelivery {
     } catch (_) {
       // Plugin unavailable (e.g. test harness) — background delivery just stays off.
     }
+    unawaited(isEnabled().then(AppProcess.setKeepAlive));
   }
 
   /// Whether the user has opted in. Persisted via the plugin's own key/value store (no extra
@@ -130,6 +153,7 @@ class BackgroundDelivery {
     if (!supported) return;
     try {
       await FlutterForegroundTask.saveData(key: _kEnabledKey, value: value);
+      await AppProcess.setKeepAlive(value);
       if (!value) await stop();
     } catch (_) {}
   }
@@ -261,9 +285,10 @@ class BackgroundDelivery {
   }
 
   /// Stop the foreground service (idempotent). Refuses while a [holdDuring] job is outstanding,
-  /// so an unrelated caller cannot cut a download off at the knees.
-  static Future<void> stop() async {
-    if (!supported || _holds > 0) return;
+  /// so an unrelated caller cannot cut a download off at the knees — unless [force]d, which only
+  /// Exit does: the user asked for everything to stop, download included.
+  static Future<void> stop({bool force = false}) async {
+    if (!supported || (_holds > 0 && !force)) return;
     try {
       if (await FlutterForegroundTask.isRunningService) {
         await FlutterForegroundTask.stopService();

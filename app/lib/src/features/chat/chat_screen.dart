@@ -1228,21 +1228,29 @@ class _Bubble extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                if (message.isDeleted)
+                if (message.isDeleted || message.isBurnExpired)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.block,
+                      Icon(
+                          message.isBurnExpired
+                              ? Icons.local_fire_department_outlined
+                              : Icons.block,
                           size: 13,
                           color: (mine ? scheme.onPrimary : scheme.onSurface)
                               .withValues(alpha: 0.6)),
                       const SizedBox(width: 5),
-                      Text(
-                        l10n.messageDeleted,
-                        style: TextStyle(
-                          fontStyle: FontStyle.italic,
-                          color: (mine ? scheme.onPrimary : scheme.onSurface)
-                              .withValues(alpha: 0.6),
+                      // Flexible: the burn marker is long enough to overflow a narrow bubble.
+                      Flexible(
+                        child: Text(
+                          message.isBurnExpired
+                              ? l10n.burnExpiredUnopened
+                              : l10n.messageDeleted,
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: (mine ? scheme.onPrimary : scheme.onSurface)
+                                .withValues(alpha: 0.6),
+                          ),
                         ),
                       ),
                     ],

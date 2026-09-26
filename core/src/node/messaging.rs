@@ -1565,6 +1565,26 @@ impl Node {
         let mut changed = false;
         let mut dead_media: Vec<String> = Vec::new();
         for chat in self.chats.values_mut() {
+            // An unopened message from the peer that reaches the horizon leaves a tombstone rather
+            // than vanishing (`burn-messages.md` §6): silence reads as "nothing arrived", which is
+            // exactly wrong. Its content goes the same as if it had burned — text, sealed files and
+            // the ids that could reveal it — and with `burn_secs` cleared the retain below keeps it.
+            for m in chat.history.iter_mut() {
+                if m.burn_secs > 0
+                    && m.at != 0
+                    && !m.from_me
+                    && m.viewed_at == 0
+                    && now.saturating_sub(m.at) >= unviewed_horizon
+                {
+                    for id in [m.media_id.as_str(), m.thumb_id.as_str()] {
+                        if !id.is_empty() {
+                            dead_media.push(id.to_string());
+                        }
+                    }
+                    make_burn_tombstone(m);
+                    changed = true;
+                }
+            }
             let before = chat.history.len();
             chat.history.retain(|m| {
                 if m.burn_secs == 0 || m.at == 0 {

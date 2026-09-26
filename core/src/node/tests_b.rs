@@ -1410,6 +1410,25 @@ fn an_unopened_burn_message_expires_at_24h_and_the_senders_copy_never_burns_on_v
         !bob.messages(&alice_contact).iter().any(|m| m.burn_secs > 0),
         "a burn message nobody opened must not sit for ever"
     );
+    // It leaves a marker, not silence (`burn-messages.md` §6) — and the marker carries nothing.
+    let marks: Vec<_> = bob
+        .messages(&alice_contact)
+        .into_iter()
+        .filter(|m| m.kind == "burn_expired")
+        .collect();
+    assert_eq!(
+        marks.len(),
+        1,
+        "an unopened burn leaves exactly one tombstone"
+    );
+    let t = &marks[0];
+    assert!(t.text.is_empty() && t.msg_id.is_empty() && t.transfer_id.is_empty());
+    assert!(t.media_id.is_empty() && t.burn_secs == 0 && !t.from_me);
+    assert!(
+        !bob.mark_burn_viewed(&alice_contact, "never opened", 0),
+        "nothing left to reveal"
+    );
+    assert!(!bob.sweep_burns(), "a tombstone is not swept again");
 
     // The SENDER's copy is on the 24h horizon only — it cannot mirror a view-anchored countdown,
     // because there is deliberately no read receipt to tell it when the other side looked.
@@ -1431,6 +1450,13 @@ fn an_unopened_burn_message_expires_at_24h_and_the_senders_copy_never_burns_on_v
     assert!(
         !alice.messages(&bob_contact).iter().any(|m| m.burn_secs > 0),
         "but it does have a fixed 24h maximum life"
+    );
+    assert!(
+        !alice
+            .messages(&bob_contact)
+            .iter()
+            .any(|m| m.kind == "burn_expired"),
+        "the sender's own copy leaves no tombstone — they were told it goes after 24h"
     );
 }
 
@@ -1499,6 +1525,38 @@ fn a_burn_attachment_sends_no_thumbnail_and_no_preview_placeholder() {
     assert!(
         !sealed.exists(),
         "and so is the sealed file — a burned attachment must not survive on disk"
+    );
+
+    // An attachment nobody opens: at 24h it becomes a tombstone, and its sealed file still goes.
+    alice
+        .send_burn_media(&bob_contact, &payload, "image/jpeg", "image", 30)
+        .unwrap();
+    bob.pump().unwrap();
+    let unopened = bob
+        .messages(&alice_contact)
+        .into_iter()
+        .find(|m| !m.from_me && m.kind == "image")
+        .unwrap();
+    let sealed = std::path::Path::new(&bob_dir).join(format!("{}.bin", unopened.media_id));
+    assert!(sealed.exists());
+    let old = crate::api::now_secs() - super::RELAY_TTL.as_secs() - 1;
+    if let Some(chat) = bob.chats.get_mut(&alice_contact) {
+        for m in chat.history.iter_mut() {
+            if m.burn_secs > 0 {
+                m.at = old;
+            }
+        }
+    }
+    assert!(bob.sweep_burns());
+    assert!(
+        bob.messages(&alice_contact)
+            .iter()
+            .any(|m| m.kind == "burn_expired" && m.media_id.is_empty()),
+        "an unopened attachment leaves a tombstone that references no file"
+    );
+    assert!(
+        !sealed.exists(),
+        "the tombstone must not keep the unopened attachment's sealed file alive"
     );
 }
 

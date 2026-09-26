@@ -280,6 +280,24 @@ void main() {
     await settleScroll(tester);
   });
 
+  // An unopened burn message that hit 24h: the core leaves this marker in its place.
+  testWidgets('an expired unopened burn message shows a marker, not silence', (tester) async {
+    final (core, contact) = await pumpChat(tester);
+    core.appendForTest(Message(
+      id: 'bx-1',
+      contactId: contact.id,
+      text: '',
+      fromMe: false,
+      at: DateTime.now(),
+      kind: 'burn_expired',
+    ));
+    await tester.pump();
+
+    expect(find.text('Burn message expired unopened'), findsOneWidget);
+    expect(find.text('Tap to reveal'), findsNothing, reason: 'there is nothing left to reveal');
+    await settleScroll(tester);
+  });
+
   // A plain tap must never burn. The gesture split is what keeps this from being a mode, where a
   // forgotten toggle sends the wrong kind of message in either direction.
   testWidgets('a plain tap on send is always an ordinary message', (tester) async {

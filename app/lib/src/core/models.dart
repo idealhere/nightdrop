@@ -325,6 +325,10 @@ class Message {
   /// An "unsent" (deleted-for-both) message: rendered as a tombstone, not editable.
   bool get isDeleted => kind == 'deleted';
 
+  /// A burn message that expired before it was opened (24h). The core keeps this marker in its
+  /// place instead of deleting it without a trace (`burn-messages.md` §6); it carries no content.
+  bool get isBurnExpired => kind == 'burn_expired';
+
   /// Whether we can unsend this message — identical eligibility to [canEdit] (our own
   /// recent/queued text). Kept separate so the bubble menu can label the action distinctly.
   bool get canUnsend => canEdit;

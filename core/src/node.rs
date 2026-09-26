@@ -1573,6 +1573,25 @@ fn make_tombstone(msg: &mut ChatMessage) {
     msg.delivery = String::new();
 }
 
+/// Turn an unopened burn message that expired into a "burn message expired" marker, in place.
+/// Keeps only its position and arrival time: the content, the sealed-file ids (the caller deletes
+/// the files) and every id that could reveal or match it are cleared, and so is `burn_secs`, so it
+/// is neither blurred nor swept again.
+fn make_burn_tombstone(msg: &mut ChatMessage) {
+    msg.text = String::new();
+    msg.kind = "burn_expired".to_string();
+    msg.mime = String::new();
+    msg.media_id = String::new();
+    msg.media_size = 0;
+    msg.thumb_id = String::new();
+    msg.transfer_id = String::new();
+    msg.msg_id = String::new();
+    msg.edited = false;
+    msg.delivery = String::new();
+    msg.burn_secs = 0;
+    msg.viewed_at = 0;
+}
+
 /// Pack a `Media` envelope: `[transfer_id][kind][mime][data...]`.
 fn pack_media(transfer_id: &str, kind: &str, mime: &str, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() + transfer_id.len() + kind.len() + mime.len() + 16);

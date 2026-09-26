@@ -1432,6 +1432,12 @@ abstract class AppLocalizations {
   /// **'Message deleted'**
   String get messageDeleted;
 
+  /// Marker left in place of a burn message that was never opened within 24 hours; its content is gone.
+  ///
+  /// In en, this message translates to:
+  /// **'Burn message expired unopened'**
+  String get burnExpiredUnopened;
+
   /// Small tag marking an edited message.
   ///
   /// In en, this message translates to:

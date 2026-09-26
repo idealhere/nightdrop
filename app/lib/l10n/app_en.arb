@@ -1079,6 +1079,10 @@
     "description": "Banner shown to the joiner until the chat is approved."
   },
   "messageDeleted": "Message deleted",
+  "burnExpiredUnopened": "Burn message expired unopened",
+  "@burnExpiredUnopened": {
+    "description": "Marker left in place of a burn message that was never opened within 24 hours; its content is gone."
+  },
   "@messageDeleted": {
     "description": "Placeholder text for an unsent/tombstoned message."
   },

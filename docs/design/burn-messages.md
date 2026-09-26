@@ -50,8 +50,8 @@ The UI reveals on the tap and passes that moment (unix seconds, rounded *up*) to
 instead, and then sent the opt-in view receipt — a Tor dial, plus a relay post if the peer was
 offline — while still holding the core lock. So the reveal appeared only after the dial returned,
 with that much of its timer already gone, and the message vanished before the countdown the
-recipient was watching had finished. Rounding down made it up to a second early on top of that. The receipt
-is now sealed under the lock and sent after it is released (`DetachedSend`).
+recipient was watching had finished. Rounding down made it up to a second early on top of that.
+The receipt is now sealed under the lock and sent after it is released (`DetachedSend`).
 
 **Delete means delete**, from the encrypted store, not hide. The `Edit`/unsend path already
 removes messages and is the precedent to follow.
@@ -108,9 +108,9 @@ feature will not work for this contact. It cannot be an afterthought.
 * Does burn apply to **media** as well as text? Media is stored as sealed sidecar files, so
   deletion has a second path to cover.
 * Default burn duration, and whether the sender chooses it per message or per chat.
-* Whether an expired-unviewed message leaves a tombstone ("a message expired") or nothing at all.
-  Nothing is quieter; a tombstone is less confusing. Leaning tombstone, on the same reasoning that
-  made `"sent"` a visible state rather than silence.
+* ~~Whether an expired-unviewed message leaves a tombstone ("a message expired") or nothing at
+  all.~~ **Decided: a tombstone** (built 2026-09-26, see §7). Nothing is quieter; a tombstone is less
+  confusing, on the same reasoning that made `"sent"` a visible state rather than silence.
 
 ## 7. What shipped, and what did not (2026-09-23)
 
@@ -127,9 +127,12 @@ moment with no way to ignore it.
 **Not built:**
 
 *(Media landed the same day — see below.)*
-* **A tombstone on expiry.** An expired-unviewed message currently just vanishes. §6 leaned
-  towards leaving a "a message expired" marker and that reasoning still stands; it was left out to
-  keep the first version small.
+* ~~**A tombstone on expiry.**~~ — **done 2026-09-26.** An unopened burn message *from the peer*
+  that reaches the 24h horizon becomes a `burn_expired` marker ("Burn message expired unopened")
+  instead of vanishing. Its text, sealed files and every id that could reveal or match it are
+  destroyed exactly as a burn would destroy them, and `burn_secs` is cleared so it is neither blurred
+  nor swept again. Opened messages still leave nothing — the recipient watched them go — and neither
+  does the sender's own copy at 24h, which the sender was told about when sending.
 * ~~**The server-storage caveat in the UI**~~ — **done 2026-09-23.** The burn menu now says so
   outright when, and only when, opt-in server storage is on for that chat, in terms that match
   what actually happens: a copy sits there until the recipient's app next collects it, up to 24h

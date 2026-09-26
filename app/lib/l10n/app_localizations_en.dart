@@ -822,6 +822,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get messageDeleted => 'Message deleted';
 
   @override
+  String get burnExpiredUnopened => 'Burn message expired unopened';
+
+  @override
   String get editedTag => 'edited';
 
   @override

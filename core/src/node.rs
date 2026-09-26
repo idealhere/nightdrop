@@ -316,7 +316,15 @@ fn queue_on_relays(
             });
         }
     }
+    // The primary under another name (the signed directory lists it) is the primary: posting there
+    // again would store a second copy of every message on the same relay.
+    let primary_addr = primary.as_ref().and_then(|p| p.addr());
+    let mut posted: Vec<&str> = primary_addr.into_iter().collect();
     for addr in peer_relays {
+        if posted.contains(&addr.as_str()) {
+            continue;
+        }
+        posted.push(addr);
         let relay = mailbox::isolated(transport, &build_relay(transport, addr), group);
         if let Ok(r) = relay.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {

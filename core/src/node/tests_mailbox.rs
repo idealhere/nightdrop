@@ -666,3 +666,24 @@ fn a_relay_that_answered_keeps_its_fragments_after_a_cold_miss() {
         .reachability
         .contains(&("flaky.onion".to_string(), true)));
 }
+
+#[test]
+fn the_primary_listed_again_by_the_directory_is_used_once() {
+    let mut p = pair(false);
+    let primary = p.relay.addr().unwrap().to_string();
+    // The signed directory lists the primary itself, as the real one does.
+    p.alice.discovered_relays = vec![primary.clone()];
+    p.bob.discovered_relays = vec![primary];
+
+    p.net.disconnect("bob");
+    p.alice.send(&p.bob_id, "once").unwrap();
+    assert_eq!(
+        p.relay.peek(&p.alice.post_handle(&p.bob_id)).unwrap(),
+        1,
+        "one copy on the relay, not one per name"
+    );
+
+    let plan = p.bob.relay_drain_plan().unwrap();
+    let fragments = p.bob.poll_fragments().len();
+    assert_eq!(plan.jobs.len(), fragments, "each fragment polled once");
+}

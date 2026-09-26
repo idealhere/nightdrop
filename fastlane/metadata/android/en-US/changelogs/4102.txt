@@ -1,0 +1,5 @@
+With background delivery on, swiping the app away no longer stops it: messages keep arriving until you choose the new Exit in the menu, which disconnects from Tor and closes the app while keeping your identity.
+
+To hide the "Watching for messages" notification, turn off the "Background delivery status" category in Android's notification settings; messages still arrive.
+
+After a reboot or update, open the app once to resume.

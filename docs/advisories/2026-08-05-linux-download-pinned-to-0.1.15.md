@@ -56,7 +56,8 @@ To check what you are running, the version is shown in the app under Settings.
   re-arm the identical trap at the next release.
 - Fixed in `config/app_config.json`, the source of truth, rather than in the generated
   `website/config.js` — a `make config` run would otherwise have reverted it.
-- A notice on the download section of the site tells affected users to update.
+- A notice on the download section of the site told affected users to update. It ran from
+  2026-08-05 to 2026-09-26 (0.1.24), then was retired; this advisory remains the record.
 - No other pinned release tags remain under `website/`.
 
 ## Lesson

@@ -136,3 +136,65 @@ fn deployed_relay_store_and_forward_and_recall_over_tor() {
 
     eprintln!("== PASS: live relay store-and-forward + recall verified over Tor ==");
 }
+
+/// Mailbox v2's polling path over real Tor (`docs/design/mailbox-handles.md` §5c): relay clients on
+/// **isolated** arti circuits (`Transport::relay_dialer_isolated`), and `take_many` draining a
+/// fragment in one request — or, against a relay from before it, falling back to one `take` per
+/// handle. The fallback is the case that matters on release day, when clients update before relays.
+///
+/// Same invocation as above:
+///   RELAY_ONION=<relay>.onion \
+///     cargo test -p nightdrop --features tor --test relay_e2e isolated -- --ignored --nocapture
+#[test]
+#[ignore = "needs network + a deployed relay; set RELAY_ONION=<relay>.onion"]
+fn isolated_fragments_drain_with_take_many_over_tor() {
+    use nightdrop::transport::Transport as _;
+
+    let relay = std::env::var("RELAY_ONION")
+        .expect("set RELAY_ONION=<relay>.onion (from relay-state/onion)");
+    let state =
+        std::env::var("RELAY_E2E_STATE").unwrap_or_else(|_| "/tmp/nd-relay-e2e-client".into());
+    eprintln!("== mailbox v2 isolated polling ==\n  relay: {relay}");
+    let tor =
+        TorTransport::bootstrap("ndrelaye2e", Some(&state), None, None).expect("bootstrap Tor");
+
+    // Two isolation groups: a poster's per-recipient group and a reader's fragment group.
+    let isolated = |group: u64| {
+        RelayClient::with_dialer_for(
+            relay.clone(),
+            tor.relay_dialer_isolated(&relay, group)
+                .expect("Tor isolates"),
+        )
+    };
+    let poster = isolated(1);
+    let reader = isolated(2);
+
+    let handles: Vec<String> = (0..3).map(|i| unique_handle(&format!("frag{i}"))).collect();
+    eprintln!("[1] post to three handles on the poster's circuits…");
+    for (i, h) in handles.iter().enumerate() {
+        post_with_retry(&poster, h, format!("blob-{i}").as_bytes());
+    }
+
+    eprintln!("[2] drain all three as one fragment on the reader's circuits…");
+    let start = SystemTime::now();
+    let mut got = reader.take_many(&handles).expect("take_many");
+    got.sort();
+    eprintln!(
+        "  drained {} blobs in ~{}s",
+        got.len(),
+        start.elapsed().map(|d| d.as_secs()).unwrap_or(0)
+    );
+    assert_eq!(
+        got,
+        vec![b"blob-0".to_vec(), b"blob-1".to_vec(), b"blob-2".to_vec()],
+        "every handle in the fragment drained, byte-exact"
+    );
+    assert!(
+        reader
+            .take_many(&handles)
+            .expect("take_many again")
+            .is_empty(),
+        "and consumed"
+    );
+    eprintln!("== PASS: isolated circuits + take_many verified over Tor ==");
+}

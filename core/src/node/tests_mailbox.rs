@@ -506,7 +506,7 @@ fn the_contact_cap_refuses_a_new_contact_and_says_why() {
 }
 
 #[test]
-fn a_dead_relay_costs_one_attempt_per_round_not_one_per_fragment() {
+fn a_dead_relay_costs_two_attempts_per_round_not_one_per_fragment() {
     // A relay that never answers: every dial fails, and each would wait out the full timeout.
     let attempts = Arc::new(Mutex::new(0usize));
     let counter = Arc::clone(&attempts);
@@ -535,8 +535,8 @@ fn a_dead_relay_costs_one_attempt_per_round_not_one_per_fragment() {
 
     assert_eq!(
         *attempts.lock().unwrap(),
-        1,
-        "the dead relay was tried once"
+        2,
+        "the dead relay was tried twice, not once per fragment"
     );
     assert_eq!(
         harvest.blobs,
@@ -628,4 +628,41 @@ fn the_notice_clears_when_the_old_peer_updates() {
     }
     assert!(confirmed(&p.alice, &p.bob_id));
     assert!(!flagged_old(&p.alice, &p.bob_id));
+}
+
+#[test]
+fn a_relay_that_answered_keeps_its_fragments_after_a_cold_miss() {
+    // Answers, then fails once (a cold isolated connection that timed out), then answers again.
+    let calls = Arc::new(Mutex::new(0usize));
+    let counter = Arc::clone(&calls);
+    let core = Arc::new(crate::relay_client::RelayCore::new(None));
+    let c = Arc::clone(&core);
+    let flaky: RelayDialer = Arc::new(move |line: &str| {
+        let mut n = counter.lock().unwrap();
+        *n += 1;
+        if *n == 2 {
+            anyhow::bail!("Unable to download hidden service descriptor")
+        }
+        Ok(c.handle_line(line))
+    });
+    let relay = RelayClient::with_dialer_for("flaky.onion", flaky);
+    let jobs: Vec<DrainJob> = (0..4)
+        .map(|i| DrainJob {
+            addr: Some("flaky.onion".to_string()),
+            client: relay.clone(),
+            handles: vec![format!("mbx:f{i}")],
+        })
+        .collect();
+    let harvest = drain_relay_mailboxes(&RelayDrainPlan {
+        jobs,
+        stagger: false,
+    });
+    assert_eq!(
+        *calls.lock().unwrap(),
+        4,
+        "one miss on a relay that answered does not abandon its other fragments"
+    );
+    assert!(harvest
+        .reachability
+        .contains(&("flaky.onion".to_string(), true)));
 }

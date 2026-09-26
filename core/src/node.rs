@@ -196,26 +196,56 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
     // A relay is reachable if any take on it answered. One failed take must not stop the rest: the
     // others may hold mail, and a take that errors has not removed anything.
     let mut answered: Vec<(String, bool)> = Vec::new();
-    // Relays that have failed this round. The rest of their fragments are skipped: each would open
-    // a fresh isolated circuit and wait out the full dial timeout, so one dead relay would hold up
-    // every other relay's mail for fragments × timeout. Skipping loses nothing — the failed take
-    // removed nothing, and the next round asks again.
-    let mut failed: Vec<&Option<String>> = Vec::new();
+    // Per relay this round: (fragments answered, fragments failed). A relay that has failed
+    // [`DEAD_AFTER`] fragments and answered none is skipped for the rest of the round: each
+    // remaining fragment would open a fresh isolated circuit and wait out the full dial timeout, so
+    // one dead relay would hold up every other relay's mail for fragments × timeout. One failure is
+    // not enough: arti keeps onion-service state per isolation group, so each fragment is a cold
+    // connection (its own descriptor fetch and circuits), and on a phone a cold build fails often
+    // enough that one miss says little about the relay. A relay that answered anything is alive and
+    // keeps its fragments. Skipping loses nothing — a failed take removed nothing, and the next
+    // round asks again.
+    const DEAD_AFTER: usize = 2;
+    let mut tally: Vec<(&Option<String>, usize, usize)> = Vec::new();
+    let (mut ok_jobs, mut failed_jobs, mut skipped_jobs) = (0usize, 0usize, 0usize);
+    let mut slowest_ok = Duration::ZERO;
     for (i, job) in plan.jobs.iter().enumerate() {
-        if failed.contains(&&job.addr) {
+        let entry = match tally.iter().position(|(a, _, _)| *a == &job.addr) {
+            Some(n) => n,
+            None => {
+                tally.push((&job.addr, 0, 0));
+                tally.len() - 1
+            }
+        };
+        if tally[entry].1 == 0 && tally[entry].2 >= DEAD_AFTER {
+            skipped_jobs += 1;
             continue;
         }
         if plan.stagger && i > 0 {
             std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(0..=300)));
         }
         // One request per fragment where the relay supports it (`take_many`).
+        let started = std::time::Instant::now();
         let ok = match job.client.take_many(&job.handles) {
             Ok(taken) => {
                 blobs.extend(taken);
+                tally[entry].1 += 1;
+                ok_jobs += 1;
+                slowest_ok = slowest_ok.max(started.elapsed());
                 true
             }
-            Err(_) => {
-                failed.push(&job.addr);
+            Err(e) => {
+                crate::diag!(
+                    "relay: fragment take failed ({}) after {}s: {e:#}",
+                    if job.addr.is_some() {
+                        "extra"
+                    } else {
+                        "primary"
+                    },
+                    started.elapsed().as_secs()
+                );
+                tally[entry].2 += 1;
+                failed_jobs += 1;
                 false
             }
         };
@@ -227,11 +257,16 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
         }
     }
     crate::diag!(
-        "relay: drained {} fragment jobs ({} handles), {} blobs, {} relay(s) skipped after failing",
+        "relay: drain round: {} fragment jobs ({} handles) on {} relay(s) — {} ok (slowest {}s), \
+         {} failed, {} skipped; {} blobs",
         plan.jobs.len(),
         plan.jobs.iter().map(|j| j.handles.len()).sum::<usize>(),
-        blobs.len(),
-        failed.len()
+        tally.len(),
+        ok_jobs,
+        slowest_ok.as_secs(),
+        failed_jobs,
+        skipped_jobs,
+        blobs.len()
     );
     RelayHarvest {
         blobs,

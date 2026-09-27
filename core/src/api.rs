@@ -2483,6 +2483,11 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
         let _exit = ExitGuard::new(Arc::clone(&stop));
         // Fire immediately on startup so offline mail is fetched as the app opens.
         let mut last_relay: Option<std::time::Instant> = None;
+        // The relay drain in flight, on its own thread. A drain is many sequential Tor requests
+        // (one per polling fragment, `mailbox.rs`), and a cold round took two minutes on a phone —
+        // run inline, every message composed meanwhile sat "held" until it finished (2026-09-27).
+        // Off this thread, sends keep going every tick while it runs.
+        let mut drain_job: Option<thread::JoinHandle<RelayHarvest>> = None;
         let mut next_cover: Option<std::time::Instant> = None;
         let mut cover_delay = next_cover_delay();
         while !stop.stopped() {
@@ -2509,21 +2514,34 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
             } else {
                 RELAY_POLL_FOREGROUND
             };
-            let relay_due = RELAY_POLL_NOW.swap(false, Ordering::Relaxed)
-                || last_relay.is_none_or(|t| t.elapsed() >= interval);
+            // Due only when no drain is in flight; `&&` keeps a poll-now request queued meanwhile.
+            let relay_due = drain_job.is_none()
+                && (RELAY_POLL_NOW.swap(false, Ordering::Relaxed)
+                    || last_relay.is_none_or(|t| t.elapsed() >= interval));
             // §1.5.2: run the blocking relay reads OFF the lock. Snapshot the relay clients under a
             // brief lock, drain the mailboxes lock-free (seconds over Tor), then re-acquire only to
             // apply the results — so UI calls (send/contacts/messages) aren't stalled behind an
             // in-flight relay poll.
-            let mut harvest = if relay_due {
+            // A finished drain is applied this tick, with the relay-cadence chores (`relay_applied`),
+            // as the inline drain used to be.
+            let mut relay_applied = false;
+            let mut harvest = None;
+            if drain_job.as_ref().is_some_and(|j| j.is_finished()) {
+                harvest = drain_job.take().and_then(|j| j.join().ok());
+                relay_applied = true;
+            }
+            if relay_due {
                 let plan = {
                     let g = inner.lock().unwrap_or_else(|e| e.into_inner());
                     g.me.relay_drain_plan()
                 };
-                plan.map(|plan| drain_relay_mailboxes(&plan))
-            } else {
-                None
-            };
+                match plan {
+                    Some(plan) => {
+                        drain_job = Some(thread::spawn(move || drain_relay_mailboxes(&plan)));
+                    }
+                    None => relay_applied = true, // no relay: still run the chores on cadence
+                }
+            }
             // Same three phases for OUTBOUND messages, and for the same reason — more so, in fact.
             // A send is a peer dial (up to PEER_DIAL_TIMEOUT) plus, on failure, a relay post per
             // target (up to RELAY_DIAL_TIMEOUT each), and it used to run inside `apply_tick` with
@@ -2547,12 +2565,12 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
             {
                 let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let _ = g.apply_tick(relay_due, harvest.take(), sent.take());
+                    let _ = g.apply_tick(relay_applied, harvest.take(), sent.take());
                     // Flush any debounced background write whose window has elapsed (§1.5.4).
                     g.maybe_flush();
                 }));
             }
-            if relay_due {
+            if relay_applied {
                 last_relay = Some(std::time::Instant::now());
             }
             // Cover traffic (#4) runs on its own randomised clock, deliberately NOT tied to the
@@ -2571,6 +2589,18 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
                 }
             } else {
                 next_cover = None; // turning it off resets the clock; on again re-samples
+            }
+        }
+        // A drain still in flight must be applied, not dropped: a relay `take` is destructive, so
+        // the blobs it holds exist nowhere else. Joining waits for it; its requests abandon as the
+        // transport closes, so this does not outlast the shutdown's own bound.
+        if let Some(job) = drain_job.take() {
+            if let Ok(harvest) = job.join() {
+                let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = g.apply_tick(true, Some(harvest), None);
+                    g.maybe_flush();
+                }));
             }
         }
         // Drop our handle on the core — and through it the transport, if we are the last holder —
@@ -2641,6 +2671,107 @@ fn random_secret_words() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A memory transport that reports itself asynchronous, as Tor does, so messages go through the
+    /// poller's deferred send path instead of being delivered inline.
+    struct AsyncMemory(crate::transport::MemoryTransport);
+
+    impl Transport for AsyncMemory {
+        fn address(&self) -> crate::transport::Address {
+            self.0.address()
+        }
+        fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+            self.0.send(peer, frame)
+        }
+        fn try_recv(&self) -> Option<(crate::transport::Address, Vec<u8>)> {
+            self.0.try_recv()
+        }
+        fn is_synchronous(&self) -> bool {
+            false
+        }
+        fn published(&self) -> bool {
+            self.0.published()
+        }
+    }
+
+    /// A drain is many sequential Tor requests; a cold round took two minutes on a phone, and with
+    /// the drain inline every message composed meanwhile waited for it (2026-09-27).
+    #[test]
+    fn a_message_goes_out_while_a_relay_drain_is_stuck() {
+        let (block, entered) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let dialer: crate::relay_client::RelayDialer = {
+            let (block, entered) = (Arc::clone(&block), Arc::clone(&entered));
+            Arc::new(move |_request: &str| -> Result<String> {
+                if block.load(Ordering::Relaxed) {
+                    entered.store(true, Ordering::Relaxed);
+                    while block.load(Ordering::Relaxed) {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                }
+                anyhow::bail!("relay unreachable")
+            })
+        };
+        let net = MemoryNetwork::new();
+        let a = NightdropCore::new_with_transport(
+            Box::new(AsyncMemory(net.endpoint("a.onion"))),
+            Some(RelayClient::with_dialer(dialer)),
+            true,
+        );
+        let b = NightdropCore::new_with_transport(Box::new(net.endpoint("b.onion")), None, false);
+        let invite = a.create_invite().unwrap();
+        b.connect_via_qr(&invite.qr_payload).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let a_contact = loop {
+            a.poll_once().unwrap();
+            if let Some(r) = a.incoming_requests().first() {
+                break r.id.clone();
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pairing request never arrived"
+            );
+            thread::sleep(Duration::from_millis(20));
+        };
+        a.authorize(&a_contact, true).unwrap();
+        b.poll_once().unwrap();
+
+        // Wedge the next drain inside a relay round-trip.
+        block.store(true, Ordering::Relaxed);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !entered.load(Ordering::Relaxed) {
+            RELAY_POLL_NOW.store(true, Ordering::Relaxed);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the poller never started a drain"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        a.send_message(&a_contact, "while draining").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let arrived = loop {
+            b.poll_once().unwrap();
+            let got = b
+                .contacts()
+                .iter()
+                .flat_map(|c| b.messages(&c.id))
+                .any(|m| m.text == "while draining");
+            if got || std::time::Instant::now() > deadline {
+                break got;
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        assert!(block.load(Ordering::Relaxed), "the drain was still stuck");
+        block.store(false, Ordering::Relaxed);
+        a.shutdown();
+        assert!(
+            arrived,
+            "the message waited for the drain instead of going out"
+        );
+    }
 
     /// `shutdown` must not return until the background poller has actually exited. Stopping it and
     /// returning — which is what this did — leaves the poller holding whatever it snapshotted, and

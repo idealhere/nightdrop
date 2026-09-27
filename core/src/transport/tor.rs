@@ -914,6 +914,14 @@ fn apply_common_tuning(builder: &mut TorClientConfigBuilder) {
         .circuit_timing()
         .hs_desc_fetch_attempts(HS_CONNECT_ATTEMPTS)
         .hs_intro_rend_attempts(HS_CONNECT_ATTEMPTS);
+    apply_circuit_timeout_floor(builder);
+}
+
+/// Apply [`CIRCUIT_TIMEOUT_FLOOR_MS`](super::CIRCUIT_TIMEOUT_FLOOR_MS) to a client config.
+fn apply_circuit_timeout_floor(builder: &mut TorClientConfigBuilder) {
+    builder
+        .override_net_params()
+        .insert("cbtmintimeout".to_string(), super::CIRCUIT_TIMEOUT_FLOOR_MS);
 }
 
 /// Whether arti's keystore should live **in memory** (the default now) or on disk for one
@@ -1614,5 +1622,24 @@ mod stall_tests {
             .block_on(read_line_stalling(&mut src, Duration::from_secs(1)))
             .unwrap();
         assert_eq!(got, "line one\n");
+    }
+}
+
+#[cfg(test)]
+mod timeout_floor_tests {
+    use super::*;
+
+    // Without it arti's learned timeout ratcheted below real build times and disabled guard after
+    // guard until the desktop app had none left (2026-09-27).
+    #[test]
+    fn every_client_config_carries_the_circuit_timeout_floor() {
+        let mut builder = TorClientConfigBuilder::default();
+        apply_common_tuning(&mut builder);
+        assert_eq!(
+            builder.override_net_params().get("cbtmintimeout"),
+            Some(&crate::transport::CIRCUIT_TIMEOUT_FLOOR_MS)
+        );
+        // A floor below real build times would not stop the spiral.
+        const { assert!(crate::transport::CIRCUIT_TIMEOUT_FLOOR_MS >= 1500) };
     }
 }

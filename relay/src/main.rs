@@ -847,6 +847,12 @@ fn tor_config(base: &str) -> anyhow::Result<TorClientConfig> {
     std::fs::create_dir_all(&cache).ok();
     let mut builder = TorClientConfigBuilder::from_directories(&state, &cache);
     builder.storage().permissions().dangerously_trust_everyone();
+    // Without it the learned circuit timeout ratchets below real build times and arti disables
+    // guard after guard (this relay: 38 of 60, 2026-09-27) — see the constant's docs.
+    builder.override_net_params().insert(
+        "cbtmintimeout".to_string(),
+        nightdrop::transport::CIRCUIT_TIMEOUT_FLOOR_MS,
+    );
     builder.build().context("build Tor config")
 }
 

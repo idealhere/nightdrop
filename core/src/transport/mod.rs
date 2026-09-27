@@ -47,6 +47,20 @@ pub struct FileFetch<'a> {
 /// Makes a transport abandon network work in flight; see [`Transport::abort_handle`].
 pub type AbortHandle = Arc<dyn Fn() + Send + Sync>;
 
+/// Floor for arti's learned circuit-build timeout, in milliseconds (the `cbtmintimeout` network
+/// parameter, whose consensus value is 10).
+///
+/// Why: arti learns the timeout from the builds it sees complete, and a build it abandons is never
+/// seen — so on a fast link the estimate only ratchets down. Measured 2026-09-27 on the dev PC: the
+/// desktop app had learned 472 ms and the relay 449 ms against a median build of ~405 ms, so a third
+/// or more of builds were abandoned. Each abandoned build past the first hop is charged to its guard
+/// as an indeterminate failure (`tor-circmgr` `build.rs`), and past 70% the guard is disabled — for
+/// good, on disk. The desktop app reached 55 of 60 guards disabled and 0 usable: stuck at 85%
+/// bootstrap, its onion never published, unreachable to every contact. Short-lived clients on the
+/// same machine were unaffected because they never learn a timeout. A floor of two seconds stops the
+/// spiral and costs nothing on a healthy build; slower links still learn a higher value above it.
+pub const CIRCUIT_TIMEOUT_FLOOR_MS: i32 = 2000;
+
 /// One endpoint on an anonymity network. Frames are opaque, already-encrypted bytes
 /// (see [`crate::wire`]); the transport never inspects them.
 pub trait Transport: Send + Sync {

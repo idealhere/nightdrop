@@ -76,8 +76,14 @@ static RELAY_POLL_NOW: AtomicBool = AtomicBool::new(true);
 /// expensive part of the loop; the transport pump itself is a cheap local check).
 /// Online messages arrive over the direct Tor stream regardless, so the relay poll only
 /// bounds how quickly *offline/queued* mail shows up.
+///
+/// Background is five minutes, the cadence `mailbox-handles.md` §5c/§8 costs the design at. It was
+/// 60 s while a round was a single request; with fragmented polling a round is one request per
+/// fragment (8–10), and 60 s rounds measured about 900 Tor requests an hour and 7.6% of a Galaxy
+/// S25's battery over 3.5 hours (2026-09-27). Opening the app polls at once regardless
+/// ([`RELAY_POLL_NOW`]), so waiting mail is never five minutes away for someone looking at it.
 const RELAY_POLL_FOREGROUND: Duration = Duration::from_secs(15);
-const RELAY_POLL_BACKGROUND: Duration = Duration::from_secs(60);
+const RELAY_POLL_BACKGROUND: Duration = Duration::from_secs(5 * 60);
 
 /// While a short-code invite is outstanding, the inviter polls the rendezvous this often so
 /// answering a joiner's SPAKE2 opener feels near-instant (pairing is a brief, attended flow).
@@ -2671,6 +2677,14 @@ fn random_secret_words() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The background cadence is what the mailbox design is costed at; a faster one multiplies
+    /// every fragment's request (2026-09-27: 60 s rounds, ~900 Tor requests an hour).
+    #[test]
+    fn background_relay_polling_runs_at_the_designed_cadence() {
+        const { assert!(RELAY_POLL_BACKGROUND.as_secs() == 300) };
+        const { assert!(RELAY_POLL_FOREGROUND.as_secs() < RELAY_POLL_BACKGROUND.as_secs()) };
+    }
 
     /// A memory transport that reports itself asynchronous, as Tor does, so messages go through the
     /// poller's deferred send path instead of being delivered inline.

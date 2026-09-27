@@ -1120,6 +1120,11 @@ impl Node {
     /// **without** the core lock ([`drain_relay_mailboxes`], §1.5.2). Includes the primary relay
     /// plus our advertised extras (#17). `None` if no relay is configured (nothing to drain).
     pub(crate) fn relay_drain_plan(&self) -> Option<RelayDrainPlan> {
+        self.relay_drain_plan_at(crate::api::now_secs())
+    }
+
+    /// [`relay_drain_plan`](Self::relay_drain_plan) as of `now` (unix secs).
+    pub(crate) fn relay_drain_plan_at(&self, now: u64) -> Option<RelayDrainPlan> {
         use rand::seq::SliceRandom as _;
         let mut relays: Vec<(Option<String>, RelayClient)> = Vec::new();
         if let Some(primary) = &self.relay {
@@ -1146,7 +1151,7 @@ impl Node {
         if relays.is_empty() {
             return None;
         }
-        let fragments = self.poll_fragments();
+        let fragments = self.poll_fragments_at(now);
         let mut stagger = false;
         let mut jobs = Vec::new();
         for (addr, base) in &relays {
@@ -1163,6 +1168,7 @@ impl Node {
                 jobs.push(DrainJob {
                     addr: addr.clone(),
                     client,
+                    epoch: fragment.epoch,
                     handles: fragment.handles.clone(),
                 });
             }
@@ -1170,7 +1176,11 @@ impl Node {
         // A new order every round: a fragment that always followed another would announce their
         // relationship without ever sharing a circuit (§5c).
         jobs.shuffle(&mut rand::thread_rng());
-        Some(RelayDrainPlan { jobs, stagger })
+        Some(RelayDrainPlan {
+            jobs,
+            settles: self.settling_epoch(now),
+            stagger,
+        })
     }
 
     /// Apply blobs drained lock-free by [`drain_relay_mailboxes`]: record relay reachability,
@@ -1186,6 +1196,12 @@ impl Node {
         // warning); the primary is untracked (baked-in default).
         for (addr, reachable) in harvest.reachability {
             self.relay_reachable.insert(addr, reachable);
+        }
+        if let Some(epoch) = harvest.settled {
+            if self.prev_epoch_drained != Some(epoch) {
+                crate::diag!("relay: yesterday's mailboxes drained past the skew margin — retired");
+            }
+            self.prev_epoch_drained = Some(epoch);
         }
         let mut received = Vec::new();
         let mut to_ack: Vec<String> = Vec::new(); // senders whose user messages we drained

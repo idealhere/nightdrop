@@ -268,12 +268,26 @@ were built in: a relay is abandoned for a round only after two misses with no an
 the first miss meant no group ever warmed, and no round succeeded for 15 minutes), and a connected
 exchange fails after 60 s without progress (a stalled one hung the poller for good).
 
-**Cheapest reductions, if battery or data turn out heavy:** rotate buckets instead of partitioning
-per day, putting a pair's handle for day *e* in bucket `(h(pair) + e) mod 7`, so its three live
-handles always land in different buckets by construction and the window shares one set of 7 groups:
-1 + 7 per relay instead of 1 + 21, with the same guarantee that a pair's days never share a circuit.
-Or poll d+1 only in the last hours of the UTC day, since it exists only for clock skew. d−1 cannot be
-dropped, because mail posted just before midnight waits under it for up to 24 hours.
+**The three-day window is polled only where it is needed (built 2026-09-26).** Today's handles are
+polled all day. Tomorrow's are polled only in the last 3 hours of the UTC day (`SKEW_MARGIN_SECS`),
+for senders whose clocks run fast. Yesterday's are polled until a drain that **started at least 3
+hours after midnight** answers on every one of yesterday's fragments on every relay; then the epoch
+is retired for the rest of the day. That covers senders whose clocks run slow, and a device that was
+offline across midnight keeps polling yesterday however late it comes back. So most of the day costs
+1 + 7 groups per relay, with the same number of handles per group as before (about 7 contacts at the
+cap). Group tokens stay keyed by (epoch, bucket), so tomorrow's groups are already warm at midnight
+and yesterday's are today's from the day before: the rollover opens no cold connections.
+
+The cost is in clock tolerance. The full three-day window tolerated nearly a day of clock error;
+this tolerates 3 hours. Mail from a sender whose Unix time is off by more than that goes to a
+handle nobody polls and expires unread. Timezones do not matter (epochs are UTC days of Unix time,
+the same instant everywhere); only a clock that is actually wrong does, which NTP-synced phones and
+desktops rarely are. Direct delivery never uses a handle, so it is unaffected.
+
+Rejected: **rotating buckets** (a pair's handle for day *e* in bucket `(h(pair) + e) mod 7`). It
+cuts groups the same way without any clock trade, but handles per group are 3 × contacts ÷ groups,
+so each group would tie together about 21 contacts' handles instead of 7. Fewer groups over the
+same handles always means bigger groups. The only real saving is polling fewer handles.
 
 **Posting is isolated too.** Posts and recalls ride one isolation group per recipient, so a relay
 cannot tell that deposits for two people came from one sender by the circuit they share.

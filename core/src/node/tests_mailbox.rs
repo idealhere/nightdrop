@@ -169,32 +169,90 @@ fn a_peer_that_restores_an_old_backup_is_not_left_with_unreadable_mail() {
     assert!(confirmed(&p.alice, &p.bob_id) && confirmed(&p.bob, &p.alice_id));
 }
 
-#[test]
-fn readers_poll_the_neighbouring_days_so_midnight_loses_nothing() {
-    let p = pair(false);
-    let bob_pair = p.bob.chats[&p.alice_id].mailbox.clone().unwrap();
+/// Times within today's UTC day, for tests that depend on where in the day they run.
+fn at(hours: u64) -> u64 {
+    current_epoch() * super::mailbox::EPOCH_SECS + hours * 60 * 60
+}
+
+/// Bob's v2 handle for mail to him on `epoch`.
+fn bob_handle(p: &Pair, epoch: u64) -> String {
+    let pair = p.bob.chats[&p.alice_id].mailbox.clone().unwrap();
     let secret = pair_secret(
         &p.bob.identity_key(),
         &p.alice_id,
-        &bob_pair.own,
-        &bob_pair.peer.unwrap(),
+        &pair.own,
+        &pair.peer.unwrap(),
     );
-    let polled = p.bob.drain_handles();
+    v2_handle(&secret, &p.bob.identity_key(), epoch)
+}
+
+#[test]
+fn near_midnight_readers_poll_both_neighbouring_days() {
+    let p = pair(false);
     let today = current_epoch();
+    let polled = p.bob.drain_handles_at(at(23));
     for epoch in [today - 1, today, today + 1] {
         assert!(
-            polled.contains(&v2_handle(&secret, &p.bob.identity_key(), epoch)),
-            "Bob polls day {epoch} (today is {today})"
+            polled.contains(&bob_handle(&p, epoch)),
+            "Bob polls day {epoch} late in the day (today is {today})"
         );
     }
     assert!(
         polled.contains(&mailbox_handle(&p.bob.identity_key())),
         "and v1, throughout the transition"
     );
+    let pair = p.bob.chats[&p.alice_id].mailbox.clone().unwrap();
+    let secret = pair_secret(
+        &p.bob.identity_key(),
+        &p.alice_id,
+        &pair.own,
+        &pair.peer.unwrap(),
+    );
     assert!(
         !polled.contains(&v2_handle(&secret, &p.alice_id, today)),
         "never the other direction's handle — that is Alice's mail"
     );
+}
+
+#[test]
+fn tomorrow_is_polled_only_in_the_last_stretch_of_the_day() {
+    let p = pair(false);
+    let today = current_epoch();
+    assert!(!p
+        .bob
+        .drain_handles_at(at(12))
+        .contains(&bob_handle(&p, today + 1)));
+    assert!(p
+        .bob
+        .drain_handles_at(at(21))
+        .contains(&bob_handle(&p, today + 1)));
+}
+
+#[test]
+fn yesterday_is_polled_until_a_drain_past_the_margin_empties_it() {
+    let p = pair(false);
+    let today = current_epoch();
+    // Offline across midnight and back at noon: yesterday is still polled, late or not.
+    assert!(p
+        .bob
+        .drain_handles_at(at(12))
+        .contains(&bob_handle(&p, today - 1)));
+    let mut bob = p.bob;
+    bob.prev_epoch_drained = Some(today - 1);
+    let polled = bob.drain_handles_at(at(12));
+    assert!(!polled.contains(&bob_handle_of(&bob, &p.alice_id, today - 1)));
+    assert!(polled.contains(&bob_handle_of(&bob, &p.alice_id, today)));
+}
+
+fn bob_handle_of(bob: &Node, alice_id: &str, epoch: u64) -> String {
+    let pair = bob.chats[alice_id].mailbox.clone().unwrap();
+    let secret = pair_secret(
+        &bob.identity_key(),
+        alice_id,
+        &pair.own,
+        &pair.peer.unwrap(),
+    );
+    v2_handle(&secret, &bob.identity_key(), epoch)
 }
 
 #[test]
@@ -340,7 +398,7 @@ fn recorded(names: &[&str]) -> (Node, Log, Vec<(Node, String)>, MemoryNetwork) {
 #[test]
 fn every_poll_rides_its_fragment_and_v1_rides_alone() {
     let (alice, log, peers, _net) = recorded(&["bob", "carol"]);
-    crate::node::drain_relay_mailboxes(&alice.relay_drain_plan().unwrap());
+    crate::node::drain_relay_mailboxes(&alice.relay_drain_plan_at(at(23)).unwrap());
     let takes: Vec<_> = log.lock().unwrap().clone();
     assert!(!takes.is_empty());
     assert!(
@@ -386,7 +444,7 @@ fn the_partition_is_fixed_for_the_epoch_and_survives_a_restart() {
     let (alice, _log, _peers, net) = recorded(&["bob", "carol", "dave"]);
     let shape = |n: &Node| {
         let mut v: Vec<(u64, Vec<String>)> = n
-            .poll_fragments()
+            .poll_fragments_at(at(23))
             .into_iter()
             .map(|f| {
                 let mut h = f.handles;
@@ -414,7 +472,7 @@ fn each_epoch_is_padded_so_one_round_does_not_count_contacts() {
         let (alice, _log, _peers, _net) = recorded(names);
         let v1 = mailbox_handle(&alice.identity_key());
         let polled: Vec<String> = alice
-            .poll_fragments()
+            .poll_fragments_at(at(23))
             .into_iter()
             .flat_map(|f| f.handles)
             .filter(|h| *h != v1)
@@ -522,6 +580,7 @@ fn a_dead_relay_costs_two_attempts_per_round_not_one_per_fragment() {
     let job = |addr: &str, client: &RelayClient, handle: &str| DrainJob {
         addr: Some(addr.to_string()),
         client: client.clone(),
+        epoch: None,
         handles: vec![handle.to_string()],
     };
     let mut jobs: Vec<DrainJob> = (0..5)
@@ -530,6 +589,7 @@ fn a_dead_relay_costs_two_attempts_per_round_not_one_per_fragment() {
     jobs.insert(2, job("live.onion", &live, "mbx:live"));
     let harvest = drain_relay_mailboxes(&RelayDrainPlan {
         jobs,
+        settles: None,
         stagger: false,
     });
 
@@ -650,11 +710,13 @@ fn a_relay_that_answered_keeps_its_fragments_after_a_cold_miss() {
         .map(|i| DrainJob {
             addr: Some("flaky.onion".to_string()),
             client: relay.clone(),
+            epoch: None,
             handles: vec![format!("mbx:f{i}")],
         })
         .collect();
     let harvest = drain_relay_mailboxes(&RelayDrainPlan {
         jobs,
+        settles: None,
         stagger: false,
     });
     assert_eq!(
@@ -683,7 +745,44 @@ fn the_primary_listed_again_by_the_directory_is_used_once() {
         "one copy on the relay, not one per name"
     );
 
-    let plan = p.bob.relay_drain_plan().unwrap();
-    let fragments = p.bob.poll_fragments().len();
+    let plan = p.bob.relay_drain_plan_at(at(12)).unwrap();
+    let fragments = p.bob.poll_fragments_at(at(12)).len();
     assert_eq!(plan.jobs.len(), fragments, "each fragment polled once");
+}
+
+#[test]
+fn a_drain_retires_yesterday_only_past_the_margin_and_only_if_every_fragment_answered() {
+    let (mut alice, _log, _peers, _net) = recorded(&["bob", "carol"]);
+    let yesterday = current_epoch() - 1;
+    let drain = |alice: &mut Node, hours: u64, break_one: bool| {
+        let mut plan = alice.relay_drain_plan_at(at(hours)).unwrap();
+        if break_one {
+            let dead: RelayDialer = Arc::new(|_: &str| anyhow::bail!("relay dial timed out"));
+            let job = plan
+                .jobs
+                .iter_mut()
+                .find(|j| j.epoch == Some(yesterday))
+                .unwrap();
+            job.client = RelayClient::with_dialer_for("relay.onion", dead);
+        }
+        let harvest = crate::node::drain_relay_mailboxes(&plan);
+        alice.apply_relay_harvest(harvest).unwrap();
+    };
+    drain(&mut alice, 1, false);
+    assert_eq!(
+        alice.prev_epoch_drained, None,
+        "not inside the margin: a slow-clocked sender may still post to yesterday"
+    );
+    drain(&mut alice, 4, true);
+    assert_eq!(
+        alice.prev_epoch_drained, None,
+        "not while one of yesterday's fragments went unanswered"
+    );
+    drain(&mut alice, 4, false);
+    assert_eq!(alice.prev_epoch_drained, Some(yesterday));
+    assert_eq!(
+        alice.polled_epochs(at(12)),
+        vec![current_epoch()],
+        "and the rest of the day polls today alone: 1 + 7 groups per relay"
+    );
 }

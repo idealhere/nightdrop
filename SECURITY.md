@@ -141,7 +141,10 @@ vulnerability under the device-theft threat model, but each is worth an auditor'
   about a chat whose peer runs an older build**, which stays on the static handle in both
   directions until they update. The newer side is shown a banner saying so, because the older app
   cannot show one. The 50-contact cap is an app limit, not a protocol one: a modified client can
-  exceed it and pay the polling cost.
+  exceed it and pay the polling cost. And offline mail now depends on clocks: a sender whose device
+  clock is wrong by more than **3 hours** posts under a day's handle the recipient no longer polls,
+  and that message expires unread after 24 hours. Timezone settings do not matter, only a clock
+  that is actually wrong; messages delivered directly are unaffected.
 - **Bridges get past a blocked relay list; getting past traffic inspection is tested but not
   proven.** *(Known limit.)* Where a network blocks the public list of Tor relays, a bridge is an
   unlisted way in. Where a network instead inspects traffic and blocks Tor by how it *looks*, the

@@ -168,10 +168,19 @@ pub(super) const POLL_PAD: usize = 8;
 /// handles a relay watches one reader collect, and what a phone polls over Tor each round.
 pub const MAX_CONTACTS: usize = 50;
 
+/// How far a sender's clock may be off before its v2 mail can go unpolled (design doc §9). Readers
+/// poll tomorrow's handles only in this last stretch of the UTC day, and yesterday's until a drain
+/// that started this long after midnight has emptied them. Wider tolerates worse clocks; narrower
+/// polls fewer handles for less of the day. Timezones do not enter into it: epochs are UTC days of
+/// Unix time, so only a clock that is actually wrong can fall outside.
+pub(super) const SKEW_MARGIN_SECS: u64 = 3 * 60 * 60;
+
 /// One group of handles polled together, on circuits no other group shares.
 pub(crate) struct PollFragment {
     /// The isolation group ([`Transport::relay_dialer_isolated`]).
     pub(crate) group: u64,
+    /// The UTC day these v2 handles belong to; `None` for the static v1 handle.
+    pub(crate) epoch: Option<u64>,
     pub(crate) handles: Vec<String>,
 }
 
@@ -302,17 +311,45 @@ impl Node {
         mailbox_handle(contact_id)
     }
 
-    /// Every handle we poll, flattened (dummies included). Tests only — production drains by
-    /// fragment ([`poll_fragments`](Self::poll_fragments)).
+    /// Every handle we poll at `now`, flattened (dummies included). Tests only — production drains
+    /// by fragment ([`poll_fragments_at`](Self::poll_fragments_at)).
     #[cfg(test)]
-    pub(super) fn drain_handles(&self) -> Vec<String> {
-        self.poll_fragments()
+    pub(super) fn drain_handles_at(&self, now: u64) -> Vec<String> {
+        self.poll_fragments_at(now)
             .into_iter()
             .flat_map(|f| f.handles)
             .collect()
     }
 
-    /// Our mailboxes in polling fragments (§5c), fixed for each handle's epoch.
+    /// The UTC days whose v2 handles we poll at `now` (design doc §9): today always; tomorrow in the
+    /// last [`SKEW_MARGIN_SECS`] of the day, for senders whose clocks run fast; yesterday until
+    /// [`prev_epoch_drained`](Node::prev_epoch_drained) says a drain after the margin emptied it —
+    /// senders whose clocks run slow, and everything posted before midnight while we were away. A
+    /// device offline across midnight therefore keeps polling yesterday however late it returns.
+    pub(super) fn polled_epochs(&self, now: u64) -> Vec<u64> {
+        let today = now / EPOCH_SECS;
+        let into_day = now % EPOCH_SECS;
+        let mut epochs = Vec::with_capacity(3);
+        if today > 0 && self.prev_epoch_drained != Some(today - 1) {
+            epochs.push(today - 1);
+        }
+        epochs.push(today);
+        if into_day >= EPOCH_SECS - SKEW_MARGIN_SECS {
+            epochs.push(today + 1);
+        }
+        epochs
+    }
+
+    /// The epoch a successful drain at `now` would retire: yesterday, once it is polled and the
+    /// margin since midnight has passed (before that, slow-clocked senders may still post to it).
+    pub(super) fn settling_epoch(&self, now: u64) -> Option<u64> {
+        let yesterday = (now / EPOCH_SECS).checked_sub(1)?;
+        (now % EPOCH_SECS >= SKEW_MARGIN_SECS && self.polled_epochs(now).contains(&yesterday))
+            .then_some(yesterday)
+    }
+
+    /// Our mailboxes in polling fragments (§5c), fixed for each handle's epoch, for the days
+    /// [`polled_epochs`](Self::polled_epochs) names at `now`.
     ///
     /// * **v1 alone.** Our static handle is tied to our identity for good; polled beside anything,
     ///   it would name the owner of that fragment's v2 handles.
@@ -324,14 +361,14 @@ impl Node {
     ///   Re-drawing it per round is the trap §5c describes: a relay intersects the fragments it sees
     ///   and reassembles the whole set.
     /// * **Padded with dummies** per epoch, stable for that epoch like real handles.
-    pub(crate) fn poll_fragments(&self) -> Vec<PollFragment> {
+    pub(crate) fn poll_fragments_at(&self, now: u64) -> Vec<PollFragment> {
         let me = self.identity_key();
         let mut fragments = vec![PollFragment {
             group: group_id(&[b"nightdrop/isolation/poll-v1", &self.poll_seed]),
+            epoch: None,
             handles: vec![mailbox_handle(&me)],
         }];
-        let today = current_epoch();
-        for epoch in [today.saturating_sub(1), today, today + 1] {
+        for epoch in self.polled_epochs(now) {
             let e = epoch.to_be_bytes();
             let mut buckets: Vec<Vec<String>> = vec![Vec::new(); POLL_FRAGMENTS as usize];
             let bucket_of = |label: &[u8]| {
@@ -367,6 +404,7 @@ impl Node {
                         &e,
                         &(b as u64).to_be_bytes(),
                     ]),
+                    epoch: Some(epoch),
                     handles,
                 });
             }

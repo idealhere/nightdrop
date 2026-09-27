@@ -166,6 +166,9 @@ pub(crate) struct RelayDrainPlan {
     /// its fragment's isolated circuits (`mailbox.rs`, `poll_fragments`), so a relay sees one reader
     /// per fragment, never one reader of everything (`mailbox-handles.md` §5a/§5c).
     jobs: Vec<DrainJob>,
+    /// The epoch this round can retire ([`Node::settling_epoch`]): if every one of its jobs answers,
+    /// yesterday's handles are empty past the skew margin and need not be polled again.
+    settles: Option<u64>,
     /// Pause a random moment between jobs. Only where circuits are really isolated (Tor): the point
     /// is that fragments do not arrive at fixed offsets from each other, and without isolation there
     /// is nothing to protect — tests would only be slowed down.
@@ -176,6 +179,8 @@ pub(crate) struct DrainJob {
     /// `None` = the primary relay; `Some(addr)` = an advertised extra.
     addr: Option<String>,
     client: RelayClient,
+    /// The fragment's UTC day; `None` for the v1 handle.
+    epoch: Option<u64>,
     handles: Vec<String>,
 }
 
@@ -185,6 +190,8 @@ pub(crate) struct DrainJob {
 pub(crate) struct RelayHarvest {
     blobs: Vec<Vec<u8>>,
     reachability: Vec<(String, bool)>,
+    /// The plan's settling epoch, if every one of its jobs on every relay answered this round.
+    settled: Option<u64>,
 }
 
 /// Drain every relay mailbox in `plan` — the blocking `take` round-trips — with **no** core lock
@@ -209,6 +216,9 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
     let mut tally: Vec<(&Option<String>, usize, usize)> = Vec::new();
     let (mut ok_jobs, mut failed_jobs, mut skipped_jobs) = (0usize, 0usize, 0usize);
     let mut slowest_ok = Duration::ZERO;
+    // Retiring yesterday needs every one of its fragments answered on every relay: a skipped or
+    // failed one may still hold mail, which stops being polled once the epoch is retired.
+    let mut settle_ok = plan.settles.is_some();
     for (i, job) in plan.jobs.iter().enumerate() {
         let entry = match tally.iter().position(|(a, _, _)| *a == &job.addr) {
             Some(n) => n,
@@ -219,6 +229,7 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
         };
         if tally[entry].1 == 0 && tally[entry].2 >= DEAD_AFTER {
             skipped_jobs += 1;
+            settle_ok &= job.epoch != plan.settles;
             continue;
         }
         if plan.stagger && i > 0 {
@@ -246,6 +257,7 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
                 );
                 tally[entry].2 += 1;
                 failed_jobs += 1;
+                settle_ok &= job.epoch != plan.settles;
                 false
             }
         };
@@ -271,6 +283,7 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
     RelayHarvest {
         blobs,
         reachability: answered,
+        settled: plan.settles.filter(|_| settle_ok),
     }
 }
 
@@ -519,6 +532,10 @@ pub struct Node {
     /// Keys our polling-fragment partition (`mailbox.rs`, `poll_fragments`). Random per device,
     /// persisted, so a partition stays fixed for its epoch across restarts.
     poll_seed: [u8; 32],
+    /// Yesterday's epoch once a drain past the skew margin emptied it on every relay, so it is no
+    /// longer polled (`mailbox.rs`, `polled_epochs`). In memory only: after a restart it is polled
+    /// again until the next such drain, which costs a few requests and loses nothing.
+    prev_epoch_drained: Option<u64>,
     /// Tests only: behave like a build from before v2 mailboxes — never send a
     /// [`Frame::MailboxKey`], and drop any that arrive undecoded, as an older build does.
     #[cfg(test)]
@@ -835,6 +852,7 @@ impl Node {
                 rand::thread_rng().fill_bytes(&mut seed);
                 seed
             },
+            prev_epoch_drained: None,
             #[cfg(test)]
             legacy_v1_only: false,
             burn_receipts: false,

@@ -252,13 +252,28 @@ together, which would link a pair across days. Each epoch is padded with dummies
 each fragment would wait out the 30 s dial timeout in turn. A new relay request, `take_many`,
 drains one fragment in one round-trip; older relays get one `take` per handle.
 
-**The cost is higher than §8 estimated.** §8 counts 7 circuits per round per relay. Because each day
-of the three-day window needs its own partition, the build uses up to **1 + 3 × 7 = 22** isolation
-groups per relay. arti reuses a group's circuit until it goes dirty (about 10 minutes), so the real
-cost is circuit builds per ~10 minutes, not per round. Still roughly three times the estimate.
-The cheapest reduction, if it proves heavy on phones: poll d+1 only in the last hours of the UTC
-day. It exists only for clock skew, and d−1 cannot be dropped, because mail posted just before
-midnight waits under it for up to 24 hours.
+**The cost is higher than §8 estimated, and each group is an onion connection, not a circuit.**
+§8 counts 7 circuits per round per relay. Because each day of the three-day window needs its own
+partition, the build uses up to **1 + 3 × 7 = 22** isolation groups per relay (16 with one contact,
+since the dummies spread across buckets). And arti 0.43 keeps onion-service state **per isolation
+group** (`tor-hsclient` `state.rs`: descriptor, hsdir circuits and intro history are never shared
+across isolations), so every group is a full onion connection with its own descriptor fetch and
+hsdir, intro and rendezvous circuits.
+
+Measured on a Galaxy S25 over real Tor, 2026-09-26, 16 groups against one relay: the first round
+after launch is cold, and about 40–50% of fragments fail at the connect ("Unable to download hidden
+service descriptor", ~20 s each). Once the groups are warm, a round is 15–16 of 16 in a few seconds
+(slowest 3–4 s), and that held across a UTC midnight, when every group is new. Two consequences
+were built in: a relay is abandoned for a round only after two misses with no answers (skipping at
+the first miss meant no group ever warmed, and no round succeeded for 15 minutes), and a connected
+exchange fails after 60 s without progress (a stalled one hung the poller for good).
+
+**Cheapest reductions, if battery or data turn out heavy:** rotate buckets instead of partitioning
+per day, putting a pair's handle for day *e* in bucket `(h(pair) + e) mod 7`, so its three live
+handles always land in different buckets by construction and the window shares one set of 7 groups:
+1 + 7 per relay instead of 1 + 21, with the same guarantee that a pair's days never share a circuit.
+Or poll d+1 only in the last hours of the UTC day, since it exists only for clock skew. d−1 cannot be
+dropped, because mail posted just before midnight waits under it for up to 24 hours.
 
 **Posting is isolated too.** Posts and recalls ride one isolation group per recipient, so a relay
 cannot tell that deposits for two people came from one sender by the circuit they share.

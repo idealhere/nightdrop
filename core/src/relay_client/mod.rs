@@ -1014,14 +1014,15 @@ pub struct RelayClient {
 #[derive(Clone)]
 enum RelayInner {
     Tcp(String),
-    Dialer(RelayDialer),
+    /// The dialer, and the address it dials when known ([`RelayClient::addr`]).
+    Dialer(RelayDialer, Option<String>),
 }
 
 impl std::fmt::Debug for RelayClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.inner {
             RelayInner::Tcp(addr) => write!(f, "RelayClient(tcp:{addr})"),
-            RelayInner::Dialer(_) => write!(f, "RelayClient(tor)"),
+            RelayInner::Dialer(..) => write!(f, "RelayClient(tor)"),
         }
     }
 }
@@ -1037,7 +1038,24 @@ impl RelayClient {
     /// A relay reached through a [`RelayDialer`] — production dials its `.onion` over Tor.
     pub fn with_dialer(dialer: RelayDialer) -> Self {
         Self {
-            inner: RelayInner::Dialer(dialer),
+            inner: RelayInner::Dialer(dialer, None),
+        }
+    }
+
+    /// [`with_dialer`](Self::with_dialer), recording the address `dialer` reaches, so
+    /// [`addr`](Self::addr) can report it.
+    pub fn with_dialer_for(addr: impl Into<String>, dialer: RelayDialer) -> Self {
+        Self {
+            inner: RelayInner::Dialer(dialer, Some(addr.into())),
+        }
+    }
+
+    /// The relay's address, if this client knows it: always for TCP, for a dialer only when built
+    /// with [`with_dialer_for`](Self::with_dialer_for).
+    pub fn addr(&self) -> Option<&str> {
+        match &self.inner {
+            RelayInner::Tcp(addr) => Some(addr),
+            RelayInner::Dialer(_, addr) => addr.as_deref(),
         }
     }
 
@@ -1128,7 +1146,7 @@ impl RelayClient {
         let line = request_line(request)?;
         let response_line = match &self.inner {
             RelayInner::Tcp(addr) => tcp_round_trip(addr, &line)?,
-            RelayInner::Dialer(dial) => dial(&line)?,
+            RelayInner::Dialer(dial, _) => dial(&line)?,
         };
         parse_response_line(&response_line)
     }

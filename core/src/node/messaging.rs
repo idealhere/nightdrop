@@ -1102,7 +1102,18 @@ impl Node {
         if let Some(primary) = &self.relay {
             clients.push((None, primary.clone()));
         }
+        // Each relay once. The signed directory normally lists the primary itself, so without this
+        // every round drained the one relay twice under two names.
+        let primary_addr = self
+            .relay
+            .as_ref()
+            .and_then(|p| p.addr().map(str::to_string));
+        let mut seen: Vec<&str> = primary_addr.iter().map(String::as_str).collect();
         for addr in self.my_relays.iter().chain(self.discovered_relays.iter()) {
+            if seen.contains(&addr.as_str()) {
+                continue;
+            }
+            seen.push(addr);
             clients.push((
                 Some(addr.clone()),
                 build_relay(self.transport.as_ref(), addr),

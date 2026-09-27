@@ -1018,8 +1018,9 @@ impl NightdropCore {
             }
             // Reach the relay over Tor: build a dialer from the transport's arti client before it
             // is moved into the node (a relay `.onion` can't be reached over plain TCP).
-            let relay = relay_addr
-                .map(|onion| RelayClient::with_dialer(transport.make_relay_dialer(onion)));
+            let relay = relay_addr.map(|onion| {
+                RelayClient::with_dialer_for(onion.clone(), transport.make_relay_dialer(onion))
+            });
             // Restore from the existing file, or start a fresh identity.
             let restore = persist
                 .as_ref()
@@ -1114,8 +1115,9 @@ impl NightdropCore {
                 None,
             )?;
             // Build the relay dialer over Tor before the transport is moved into the node.
-            let relay = relay_addr
-                .map(|onion| RelayClient::with_dialer(transport.make_relay_dialer(onion)));
+            let relay = relay_addr.map(|onion| {
+                RelayClient::with_dialer_for(onion.clone(), transport.make_relay_dialer(onion))
+            });
             // Rebuild the node from the same decrypted state (pickles decrypt with bkey).
             let mut me = Node::restore(&state, Box::new(transport), &bkey)?;
             me.set_require_authorization(true);
@@ -1200,7 +1202,10 @@ impl NightdropCore {
             )?;
             // Build the relay dialer before the transport is moved into the node; it both
             // fetches the backup and stays attached for store-and-forward afterwards.
-            let relay = RelayClient::with_dialer(transport.make_relay_dialer(relay_addr));
+            let relay = RelayClient::with_dialer_for(
+                relay_addr.clone(),
+                transport.make_relay_dialer(relay_addr),
+            );
             let mut me = Node::restore_from_server(&relay, &password, Box::new(transport))?;
             me.set_require_authorization(true);
             if let Some(sd) = &state_dir {

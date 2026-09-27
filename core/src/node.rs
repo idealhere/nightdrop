@@ -121,7 +121,7 @@ fn relay_unwrap(own_identity_key: &str, blob: &[u8]) -> Result<Vec<u8>> {
 /// (tests/TCP). Free fn (not a method) so call sites keep disjoint field borrows (#17).
 fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
     match transport.relay_dialer(addr) {
-        Some(dialer) => RelayClient::with_dialer(dialer),
+        Some(dialer) => RelayClient::with_dialer_for(addr, dialer),
         None => RelayClient::new(addr),
     }
 }
@@ -226,7 +226,15 @@ fn queue_on_relays(
             });
         }
     }
+    // The primary under another name (the signed directory lists it) is the primary: posting there
+    // again would store a second copy of every message on the same relay.
+    let primary_addr = primary.as_ref().and_then(|p| p.addr());
+    let mut posted: Vec<&str> = primary_addr.into_iter().collect();
     for addr in peer_relays {
+        if posted.contains(&addr.as_str()) {
+            continue;
+        }
+        posted.push(addr);
         let relay = build_relay(transport, addr);
         if let Ok(r) = relay.post(&handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {

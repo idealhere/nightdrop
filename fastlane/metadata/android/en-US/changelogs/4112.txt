@@ -1,0 +1,5 @@
+Fixes a bug that could leave the app unreachable after running for a while on a fast connection: Tor's learned circuit timeout crept too low until no entry relays were usable. Messages no longer stall if a Tor connection hangs mid-transfer, and offline messages are stored on the relay once instead of twice.
+
+An unopened burn message that expires now leaves a marker instead of vanishing.
+
+You can now donate in Bitcoin (silent payments) and Zcash.

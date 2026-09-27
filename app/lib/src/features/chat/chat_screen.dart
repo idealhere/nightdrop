@@ -131,16 +131,42 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Tracks the message count so we can auto-scroll to the bottom on any new message
   /// (sent or received), and on first open.
   int _lastCount = 0;
   final _input = TextEditingController();
   final _scroll = ScrollController();
 
+  /// Whether the list is showing its newest message. While it is, a keyboard sliding in keeps the
+  /// newest message in view: the screen shrinks from the bottom, and a list left at the same offset
+  /// would hide exactly the messages being replied to. Someone who scrolled up to read history is
+  /// left where they are.
+  bool _atBottom = true;
+
+  void _trackBottom() {
+    if (!_scroll.hasClients) return;
+    final p = _scroll.position;
+    _atBottom = p.pixels >= p.maxScrollExtent - 48;
+  }
+
+  /// Keyboard in or out (and any other resize): while at the bottom, stay there. It fires on every
+  /// frame of the keyboard animation, so the list follows the keyboard up instead of jumping at the
+  /// end. Closing needs nothing: the list grows back and a list at the bottom stays at the bottom.
+  @override
+  void didChangeMetrics() {
+    if (!_atBottom) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(_trackBottom);
     // Screenshot transparency (#1): while this chat is open, a screenshot is logged here and the
     // peer is told. Registered per-chat rather than globally so a capture is never attributed to a
     // conversation the user isn't actually looking at.
@@ -155,6 +181,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scroll.removeListener(_trackBottom);
     ScreenshotDetector.stop();
     for (final t in _scrollTimers) {
       t.cancel();

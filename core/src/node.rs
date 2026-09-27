@@ -700,7 +700,19 @@ struct SendOutcome {
 pub(crate) fn execute_sends(plan: &SendPlan) -> SendOutcomes {
     let mut items = Vec::with_capacity(plan.items.len());
     for p in &plan.items {
-        let delivered = plan.transport.send(&p.peer_address, &p.bytes).is_ok();
+        let started = std::time::Instant::now();
+        let sent = plan.transport.send(&p.peer_address, &p.bytes);
+        match &sent {
+            Ok(()) => crate::diag!(
+                "send: handed to the peer's onion in {}ms",
+                started.elapsed().as_millis()
+            ),
+            Err(e) => crate::diag!(
+                "send: direct dial failed after {}s — relay fallback: {e:#}",
+                started.elapsed().as_secs()
+            ),
+        }
+        let delivered = sent.is_ok();
         let mut copies = None;
         let mut relay_failed = false;
         if !delivered || p.remote_storage {

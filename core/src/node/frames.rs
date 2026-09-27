@@ -615,6 +615,13 @@ impl Node {
                         .find(|m| m.from_me && !m.msg_id.is_empty() && m.msg_id == named),
                 };
                 if let Some(m) = found {
+                    if m.delivery != "delivered" {
+                        crate::diag!(
+                            "receipt: message confirmed delivered {}s after it was composed (was {:?})",
+                            crate::api::now_secs().saturating_sub(m.at),
+                            m.delivery
+                        );
+                    }
                     m.delivery = "delivered".to_string();
                 }
                 let msg_id = named;

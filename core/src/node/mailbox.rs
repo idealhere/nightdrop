@@ -416,6 +416,9 @@ impl Node {
     /// run per chat, retried on the next tick if it could not be delivered — the heal for a lost
     /// frame, and the start of the agreement for chats that predate v2.
     pub fn announce_mailbox(&mut self) {
+        if !self.announce_ready() {
+            return;
+        }
         let ids: Vec<String> = self
             .chats
             .iter()

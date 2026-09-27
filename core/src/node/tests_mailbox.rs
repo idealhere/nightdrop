@@ -786,3 +786,72 @@ fn a_drain_retires_yesterday_only_past_the_margin_and_only_if_every_fragment_ans
         "and the rest of the day polls today alone: 1 + 7 groups per relay"
     );
 }
+
+/// A memory transport whose `published()` the test controls, as Tor's is false until its onion
+/// is up.
+struct Gated {
+    inner: MemoryTransport,
+    up: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Transport for Gated {
+    fn address(&self) -> Address {
+        self.inner.address()
+    }
+    fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.inner.send(peer, frame)
+    }
+    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
+        self.inner.try_recv()
+    }
+    fn is_synchronous(&self) -> bool {
+        self.inner.is_synchronous()
+    }
+    fn published(&self) -> bool {
+        self.up.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+#[test]
+fn launch_announcements_wait_for_the_onion_or_the_fallback() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    for via_fallback in [false, true] {
+        let net = MemoryNetwork::new();
+        let up = Arc::new(AtomicBool::new(false));
+        let mut alice = Node::new(Box::new(Gated {
+            inner: net.endpoint("alice"),
+            up: Arc::clone(&up),
+        }));
+        let mut bob = Node::new(Box::new(net.endpoint("bob")));
+        bob.legacy_v1_only = true; // never answers, so the pair stays open to announce
+        let bundle = alice.publish_bundle();
+        let bob_id = bob.connect_with_bundle("alice", &bundle).unwrap();
+        let _ = bob_id;
+        for _ in 0..3 {
+            alice.pump().unwrap();
+            bob.pump().unwrap();
+        }
+        let bob_key = alice.contacts()[0].id.clone();
+
+        alice.announce_mailbox();
+        assert!(
+            !alice.mailbox_announced.contains(&bob_key),
+            "nothing sent while the onion is still publishing"
+        );
+        if via_fallback {
+            alice.started -= super::ANNOUNCE_FALLBACK;
+        } else {
+            up.store(true, Ordering::Relaxed);
+        }
+        alice.announce_mailbox();
+        assert!(
+            alice.mailbox_announced.contains(&bob_key),
+            "sent once {}",
+            if via_fallback {
+                "the fallback ran out"
+            } else {
+                "published"
+            }
+        );
+    }
+}

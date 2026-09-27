@@ -536,6 +536,8 @@ pub struct Node {
     /// longer polled (`mailbox.rs`, `polled_epochs`). In memory only: after a restart it is polled
     /// again until the next such drain, which costs a few requests and loses nothing.
     prev_epoch_drained: Option<u64>,
+    /// When this node started, for [`announce_ready`](Self::announce_ready)'s fallback.
+    started: std::time::Instant,
     /// Tests only: behave like a build from before v2 mailboxes — never send a
     /// [`Frame::MailboxKey`], and drop any that arrive undecoded, as an older build does.
     #[cfg(test)]
@@ -865,6 +867,7 @@ impl Node {
                 seed
             },
             prev_epoch_drained: None,
+            started: std::time::Instant::now(),
             #[cfg(test)]
             legacy_v1_only: false,
             burn_receipts: false,
@@ -1174,6 +1177,9 @@ impl Node {
     /// exactly the contacts someone already talks to. Called once per run; the flag keeps a
     /// restart from re-announcing to everyone.
     pub fn announce_burns(&mut self) {
+        if !self.announce_ready() {
+            return;
+        }
         let ids: Vec<String> = self
             .chats
             .iter()
@@ -1562,6 +1568,15 @@ impl Node {
         self.transport.published()
     }
 
+    /// Whether to send the optional once-per-run announcements (burn support, the v2 mailbox
+    /// contribution). Before Tor is up every one of them costs a failed dial and a failed relay post
+    /// and is retried anyway, so they wait for the onion to publish — or for
+    /// [`ANNOUNCE_FALLBACK`] after start, because `published()` has been measured reading false on
+    /// a published service, and gating on it alone would leave a pair on v1 mailboxes for good.
+    pub(crate) fn announce_ready(&self) -> bool {
+        self.transport.published() || self.started.elapsed() >= ANNOUNCE_FALLBACK
+    }
+
     pub fn identity_id(&self) -> String {
         self.identity.id()
     }
@@ -1694,6 +1709,10 @@ fn pack_unsend(target_msg_id: &str) -> Vec<u8> {
 fn unpack_unsend(buf: &[u8]) -> Result<String> {
     Ok(String::from_utf8(buf.to_vec())?)
 }
+
+/// How long after start the optional announcements go out even if the transport never reports
+/// itself published ([`Node::announce_ready`]). Tor publishes in ~1–3 minutes.
+const ANNOUNCE_FALLBACK: Duration = Duration::from_secs(3 * 60);
 
 /// A human label for a disappearing-messages timer value (for the in-chat system notice).
 fn disappearing_label(secs: u64) -> String {

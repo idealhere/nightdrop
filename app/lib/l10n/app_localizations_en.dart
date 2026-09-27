@@ -518,8 +518,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'Android stopped background delivery, so messages may not have arrived. Reopen Night Drop to start it again.';
 
   @override
+  String get peerCapturesSilentSummary =>
+      'Their screenshots aren\'t reported to you';
+
+  @override
   String get peerCapturesSilentBanner =>
       'This person\'s device can\'t tell them about screenshots, so it won\'t tell you either. If they capture what you send, you won\'t hear about it.';
+
+  @override
+  String get peerOnOldVersionSummary =>
+      'They\'re on an older version — ask them to update';
 
   @override
   String get peerOnOldVersionBanner =>

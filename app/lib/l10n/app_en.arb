@@ -678,9 +678,17 @@
   "@backgroundStoppedBySystem": {
     "description": "Shown when the system (not the user) ended the foreground service, e.g. a foreground-service-type time budget running out. The point is that the user could not otherwise tell."
   },
+  "peerCapturesSilentSummary": "Their screenshots aren't reported to you",
+  "@peerCapturesSilentSummary": {
+    "description": "One-line form of peerCapturesSilentBanner; tapping it shows the full text."
+  },
   "peerCapturesSilentBanner": "This person's device can't tell them about screenshots, so it won't tell you either. If they capture what you send, you won't hear about it.",
   "@peerCapturesSilentBanner": {
     "description": "Shown to the sender when the peer's device (Android below 14) cannot report screen captures, so the peer's silence carries no information."
+  },
+  "peerOnOldVersionSummary": "They're on an older version — ask them to update",
+  "@peerOnOldVersionSummary": {
+    "description": "One-line form of peerOnOldVersionBanner; tapping it shows the full text."
   },
   "peerOnOldVersionBanner": "This person is using an older version of Night Drop, so messages that wait on a relay for either of you are addressed less privately. Their app can't tell them — ask them to update. Support for their version will end in a future release.",
   "@peerOnOldVersionBanner": {

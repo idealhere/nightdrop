@@ -958,11 +958,23 @@ abstract class AppLocalizations {
   /// **'Android stopped background delivery, so messages may not have arrived. Reopen Night Drop to start it again.'**
   String get backgroundStoppedBySystem;
 
+  /// One-line form of peerCapturesSilentBanner; tapping it shows the full text.
+  ///
+  /// In en, this message translates to:
+  /// **'Their screenshots aren\'t reported to you'**
+  String get peerCapturesSilentSummary;
+
   /// Shown to the sender when the peer's device (Android below 14) cannot report screen captures, so the peer's silence carries no information.
   ///
   /// In en, this message translates to:
   /// **'This person\'s device can\'t tell them about screenshots, so it won\'t tell you either. If they capture what you send, you won\'t hear about it.'**
   String get peerCapturesSilentBanner;
+
+  /// One-line form of peerOnOldVersionBanner; tapping it shows the full text.
+  ///
+  /// In en, this message translates to:
+  /// **'They\'re on an older version — ask them to update'**
+  String get peerOnOldVersionSummary;
 
   /// Shown when the peer's app predates private mailbox addressing. The peer's older app cannot display this, so the text asks the reader to tell them.
   ///

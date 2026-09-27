@@ -1053,6 +1053,60 @@ class _UnverifiedBanner extends StatelessWidget {
   }
 }
 
+/// A persistent notice that takes one line until tapped, then shows its full explanation. For the
+/// informational peer notices below: they must stay visible for the life of the chat, but two or
+/// three full paragraphs stacked above the messages left almost no room to read the chat.
+class _CompactNotice extends StatefulWidget {
+  const _CompactNotice({
+    required this.icon,
+    required this.summary,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String summary;
+  final String detail;
+
+  @override
+  State<_CompactNotice> createState() => _CompactNoticeState();
+}
+
+class _CompactNoticeState extends State<_CompactNotice> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = scheme.onSecondaryContainer;
+    return Material(
+      color: scheme.secondaryContainer,
+      child: InkWell(
+        onTap: () => setState(() => _open = !_open),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(widget.icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _open ? widget.detail : widget.summary,
+                  maxLines: _open ? null : 1,
+                  overflow: _open ? null : TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontSize: 12.5),
+                ),
+              ),
+              Icon(_open ? Icons.expand_less : Icons.expand_more,
+                  size: 16, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "Screenshots here are silent" — a property of the PEER's device, shown to the person deciding
 /// what to send. They already know when they screenshot; what they cannot otherwise know is that
 /// the other end raises no notice, which makes the peer's silence meaningless.
@@ -1061,25 +1115,11 @@ class _PeerCapturesSilentBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: scheme.secondaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          Icon(Icons.no_photography_outlined,
-              size: 18, color: scheme.onSecondaryContainer),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              AppLocalizations.of(context)!.peerCapturesSilentBanner,
-              style:
-                  TextStyle(color: scheme.onSecondaryContainer, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    return _CompactNotice(
+      icon: Icons.no_photography_outlined,
+      summary: l10n.peerCapturesSilentSummary,
+      detail: l10n.peerCapturesSilentBanner,
     );
   }
 }
@@ -1092,25 +1132,11 @@ class _PeerOnOldVersionBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: scheme.secondaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          Icon(Icons.system_update_outlined,
-              size: 18, color: scheme.onSecondaryContainer),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              AppLocalizations.of(context)!.peerOnOldVersionBanner,
-              style:
-                  TextStyle(color: scheme.onSecondaryContainer, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    return _CompactNotice(
+      icon: Icons.system_update_outlined,
+      summary: l10n.peerOnOldVersionSummary,
+      detail: l10n.peerOnOldVersionBanner,
     );
   }
 }

@@ -41,13 +41,18 @@ void main() {
   testWidgets('a contact on an older version is surfaced, worded to be passed on',
       (tester) async {
     await pumpChat(tester, true);
-    expect(find.textContaining('older version of Night Drop'), findsOneWidget);
+    // One line until tapped, and even that line asks them to update.
+    expect(find.textContaining('older version'), findsOneWidget);
     expect(find.textContaining('ask them to update'), findsOneWidget);
+    expect(find.textContaining('addressed less privately'), findsNothing);
+    await tester.tap(find.textContaining('older version'));
+    await tester.pump();
+    expect(find.textContaining('addressed less privately'), findsOneWidget);
   });
 
   // The core sets this only on evidence; the UI must not raise it on its own.
   testWidgets('no banner for a current contact', (tester) async {
     await pumpChat(tester, false);
-    expect(find.textContaining('older version of Night Drop'), findsNothing);
+    expect(find.textContaining('older version'), findsNothing);
   });
 }

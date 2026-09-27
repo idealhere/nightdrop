@@ -100,9 +100,13 @@ void main() {
     // Nothing said yet: unknown must render as nothing at all. Showing the warning here would cry
     // wolf; showing a reassurance would be the false guarantee the signal exists to remove.
     expect(core.contacts.first.peerCapturesSilent, isNull);
-    expect(find.text(l10n.peerCapturesSilentBanner), findsNothing);
+    expect(find.text(l10n.peerCapturesSilentSummary), findsNothing);
 
     core.peerSaysCapturesSilent(true);
+    await tester.pump();
+    // One line until tapped, then the full explanation.
+    expect(find.text(l10n.peerCapturesSilentSummary), findsOneWidget);
+    await tester.tap(find.text(l10n.peerCapturesSilentSummary));
     await tester.pump();
     expect(find.text(l10n.peerCapturesSilentBanner), findsOneWidget);
 
@@ -110,6 +114,7 @@ void main() {
     core.peerSaysCapturesSilent(false);
     await tester.pump();
     expect(find.text(l10n.peerCapturesSilentBanner), findsNothing);
+    expect(find.text(l10n.peerCapturesSilentSummary), findsNothing);
 
     expect(contact.id, isNotEmpty);
   });

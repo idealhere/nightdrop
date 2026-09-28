@@ -212,7 +212,11 @@ on a re-pair (new session) exactly like `verified`.
   the opt-in field channel that *may* run in a release build, and so records **what happened, not
   who with**: counts, outcomes, and which leg of a protocol ran — never keys, onion addresses,
   codes, slots, or names. It is off unless a build explicitly enables it (`NIGHTDROP_DIAG=1`, via
-  `--diag` on the install scripts). Anything identity-linked belongs in `devlog!`.
+  `--diag` on the install scripts). Anything identity-linked belongs in `devlog!`. A diagnostic
+  build also keeps the same lines in a file on the device, because a phone's logcat holds only
+  minutes: `/sdcard/Android/data/app.nightdrop/files/nightdrop-diag.log` (UTC timestamps, 8 MB then
+  one `.1` backup; `adb pull` works on a release-signed build). A normal build deletes that file at
+  launch, so installing one over a diagnostic build is the purge.
 - **Sending never blocks on the network.** `send` advances the ratchet and stores the message
   under the core lock (the ordered, security-critical step stays synchronous), but on a
   non-synchronous transport (`Transport::is_synchronous()` — false for Tor, true for the in-memory

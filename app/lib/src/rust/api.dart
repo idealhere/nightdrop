@@ -25,6 +25,16 @@ Future<void> unsubscribe() => RustLib.instance.api.crateApiUnsubscribe();
 Future<void> setDiagnostics({required bool enabled}) =>
     RustLib.instance.api.crateApiSetDiagnostics(enabled: enabled);
 
+/// Also keep every diagnostic line in a file at `path` on the device; an empty `path` stops.
+///
+/// **Diagnostic builds only** — the app calls this solely when `NIGHTDROP_DIAG` is set, and a
+/// normal build deletes any file a diagnostic build left behind. A phone's logcat holds minutes of
+/// history, so a field repro away from a PC was lost before anyone could pull it. The file carries
+/// exactly the logcat lines (outcomes only, onion addresses redacted) with UTC timestamps, rotating
+/// at 8 MB to one `.1` backup. See `crate::diag::set_log_file`.
+Future<void> setDiagnosticsLogFile({required String path}) =>
+    RustLib.instance.api.crateApiSetDiagnosticsLogFile(path: path);
+
 /// Write one line to the diagnostics channel from the **app layer**.
 ///
 /// Without this the Dart side is invisible in a field log: the core narrates what it does, while

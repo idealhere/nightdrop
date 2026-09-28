@@ -349,6 +349,8 @@ build_apk() {
     if [ "${DIAG:-0}" = 1 ]; then
         defines+=(--dart-define=NIGHTDROP_DIAG=1)
         log_success "Diagnostics ON — protocol outcomes to logcat (tag nd-diag); no keys/codes/addresses"
+        log_info "  Also kept on the phone: adb pull /sdcard/Android/data/app.nightdrop/files/nightdrop-diag.log"
+        log_info "  Purge: adb shell rm /sdcard/Android/data/app.nightdrop/files/nightdrop-diag.log*  (or install a non-diag build)"
     fi
     if [ -f "$PROJECT_ROOT/relay-state/onion" ]; then
         RELAY_ADDR=$(cat "$PROJECT_ROOT/relay-state/onion")

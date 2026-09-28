@@ -161,6 +161,23 @@ pub fn set_diagnostics(enabled: bool) {
     crate::diag!("diagnostics enabled");
 }
 
+/// Also keep every diagnostic line in a file at `path` on the device; an empty `path` stops.
+///
+/// **Diagnostic builds only** — the app calls this solely when `NIGHTDROP_DIAG` is set, and a
+/// normal build deletes any file a diagnostic build left behind. A phone's logcat holds minutes of
+/// history, so a field repro away from a PC was lost before anyone could pull it. The file carries
+/// exactly the logcat lines (outcomes only, onion addresses redacted) with UTC timestamps, rotating
+/// at 8 MB to one `.1` backup. See `crate::diag::set_log_file`.
+pub fn set_diagnostics_log_file(path: String) -> Result<()> {
+    let path = (!path.is_empty()).then(|| std::path::PathBuf::from(path));
+    let on = path.is_some();
+    crate::diag::set_log_file(path)?;
+    if on {
+        crate::diag!("diagnostics: also writing to the on-device log file");
+    }
+    Ok(())
+}
+
 /// Write one line to the diagnostics channel from the **app layer**.
 ///
 /// Without this the Dart side is invisible in a field log: the core narrates what it does, while

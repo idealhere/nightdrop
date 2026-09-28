@@ -1258,7 +1258,7 @@ impl Node {
             if let Some((addr, frame)) = self.authed_control(&from, MARK_ACK, |me, message| {
                 Frame::Ack { from: me, message }
             }) {
-                let _ = self.deliver(&addr, &from, &frame);
+                self.send_after_surfacing(&from, &addr, &frame);
             }
         }
         // …and a precise receipt per message on top. The coarse `Ack` above stays on the wire for
@@ -1285,9 +1285,44 @@ impl Node {
                     message,
                 })
             {
-                let _ = self.deliver(&addr, from, &frame);
+                self.send_after_surfacing(from, &addr, &frame);
             }
         }
+    }
+
+    /// Deliver a receipt or ack for something this tick received. Inline on a synchronous
+    /// transport (in-memory: instant, and tests expect the round trip done on return); otherwise
+    /// sealed now — the ratchet must advance under the lock — and queued in
+    /// [`receipt_sends`](Node::receipt_sends) for the poller to send once it has surfaced the
+    /// messages. A receipt is a peer dial plus, on failure, a relay post; sent inline it made the
+    /// notification wait for both.
+    fn send_after_surfacing(&mut self, contact_id: &str, peer_address: &str, frame: &Frame) {
+        if self.transport.is_synchronous() {
+            let _ = self.deliver(peer_address, contact_id, frame);
+            return;
+        }
+        let peer_relays = self
+            .chats
+            .get(contact_id)
+            .map(|c| c.contact.peer_relays.clone())
+            .unwrap_or_default();
+        let send = DetachedSend {
+            transport: Arc::clone(&self.transport),
+            primary: self.relay.clone(),
+            peer_relays,
+            recipient_ik: contact_id.to_string(),
+            handle: self.post_handle(contact_id),
+            peer_address: peer_address.to_string(),
+            bytes: wire::encode(frame),
+        };
+        self.receipt_sends.push(send);
+    }
+
+    /// Hand over the receipts and acks queued by [`send_after_surfacing`](Self::send_after_surfacing),
+    /// for the poller to [`execute`](DetachedSend::execute) **after** it has emitted the messages
+    /// they confirm and released the core lock.
+    pub(crate) fn take_receipt_sends(&mut self) -> Vec<DetachedSend> {
+        std::mem::take(&mut self.receipt_sends)
     }
 
     /// Set our per-chat display name (§4). Blank falls back to [`DEFAULT_NAME`]; on a live

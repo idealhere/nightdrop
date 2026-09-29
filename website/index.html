@@ -7,7 +7,7 @@
        it plus X-Frame-Options as HTTP headers on the server for clickjacking protection.) -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Night Drop — private messaging that leaves no trace</title>
+  <title>Night Drop — private messaging with no account and no phone number</title>
   <meta name="description" content="Night Drop is a free, anonymous, end-to-end encrypted 1:1 messenger. No accounts, no server-side keys, no logs. Peer-to-peer over Tor, local-first storage." />
   <link rel="canonical" href="https://nightdrop.app/" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
@@ -17,8 +17,8 @@
   <meta name="color-scheme" content="dark" />
 
   <!-- Open Graph (link previews) -->
-  <meta property="og:title" content="Night Drop — private messaging that leaves no trace" />
-  <meta property="og:description" content="Sealed. Dropped. Delivered. Anonymous, end-to-end encrypted 1:1 chat over Tor — no accounts, no server-side keys, no logs, no one in between." />
+  <meta property="og:title" content="Night Drop — private messaging with no account and no phone number" />
+  <meta property="og:description" content="Sealed. Dropped. Delivered. Anonymous, end-to-end encrypted 1:1 chat over Tor — no accounts, no server-side keys, no logs, and no one in between can open it." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://nightdrop.app/" />
   <meta property="og:site_name" content="Night Drop" />
@@ -30,8 +30,8 @@
 
   <!-- Twitter/X card -->
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Night Drop — private messaging that leaves no trace" />
-  <meta name="twitter:description" content="Anonymous, end-to-end encrypted 1:1 chat over Tor — no accounts, no server-side keys, no logs, no one in between." />
+  <meta name="twitter:title" content="Night Drop — private messaging with no account and no phone number" />
+  <meta name="twitter:description" content="Anonymous, end-to-end encrypted 1:1 chat over Tor — no accounts, no server-side keys, no logs, and no one in between can open it." />
   <meta name="twitter:image" content="https://nightdrop.app/icon-512.png" />
 
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
@@ -341,7 +341,7 @@
         setText('hero-headline', c.app.headline);
         setText('hero-tagline', c.app.tagline);
         setText('donate-blurb', c.app.blurb);
-        if (c.app.name) document.title = c.app.name + ' — private messaging that leaves no trace';
+        if (c.app.name) document.title = c.app.name + ' — private messaging with no account and no phone number';
       }
       if (Array.isArray(c.donations) && c.donations.length) {
         var grid = document.getElementById('donate-grid');

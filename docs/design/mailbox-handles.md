@@ -295,3 +295,10 @@ cannot tell that deposits for two people came from one sender by the circuit the
 **The cap (§8)** is 50 open, approved chats. A pending request is not a contact yet, and
 re-pairing an existing contact is not new. It is checked before anything reaches the network,
 both when connecting and when approving, and the refusal states the reason.
+
+**Verified on devices (phone + desktop, 2026-09-27).** New build against old, both directions: the
+banner appeared on the newer side and messages kept flowing on v1. New against new: both sides
+confirmed agreement, with delivery receipts in 1–10 s. Offline mail under a v2 handle: the desktop
+queued a message "under a v2 handle" with the phone app closed, and the phone drained it on its
+first cold round (10/10 fragments answered). The receipt came back after 110 s, nearly all of it
+the time the phone app spent closed.

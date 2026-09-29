@@ -148,6 +148,11 @@ Where it's wired:
 **Caveat:** to Android, a new `applicationId` is a *different app*. It installs
 alongside the old one (no upgrade, no data migration) — uninstall the old id manually.
 
+That is also the way to put a **test build beside a real install**, e.g.
+`NIGHTDROP_APP_ID=app.nightdrop.wttest NIGHTDROP_APP_NAME="ND WT Test"`. A debug-signed build under
+`app.nightdrop` cannot install over the release-signed one without an uninstall, and the uninstall
+destroys that device's identity.
+
 ---
 
 ## 8. Shell scripts (`scripts/`)

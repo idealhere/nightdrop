@@ -216,7 +216,10 @@ on a re-pair (new session) exactly like `verified`.
   build also keeps the same lines in a file on the device, because a phone's logcat holds only
   minutes: `/sdcard/Android/data/app.nightdrop/files/nightdrop-diag.log` (UTC timestamps, 8 MB then
   one `.1` backup; `adb pull` works on a release-signed build). A normal build deletes that file at
-  launch, so installing one over a diagnostic build is the purge.
+  launch, so installing one over a diagnostic build is the purge. arti's own lines (`nd-tor`) are
+  rate-limited to 100 events per message shape per minute, with a summary line counting the rest:
+  on 2026-09-29 a single hspool retry loop logged 28,000 lines in under a minute and rotated a
+  whole day's log away.
 - **Sending never blocks on the network.** `send` advances the ratchet and stores the message
   under the core lock (the ordered, security-critical step stays synchronous), but on a
   non-synchronous transport (`Transport::is_synchronous()` — false for Tor, true for the in-memory

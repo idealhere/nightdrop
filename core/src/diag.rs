@@ -13,9 +13,11 @@
 //! Even so they are **off by default** and must be turned on explicitly for a debugging build
 //! ([`set_enabled`], wired to `NIGHTDROP_DIAG` in the app). A normal release is silent.
 
+use std::collections::HashMap;
 use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -163,6 +165,120 @@ pub fn emit_tor(line: &str) {
     #[cfg(not(target_os = "android"))]
     eprintln!("[nd-tor] {line}");
     append("nd-tor", &line);
+}
+
+/// How many arti events of one shape (see [`event_shape`]) pass per [`TOR_WINDOW`] before the rest
+/// are counted instead of logged. A normal hour's busiest shape ("Spawning reactor") peaks at 88 a
+/// minute, so this cuts nothing real; arti's hspool, with every guard marked down, logged the same
+/// failure 28,000 times in under a minute on 2026-09-29, rotating the file twice and destroying the
+/// day's log it was meant to keep.
+const TOR_BURST: u32 = 100;
+const TOR_WINDOW: Duration = Duration::from_secs(60);
+
+static TOR_LIMITER: Mutex<Option<RateLimiter>> = Mutex::new(None);
+
+/// Whether an arti event whose first line is `first_line` should be logged. Call once per event
+/// and apply the answer to all of its lines, so a multi-line event (an error with a backtrace) is
+/// kept or dropped whole. When a shape's window closes with lines dropped, one summary line saying
+/// how many is emitted first — so a flood shows up as a count, not as silence.
+pub fn admit_tor_event(first_line: &str) -> bool {
+    let (admit, summaries) = TOR_LIMITER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(|| RateLimiter::new(TOR_BURST, TOR_WINDOW))
+        .check(first_line, Instant::now());
+    // Emitted after the lock is released: `emit_tor` never touches the limiter, but keep it that
+    // way by construction.
+    for s in summaries {
+        emit_tor(&s);
+    }
+    admit
+}
+
+/// A per-shape budget of `burst` events per `window`, with the window starting at a shape's
+/// first event. Shapes whose window closed are reported (if anything was dropped) and forgotten
+/// on the next call, so the map only holds shapes seen in the last window.
+struct RateLimiter {
+    burst: u32,
+    window: Duration,
+    shapes: HashMap<String, Window>,
+}
+
+struct Window {
+    start: Instant,
+    passed: u32,
+    dropped: u32,
+}
+
+impl RateLimiter {
+    fn new(burst: u32, window: Duration) -> Self {
+        Self {
+            burst,
+            window,
+            shapes: HashMap::new(),
+        }
+    }
+
+    /// Returns whether to log this event, plus summary lines for windows that just closed.
+    fn check(&mut self, line: &str, now: Instant) -> (bool, Vec<String>) {
+        let window = self.window;
+        let mut summaries = Vec::new();
+        self.shapes.retain(|shape, w| {
+            let open = now.duration_since(w.start) < window;
+            if !open && w.dropped > 0 {
+                summaries.push(format!(
+                    "rate limit: dropped {} more lines like \"{shape}\" (over {} in {}s)",
+                    w.dropped,
+                    w.passed,
+                    window.as_secs()
+                ));
+            }
+            open
+        });
+        let w = self.shapes.entry(event_shape(line)).or_insert(Window {
+            start: now,
+            passed: 0,
+            dropped: 0,
+        });
+        let admit = w.passed < self.burst;
+        if admit {
+            w.passed += 1;
+        } else {
+            w.dropped += 1;
+        }
+        (admit, summaries)
+    }
+}
+
+/// What makes two arti lines "the same message": the line without tracing's leading timestamp,
+/// with every word containing a digit (counts, durations, ids, hashes) replaced by `#`, cut to
+/// 120 chars — long enough to keep `error=` kinds apart, short enough that the varying detail
+/// after them does not split one flood into thousands of shapes.
+fn event_shape(line: &str) -> String {
+    let body = match line.split_once(' ') {
+        Some((first, rest)) if first.starts_with(|c: char| c.is_ascii_digit()) => rest,
+        _ => line,
+    };
+    let mut out = String::with_capacity(body.len().min(120));
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        if word.chars().any(|c| c.is_ascii_digit()) {
+            out.push('#');
+        } else {
+            out.push_str(word);
+        }
+        word.clear();
+    };
+    for c in body.trim().chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out.chars().take(120).collect()
 }
 
 /// Everything this channel must never print, removed in one place.
@@ -317,30 +433,6 @@ mod tests {
     }
 
     #[test]
-    fn listener_secret_is_redacted_wherever_arti_quotes_it() {
-        // Shape of arti's bridge-descriptor line, with an onion elsewhere in the same line.
-        let onion = "bzcqxuxwvtmrmvprsoscnronkjf5wknfuj5ozxiq5fr6qowvnkwrwwad.onion";
-        let line = format!(
-            "DEBUG tor_dirmgr::bridgedesc: starting download for \"webtunnel [2001:db8::1]:443 \
-             $93807a85 url=https://example.net/p ver=0.0.3 listener-secret=0123456789abcdef\" \
-             via {onion}; again listener-secret=fedcba9876543210]"
-        );
-        let got = redact(&line);
-        assert!(!got.contains("0123456789abcdef"), "{got}");
-        assert!(!got.contains("fedcba9876543210"), "{got}");
-        assert!(!got.contains(".onion"), "{got}");
-        assert!(
-            got.contains("ver=0.0.3 listener-secret=<redacted>\" via <onion>; again listener-secret=<redacted>]"),
-            "{got}"
-        );
-        // A secret at the very end of the line.
-        assert_eq!(
-            redact("x listener-secret=abc"),
-            "x listener-secret=<redacted>"
-        );
-    }
-
-    #[test]
     fn timestamps_are_utc_iso8601() {
         use std::time::{Duration, UNIX_EPOCH};
         assert_eq!(utc_timestamp(UNIX_EPOCH), "1970-01-01T00:00:00.000Z");
@@ -444,6 +536,86 @@ mod tests {
             "newest line lost in rotation"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_flood_of_one_message_is_capped_and_then_counted() {
+        let mut rl = RateLimiter::new(3, Duration::from_secs(60));
+        let t0 = Instant::now();
+        let flood = |i: u32| {
+            format!(
+                "2026-09-29T19:44:43.{i:06}Z DEBUG tor_circmgr::hspool: Unable to build \
+                 preemptive circuit for onion services error=Unable to select a guard relay \
+                 Retrying in {i}s {}ms",
+                i * 7
+            )
+        };
+        let admitted = (0..1000)
+            .filter(|&i| rl.check(&flood(i), t0 + Duration::from_millis(i.into())).0)
+            .count();
+        assert_eq!(
+            admitted, 3,
+            "differing numbers must not make lines distinct"
+        );
+
+        // A different message is unaffected by the flood's budget.
+        let other = "2026-09-29T19:44:44.000000Z DEBUG tor_circmgr::build: Spawning reactor...";
+        assert!(rl.check(other, t0 + Duration::from_secs(1)).0);
+
+        // Once the window closes, the drop count is reported and the shape starts afresh.
+        let (admit, summaries) = rl.check(&flood(5), t0 + Duration::from_secs(61));
+        assert!(admit);
+        assert_eq!(summaries.len(), 1, "{summaries:?}");
+        assert!(
+            summaries[0].starts_with("rate limit: dropped 997 more lines like \"DEBUG tor_circmgr::hspool: Unable to build"),
+            "{}",
+            summaries[0]
+        );
+    }
+
+    #[test]
+    fn a_quiet_window_closes_without_a_summary() {
+        let mut rl = RateLimiter::new(3, Duration::from_secs(60));
+        let t0 = Instant::now();
+        assert!(rl.check("DEBUG a: one", t0).0);
+        let (_, summaries) = rl.check("DEBUG a: one", t0 + Duration::from_secs(120));
+        assert!(summaries.is_empty(), "nothing was dropped: {summaries:?}");
+        assert_eq!(rl.shapes.len(), 1, "closed windows must be forgotten");
+    }
+
+    #[test]
+    fn error_kinds_stay_distinct_shapes() {
+        let a = "2026-09-29T19:44:43.1Z DEBUG tor_circmgr::hspool: Unable to build preemptive circuit for onion services error=Unable to select a guard relay";
+        let b = "2026-09-29T19:44:43.1Z DEBUG tor_circmgr::hspool: Unable to build preemptive circuit for onion services error=Circuit took too long to build";
+        assert_ne!(event_shape(a), event_shape(b));
+        assert_eq!(
+            event_shape("2026-09-29T21:15:44.1Z DEBUG x: IptLocalId(00c4813ddf) status, 3 good"),
+            "DEBUG x: IptLocalId(#) status, # good"
+        );
+    }
+
+    #[test]
+    fn listener_secret_is_redacted_wherever_arti_quotes_it() {
+        // Shape of arti's bridge-descriptor line, with an onion elsewhere in the same line.
+        let onion = "bzcqxuxwvtmrmvprsoscnronkjf5wknfuj5ozxiq5fr6qowvnkwrwwad.onion";
+        let line = format!(
+            "DEBUG tor_dirmgr::bridgedesc: starting download for \"webtunnel [2001:db8::1]:443 \
+             $93807a85 url=https://example.net/p ver=0.0.3 listener-secret=0123456789abcdef\" \
+             via {onion}; again listener-secret=fedcba9876543210]"
+        );
+        let got = redact(&line);
+        assert!(!got.contains("0123456789abcdef"), "{got}");
+        assert!(!got.contains("fedcba9876543210"), "{got}");
+        assert!(!got.contains(".onion"), "{got}");
+        assert!(
+            got.contains("ver=0.0.3 listener-secret=<redacted>\" via <onion>; again listener-secret=<redacted>]"),
+            "{got}"
+        );
+        // A secret at the very end of the line.
+        assert_eq!(
+            redact("x listener-secret=abc"),
+            "x listener-secret=<redacted>"
+        );
     }
 
     #[test]

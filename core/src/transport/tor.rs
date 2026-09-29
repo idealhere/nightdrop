@@ -79,10 +79,26 @@ const ARTI_NOISE: [&str; 2] = [
 ];
 
 /// A `std::io::Write` that turns each completed line from the tracing formatter into one
-/// [`crate::diag::emit_tor`] call. A fresh instance is made per event (one line ending in `\n`).
+/// [`crate::diag::emit_tor`] call. A fresh instance is made per event (usually one line ending in
+/// `\n`; an error with a backtrace spans several), so the rate limiter is asked once, on the
+/// event's first line, and its answer covers the rest.
 #[derive(Default)]
 struct ArtiDiagWriter {
     buf: Vec<u8>,
+    admitted: Option<bool>,
+}
+impl ArtiDiagWriter {
+    fn emit(&mut self, line: &str) {
+        if ARTI_NOISE.iter().any(|n| line.contains(n)) {
+            return;
+        }
+        let admitted = *self
+            .admitted
+            .get_or_insert_with(|| crate::diag::admit_tor_event(line));
+        if admitted {
+            crate::diag::emit_tor(line);
+        }
+    }
 }
 impl std::io::Write for ArtiDiagWriter {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
@@ -90,17 +106,14 @@ impl std::io::Write for ArtiDiagWriter {
         while let Some(nl) = self.buf.iter().position(|&b| b == b'\n') {
             let line: Vec<u8> = self.buf.drain(..=nl).collect();
             let line = String::from_utf8_lossy(&line);
-            let line = line.trim_end();
-            if !ARTI_NOISE.iter().any(|n| line.contains(n)) {
-                crate::diag::emit_tor(line);
-            }
+            self.emit(line.trim_end());
         }
         Ok(data.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
         if !self.buf.is_empty() {
-            crate::diag::emit_tor(String::from_utf8_lossy(&self.buf).trim_end());
-            self.buf.clear();
+            let rest = std::mem::take(&mut self.buf);
+            self.emit(String::from_utf8_lossy(&rest).trim_end());
         }
         Ok(())
     }

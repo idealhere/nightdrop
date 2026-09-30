@@ -34,7 +34,7 @@ pub fn enabled() -> bool {
 /// relay dial failure) can carry one in their context, and the channel's guarantee — no onion
 /// addresses ever reach a release log — should be enforced here, not left to each call site.
 pub fn emit(line: &str) {
-    let line = redact_onions(line);
+    let line = redact(line);
     #[cfg(target_os = "android")]
     android::write("nd-diag", &line);
     #[cfg(not(target_os = "android"))]
@@ -44,16 +44,56 @@ pub fn emit(line: &str) {
 /// Emit one line of arti's own tracing (guard/circuit/dir-download/bootstrap progress) under a
 /// separate `nd-tor` tag, so field debugging of a stuck Tor bootstrap can see *why* — never linked
 /// to a chat. Only reached when diagnostics are on (see [`crate::transport`] tracing install).
-/// Onion addresses are still redacted defensively.
+/// Onion addresses are still redacted defensively, and so is the WebTunnel listener secret, which
+/// arti prints inside every bridge line it logs.
 pub fn emit_tor(line: &str) {
     if line.is_empty() {
         return;
     }
-    let line = redact_onions(line);
+    let line = redact(line);
     #[cfg(target_os = "android")]
     android::write("nd-tor", &line);
     #[cfg(not(target_os = "android"))]
     eprintln!("[nd-tor] {line}");
+}
+
+/// Everything this channel must never print, removed in one place.
+fn redact(s: &str) -> std::borrow::Cow<'_, str> {
+    match redact_onions(s) {
+        std::borrow::Cow::Borrowed(s) => redact_listener_secret(s),
+        std::borrow::Cow::Owned(s) => {
+            std::borrow::Cow::Owned(redact_listener_secret(&s).into_owned())
+        }
+    }
+}
+
+/// The argument our bridge lines carry for the WebTunnel listener (`webtunnel::socks::SECRET_ARG`,
+/// spelled out because `webtunnel` is an optional dependency).
+const LISTENER_SECRET_ARG: &str = "listener-secret=";
+
+/// Replace the value of every `listener-secret=` with `<redacted>`. `apply_bridges` appends that
+/// secret to each bridge line, and arti's debug output quotes whole bridge lines (guard selection,
+/// bridge-descriptor downloads). It is what keeps other apps on an Android device off our loopback
+/// WebTunnel proxy, so it belongs in app-private storage, not in logcat or a pullable log file.
+/// Seen in a Windows debug run, 2026-09-30.
+fn redact_listener_secret(s: &str) -> std::borrow::Cow<'_, str> {
+    if !s.contains(LISTENER_SECRET_ARG) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find(LISTENER_SECRET_ARG) {
+        let value = i + LISTENER_SECRET_ARG.len();
+        out.push_str(&rest[..value]);
+        out.push_str("<redacted>");
+        // The value runs to the next space, quote or bracket, the separators in arti's output.
+        let end = rest[value..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ']' | ')' | ','))
+            .map_or(rest.len(), |n| value + n);
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    std::borrow::Cow::Owned(out)
 }
 
 /// Replace any `<base32>.onion` label with `<onion>`. Defensive and format-agnostic: it works on
@@ -169,8 +209,33 @@ mod tests {
     }
 
     #[test]
+    fn listener_secret_is_redacted_wherever_arti_quotes_it() {
+        // Shape of arti's bridge-descriptor line, with an onion elsewhere in the same line.
+        let onion = "bzcqxuxwvtmrmvprsoscnronkjf5wknfuj5ozxiq5fr6qowvnkwrwwad.onion";
+        let line = format!(
+            "DEBUG tor_dirmgr::bridgedesc: starting download for \"webtunnel [2001:db8::1]:443 \
+             $93807a85 url=https://example.net/p ver=0.0.3 listener-secret=0123456789abcdef\" \
+             via {onion}; again listener-secret=fedcba9876543210]"
+        );
+        let got = redact(&line);
+        assert!(!got.contains("0123456789abcdef"), "{got}");
+        assert!(!got.contains("fedcba9876543210"), "{got}");
+        assert!(!got.contains(".onion"), "{got}");
+        assert!(
+            got.contains("ver=0.0.3 listener-secret=<redacted>\" via <onion>; again listener-secret=<redacted>]"),
+            "{got}"
+        );
+        // A secret at the very end of the line.
+        assert_eq!(
+            redact("x listener-secret=abc"),
+            "x listener-secret=<redacted>"
+        );
+    }
+
+    #[test]
     fn redaction_leaves_ordinary_lines_untouched() {
         let line = "join: opener posted to 0/1 relays";
         assert!(matches!(redact_onions(line), std::borrow::Cow::Borrowed(_)));
+        assert!(matches!(redact(line), std::borrow::Cow::Borrowed(_)));
     }
 }

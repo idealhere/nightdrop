@@ -140,6 +140,7 @@ impl Node {
     /// [`apply_send_outcomes`](Self::apply_send_outcomes)), because dialling here holds the core
     /// lock. No-op if the chat was deleted before delivery ran.
     pub(crate) fn attempt_delivery(&mut self, contact_id: &str, msg_id: &str, bytes: &[u8]) {
+        let handle = self.post_handle(contact_id);
         let Some(chat) = self.chats.get_mut(contact_id) else {
             return;
         };
@@ -159,6 +160,7 @@ impl Node {
                 &self.relay,
                 &targets,
                 contact_id,
+                &handle,
                 bytes,
             ) {
                 Ok(copies) => {
@@ -242,6 +244,7 @@ impl Node {
                 still_waiting.push(a);
                 continue;
             }
+            let handle = self.post_handle(&a.contact_id);
             let Some(chat) = self.chats.get_mut(&a.contact_id) else {
                 continue; // chat deleted while we waited
             };
@@ -278,6 +281,7 @@ impl Node {
                 &self.relay,
                 &targets,
                 &a.contact_id,
+                &handle,
                 &bytes,
             ) {
                 Ok(copies) => {
@@ -393,6 +397,7 @@ impl Node {
                 }
             }
             items.push(PlannedSend {
+                handle: self.post_handle(&p.contact_id),
                 contact_id: p.contact_id,
                 msg_id: p.msg_id,
                 bytes: p.bytes,
@@ -497,6 +502,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 &p.contact_id,
+                &self.post_handle(&p.contact_id),
                 &p.bytes,
             ) {
                 Ok(copies) => {
@@ -532,6 +538,8 @@ impl Node {
                 &self.relay,
                 &p.relays,
                 &p.recipient_ik,
+                // v1: the chat is already gone, and the peer polls v1 throughout the transition.
+                &mailbox_handle(&p.recipient_ik),
                 &p.bytes,
             )
             .is_ok();
@@ -574,7 +582,16 @@ impl Node {
         // indistinguishable from real traffic leaves nothing else to observe: without this line
         // "cover traffic costs nothing measurable" and "cover traffic never ran" are the same
         // reading, which is exactly the trap the relay watchdog fell into.
-        match queue_on_relays(self.transport.as_ref(), &Some(relay), &targets, &me, &blob) {
+        // Our own v1 mailbox, which we poll throughout the transition (`mailbox-handles.md`).
+        let own = mailbox_handle(&me);
+        match queue_on_relays(
+            self.transport.as_ref(),
+            &Some(relay),
+            &targets,
+            &me,
+            &own,
+            &blob,
+        ) {
             Ok(receipts) => crate::diag!(
                 "cover: posted a dummy to our own mailbox ({} relay(s))",
                 receipts.len()
@@ -667,6 +684,8 @@ impl Node {
     ///   frame naming the `msg_id`; the peer replaces the text and shows "edited".
     pub fn edit_message(&mut self, contact_id: &str, msg_id: &str, new_text: &str) -> Result<()> {
         let from = self.identity_key();
+        // Chosen before the chat is borrowed mutably: a replacement copy goes where new mail goes.
+        let handle = self.post_handle(contact_id);
         let chat = self
             .chats
             .get_mut(contact_id)
@@ -711,6 +730,7 @@ impl Node {
                     &self.relay,
                     &chat.contact.peer_relays,
                     contact_id,
+                    &handle,
                     &wire::encode(&frame),
                 )?;
                 chat.relay_receipts.insert(msg_id.to_string(), new_copies);
@@ -879,9 +899,10 @@ impl Node {
                 (chat.peer_address.clone(), bytes)
             };
             if self.transport.send(&peer_address, &incoming).is_err() {
+                let handle = self.post_handle(contact_id);
                 if let Some(relay) = &self.relay {
                     if let Ok(sealed) = relay_wrap(contact_id, &incoming) {
-                        let _ = relay.post(&mailbox_handle(contact_id), &sealed, RELAY_TTL);
+                        let _ = relay.post(&handle, &sealed, RELAY_TTL);
                     }
                 }
             }
@@ -942,6 +963,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 contact_id,
+                &self.post_handle(contact_id),
                 &media_bytes,
             );
             if !delivered {
@@ -1098,12 +1120,19 @@ impl Node {
     /// **without** the core lock ([`drain_relay_mailboxes`], §1.5.2). Includes the primary relay
     /// plus our advertised extras (#17). `None` if no relay is configured (nothing to drain).
     pub(crate) fn relay_drain_plan(&self) -> Option<RelayDrainPlan> {
-        let mut clients: Vec<(Option<String>, RelayClient)> = Vec::new();
+        self.relay_drain_plan_at(crate::api::now_secs())
+    }
+
+    /// [`relay_drain_plan`](Self::relay_drain_plan) as of `now` (unix secs).
+    pub(crate) fn relay_drain_plan_at(&self, now: u64) -> Option<RelayDrainPlan> {
+        use rand::seq::SliceRandom as _;
+        let mut relays: Vec<(Option<String>, RelayClient)> = Vec::new();
         if let Some(primary) = &self.relay {
-            clients.push((None, primary.clone()));
+            relays.push((None, primary.clone()));
         }
         // Each relay once. The signed directory normally lists the primary itself, so without this
-        // every round drained the one relay twice under two names.
+        // every round polled the one relay twice under two names — double the requests, and with
+        // fragments double the onion connections (seen on a phone, 2026-09-26).
         let primary_addr = self
             .relay
             .as_ref()
@@ -1114,17 +1143,43 @@ impl Node {
                 continue;
             }
             seen.push(addr);
-            clients.push((
+            relays.push((
                 Some(addr.clone()),
                 build_relay(self.transport.as_ref(), addr),
             ));
         }
-        if clients.is_empty() {
+        if relays.is_empty() {
             return None;
         }
+        let fragments = self.poll_fragments_at(now);
+        let mut stagger = false;
+        let mut jobs = Vec::new();
+        for (addr, base) in &relays {
+            for fragment in &fragments {
+                let client =
+                    super::mailbox::isolated(self.transport.as_ref(), base, fragment.group);
+                // Isolation happened only if a sibling client was built; `isolated` returns the base
+                // unchanged otherwise. Tell by the transport, not by comparing clients.
+                stagger |= base.addr().is_some_and(|a| {
+                    self.transport
+                        .relay_dialer_isolated(a, fragment.group)
+                        .is_some()
+                });
+                jobs.push(DrainJob {
+                    addr: addr.clone(),
+                    client,
+                    epoch: fragment.epoch,
+                    handles: fragment.handles.clone(),
+                });
+            }
+        }
+        // A new order every round: a fragment that always followed another would announce their
+        // relationship without ever sharing a circuit (§5c).
+        jobs.shuffle(&mut rand::thread_rng());
         Some(RelayDrainPlan {
-            handle: mailbox_handle(&self.identity_key()),
-            clients,
+            jobs,
+            settles: self.settling_epoch(now),
+            stagger,
         })
     }
 
@@ -1141,6 +1196,12 @@ impl Node {
         // warning); the primary is untracked (baked-in default).
         for (addr, reachable) in harvest.reachability {
             self.relay_reachable.insert(addr, reachable);
+        }
+        if let Some(epoch) = harvest.settled {
+            if self.prev_epoch_drained != Some(epoch) {
+                crate::diag!("relay: yesterday's mailboxes drained past the skew margin — retired");
+            }
+            self.prev_epoch_drained = Some(epoch);
         }
         let mut received = Vec::new();
         let mut to_ack: Vec<String> = Vec::new(); // senders whose user messages we drained
@@ -1197,7 +1258,7 @@ impl Node {
             if let Some((addr, frame)) = self.authed_control(&from, MARK_ACK, |me, message| {
                 Frame::Ack { from: me, message }
             }) {
-                let _ = self.deliver(&addr, &from, &frame);
+                self.send_after_surfacing(&from, &addr, &frame, false);
             }
         }
         // …and a precise receipt per message on top. The coarse `Ack` above stays on the wire for
@@ -1216,7 +1277,16 @@ impl Node {
     /// belongs to — the message *has* arrived, and the only casualty is the sender's badge, which
     /// stays at "sent". That is the honest failure direction. Falls back to the relay like any
     /// control frame, so a peer who has gone offline still learns their message landed.
+    ///
+    /// The first receipt to each peer goes over a **fresh** connection. Nothing confirms a receipt,
+    /// so one written into a connection kept open from earlier traffic, whose other end has gone,
+    /// was lost without an error, and the relay fallback never ran: the sender's message sat on
+    /// "Held for delivery" for good (2026-09-30). A fresh dial to a gone peer fails, and the receipt
+    /// goes to the relay. Later receipts to the same peer in this batch take the ordinary send, which
+    /// reuses the connection the first one opened if it got through, so a burst of messages costs
+    /// one extra dial, not one per message.
     pub(crate) fn send_receipts(&mut self, receipts: &[(String, String)]) {
+        let mut proven: Vec<&str> = Vec::new();
         for (from, msg_id) in receipts {
             if let Some((addr, frame)) =
                 self.authed_control(from, msg_id.as_bytes(), |me, message| Frame::Delivered {
@@ -1224,9 +1294,58 @@ impl Node {
                     message,
                 })
             {
-                let _ = self.deliver(&addr, from, &frame);
+                let fresh = !proven.contains(&from.as_str());
+                self.send_after_surfacing(from, &addr, &frame, fresh);
+                if fresh {
+                    proven.push(from);
+                }
             }
         }
+    }
+
+    /// Deliver a receipt or ack for something this tick received. Inline on a synchronous
+    /// transport (in-memory: instant, and tests expect the round trip done on return); otherwise
+    /// sealed now — the ratchet must advance under the lock — and queued in
+    /// [`receipt_sends`](Node::receipt_sends) for the poller to send once it has surfaced the
+    /// messages. A receipt is a peer dial plus, on failure, a relay post; sent inline it made the
+    /// notification wait for both.
+    ///
+    /// `fresh` sends it over a connection opened for it ([`Transport::send_fresh`]); see
+    /// [`send_receipts`](Self::send_receipts) for why receipts need that.
+    fn send_after_surfacing(
+        &mut self,
+        contact_id: &str,
+        peer_address: &str,
+        frame: &Frame,
+        fresh: bool,
+    ) {
+        if self.transport.is_synchronous() {
+            let _ = self.deliver_on(peer_address, contact_id, frame, fresh);
+            return;
+        }
+        let peer_relays = self
+            .chats
+            .get(contact_id)
+            .map(|c| c.contact.peer_relays.clone())
+            .unwrap_or_default();
+        let send = DetachedSend {
+            transport: Arc::clone(&self.transport),
+            primary: self.relay.clone(),
+            peer_relays,
+            recipient_ik: contact_id.to_string(),
+            handle: self.post_handle(contact_id),
+            peer_address: peer_address.to_string(),
+            bytes: wire::encode(frame),
+            fresh,
+        };
+        self.receipt_sends.push(send);
+    }
+
+    /// Hand over the receipts and acks queued by [`send_after_surfacing`](Self::send_after_surfacing),
+    /// for the poller to [`execute`](DetachedSend::execute) **after** it has emitted the messages
+    /// they confirm and released the core lock.
+    pub(crate) fn take_receipt_sends(&mut self) -> Vec<DetachedSend> {
+        std::mem::take(&mut self.receipt_sends)
     }
 
     /// Set our per-chat display name (§4). Blank falls back to [`DEFAULT_NAME`]; on a live
@@ -1521,6 +1640,7 @@ impl Node {
     /// see [`Node::mark_burn_viewed`].
     pub(super) fn send_burn_receipt(&mut self, contact_id: &str, target_id: &str) {
         let from = self.identity_key();
+        let handle = self.post_handle(contact_id);
         let Some(chat) = self.chats.get_mut(contact_id) else {
             return;
         };
@@ -1534,8 +1654,12 @@ impl Node {
             primary: self.relay.clone(),
             peer_relays: chat.contact.peer_relays.clone(),
             recipient_ik: contact_id.to_string(),
+            handle,
             peer_address: chat.peer_address.clone(),
             bytes: wire::encode(&frame),
+            // A view receipt is confirmed by nothing either: the same dead-connection loss as a
+            // delivery receipt (`send_receipts`), with the burn timer's reveal riding on it.
+            fresh: true,
         };
         self.detached_sends.push(send);
     }

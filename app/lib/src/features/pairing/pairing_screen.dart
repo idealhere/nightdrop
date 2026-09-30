@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
 import '../../core/models.dart';
+import '../../core/nightdrop_core.dart';
 import '../chat/chat_screen.dart';
 import 'scan_screen.dart';
 
@@ -169,7 +170,7 @@ class _JoinTabState extends State<_JoinTab> {
             builder: (_) => ChatScreen(contactId: contact.id)),
       );
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      if (mounted) setState(() => _error = cleanCoreError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

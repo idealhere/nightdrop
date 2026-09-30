@@ -1819,34 +1819,3 @@ fn a_viewed_receipt_cannot_delete_anything_but_our_own_burn_message() {
         "and it must not touch their messages either"
     );
 }
-
-#[test]
-fn the_primary_listed_again_by_the_directory_is_used_once() {
-    let relay_addr = RelayServer::spawn("127.0.0.1:0").unwrap().to_string();
-    let relay = RelayClient::new(relay_addr.clone());
-    let net = MemoryNetwork::new();
-    let mut alice = Node::new(Box::new(net.endpoint("alice")));
-    let mut bob = Node::new(Box::new(net.endpoint("bob")));
-    alice.set_relay(relay.clone());
-    bob.set_relay(relay.clone());
-    // The signed directory lists the primary itself, as the real one does.
-    alice.discovered_relays = vec![relay_addr.clone()];
-    bob.discovered_relays = vec![relay_addr];
-    let bundle = alice.publish_bundle();
-    bob.connect_with_bundle("alice", &bundle).unwrap();
-    alice.pump().unwrap();
-    let bob_contact = alice.contacts()[0].id.clone();
-
-    net.disconnect("bob");
-    alice.send(&bob_contact, "once").unwrap();
-    assert_eq!(
-        relay.peek(&mailbox_handle(&bob_contact)).unwrap(),
-        1,
-        "one copy on the relay, not one per name"
-    );
-    assert_eq!(
-        bob.relay_drain_plan().unwrap().clients.len(),
-        1,
-        "and one drain of it"
-    );
-}

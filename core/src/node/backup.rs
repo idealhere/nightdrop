@@ -59,6 +59,11 @@ impl Node {
                 peer_captures_silent: chat.contact.peer_captures_silent,
                 peer_relays: chat.contact.peer_relays.clone(),
                 peer_supports_burn: chat.contact.peer_supports_burn,
+                mailbox_own: super::mailbox::to_persisted(&chat.mailbox).0,
+                mailbox_peer: super::mailbox::to_persisted(&chat.mailbox).1,
+                mailbox_peer_confirmed: super::mailbox::to_persisted(&chat.mailbox).2,
+                mailbox_confirm_sent: super::mailbox::to_persisted(&chat.mailbox).3,
+                mailbox_announced_at: super::mailbox::to_persisted(&chat.mailbox).4,
                 // Persist recall receipts for still-queued messages so an edit/unsend can pull an
                 // undelivered blob off the relay even after a restart (§1.1). Flatten the
                 // by-msg_id map into a list carrying its target.
@@ -71,6 +76,7 @@ impl Node {
                             .map(move |r| crate::storage::PersistedReceipt {
                                 target_msg_id: target.clone(),
                                 relay_addr: r.relay_addr.clone(),
+                                handle: r.handle.clone(),
                                 msg_id: r.msg_id.clone(),
                                 delete_token: r.delete_token.clone(),
                             })
@@ -96,6 +102,7 @@ impl Node {
             directory_version: self.directory_version,
             pending_control: self.export_pending_control(),
             pending_invites: self.export_pending_invites(),
+            poll_seed: Some(base64_handle(&self.poll_seed)),
         }
     }
 
@@ -294,6 +301,17 @@ impl Node {
         node.my_relays = state.my_relays.clone();
         node.discovered_relays = state.discovered_relays.clone();
         node.directory_version = state.directory_version;
+        // Keep the polling partition fixed across the restart (`mailbox.rs`). An older state file
+        // has none: the fresh random seed from `Node::new` stands, and is saved on the next write.
+        if let Some(seed) = state.poll_seed.as_deref().and_then(|b| {
+            use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+            use base64::Engine as _;
+            URL_SAFE_NO_PAD.decode(b).ok()?.try_into().ok()
+        }) {
+            node.poll_seed = seed;
+        } else {
+            node.dirty = true;
+        }
         node.pending_control = Self::import_pending_control(&state.pending_control);
         node.pending_invites = Self::import_pending_invites(&state.pending_invites);
         for chat in &state.chats {
@@ -310,6 +328,7 @@ impl Node {
                     .or_default()
                     .push(QueuedReceipt {
                         relay_addr: pr.relay_addr.clone(),
+                        handle: pr.handle.clone(),
                         msg_id: pr.msg_id.clone(),
                         delete_token: pr.delete_token.clone(),
                     });
@@ -334,6 +353,7 @@ impl Node {
                         last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                         local_name: String::new(),
                         identity_tag: String::new(),
+                        peer_on_old_version: false,
                     },
                     peer_address: chat.peer_address.clone(),
                     session,
@@ -376,6 +396,7 @@ impl Node {
                     closed: chat.closed,
                     relay_receipts,
                     remote_storage_healthy: true,
+                    mailbox: super::mailbox::from_persisted(chat),
                 },
             );
         }
@@ -422,6 +443,7 @@ impl Node {
                                 last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                                 local_name: String::new(),
                                 identity_tag: String::new(),
+                                peer_on_old_version: false,
                             },
                             peer_address: pchat.peer_address.clone(),
                             session,
@@ -442,6 +464,7 @@ impl Node {
                                     .and_then(|v| v.try_into().ok())
                             }),
                             remote_storage_healthy: true,
+                            mailbox: super::mailbox::from_persisted(pchat),
                         },
                     );
                 }

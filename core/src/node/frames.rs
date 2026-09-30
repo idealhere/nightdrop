@@ -112,6 +112,7 @@ impl Node {
                                 last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                                 local_name: String::new(),
                                 identity_tag: String::new(),
+                                peer_on_old_version: false,
                             },
                             peer_address: peer_address.clone(),
                             session: accepted.session,
@@ -128,6 +129,7 @@ impl Node {
                             client_key: None, // minted and announced immediately after pairing
                             local_name: String::new(),
                             remote_storage_healthy: true,
+                            mailbox: None,
                         },
                     );
                 }
@@ -157,6 +159,9 @@ impl Node {
                     // exist when the launch-time broadcast ran.
                     self.announce_captures_to(&contact_id);
                     self.announce_burns_to(&contact_id);
+                    // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
+                    // Refused for a chat still awaiting approval; the relay tick picks it up once approved.
+                    self.send_mailbox_key(&contact_id);
                 }
                 if accepted.first_plaintext.is_empty() {
                     return Ok(None);
@@ -266,6 +271,12 @@ impl Node {
                 // The event carries no text: a burn message must not surface its contents in a
                 // notification or any other preview (`burn-messages.md` §4).
                 Ok(Some((from, String::new())))
+            }
+            Frame::MailboxKey { from, message } => {
+                // v2 mailbox agreement (`mailbox.rs`). Silent: a standing property of the pair, and
+                // a line in every chat on rollout would be noise.
+                self.on_mailbox_key(&from, &message)?;
+                Ok(None)
             }
             Frame::Burns { from, message } => {
                 // "My build understands burn messages." Standing property, no history entry —
@@ -604,6 +615,13 @@ impl Node {
                         .find(|m| m.from_me && !m.msg_id.is_empty() && m.msg_id == named),
                 };
                 if let Some(m) = found {
+                    if m.delivery != "delivered" {
+                        crate::diag!(
+                            "receipt: message confirmed delivered {}s after it was composed (was {:?})",
+                            crate::api::now_secs().saturating_sub(m.at),
+                            m.delivery
+                        );
+                    }
                     m.delivery = "delivered".to_string();
                 }
                 let msg_id = named;

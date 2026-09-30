@@ -131,16 +131,42 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Tracks the message count so we can auto-scroll to the bottom on any new message
   /// (sent or received), and on first open.
   int _lastCount = 0;
   final _input = TextEditingController();
   final _scroll = ScrollController();
 
+  /// Whether the list is showing its newest message. While it is, a keyboard sliding in keeps the
+  /// newest message in view: the screen shrinks from the bottom, and a list left at the same offset
+  /// would hide exactly the messages being replied to. Someone who scrolled up to read history is
+  /// left where they are.
+  bool _atBottom = true;
+
+  void _trackBottom() {
+    if (!_scroll.hasClients) return;
+    final p = _scroll.position;
+    _atBottom = p.pixels >= p.maxScrollExtent - 48;
+  }
+
+  /// Keyboard in or out (and any other resize): while at the bottom, stay there. It fires on every
+  /// frame of the keyboard animation, so the list follows the keyboard up instead of jumping at the
+  /// end. Closing needs nothing: the list grows back and a list at the bottom stays at the bottom.
+  @override
+  void didChangeMetrics() {
+    if (!_atBottom) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(_trackBottom);
     // Screenshot transparency (#1): while this chat is open, a screenshot is logged here and the
     // peer is told. Registered per-chat rather than globally so a capture is never attributed to a
     // conversation the user isn't actually looking at.
@@ -155,6 +181,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scroll.removeListener(_trackBottom);
     ScreenshotDetector.stop();
     for (final t in _scrollTimers) {
       t.cancel();
@@ -861,6 +889,7 @@ class _ChatScreenState extends State<ChatScreen> {
               // means "they have not told us" and deliberately shows nothing — claiming either
               // answer without evidence is worse than staying quiet.
               if (contact.peerCapturesSilent == true) const _PeerCapturesSilentBanner(),
+              if (contact.peerOnOldVersion) const _PeerOnOldVersionBanner(),
               _SilenceBanner(lastSeenSecs: contact.lastSeenSecs),
               Expanded(
                 child: visibleMessages.isEmpty
@@ -1052,6 +1081,60 @@ class _UnverifiedBanner extends StatelessWidget {
   }
 }
 
+/// A persistent notice that takes one line until tapped, then shows its full explanation. For the
+/// informational peer notices below: they must stay visible for the life of the chat, but two or
+/// three full paragraphs stacked above the messages left almost no room to read the chat.
+class _CompactNotice extends StatefulWidget {
+  const _CompactNotice({
+    required this.icon,
+    required this.summary,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String summary;
+  final String detail;
+
+  @override
+  State<_CompactNotice> createState() => _CompactNoticeState();
+}
+
+class _CompactNoticeState extends State<_CompactNotice> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = scheme.onSecondaryContainer;
+    return Material(
+      color: scheme.secondaryContainer,
+      child: InkWell(
+        onTap: () => setState(() => _open = !_open),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(widget.icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _open ? widget.detail : widget.summary,
+                  maxLines: _open ? null : 1,
+                  overflow: _open ? null : TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontSize: 12.5),
+                ),
+              ),
+              Icon(_open ? Icons.expand_less : Icons.expand_more,
+                  size: 16, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "Screenshots here are silent" — a property of the PEER's device, shown to the person deciding
 /// what to send. They already know when they screenshot; what they cannot otherwise know is that
 /// the other end raises no notice, which makes the peer's silence meaningless.
@@ -1060,25 +1143,28 @@ class _PeerCapturesSilentBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: scheme.secondaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          Icon(Icons.no_photography_outlined,
-              size: 18, color: scheme.onSecondaryContainer),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              AppLocalizations.of(context)!.peerCapturesSilentBanner,
-              style:
-                  TextStyle(color: scheme.onSecondaryContainer, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    return _CompactNotice(
+      icon: Icons.no_photography_outlined,
+      summary: l10n.peerCapturesSilentSummary,
+      detail: l10n.peerCapturesSilentBanner,
+    );
+  }
+}
+
+/// "This person is on an older version" (`mailbox-handles.md` §5.4). The design wants the notice on
+/// both sides, but the side that can act is running a build that cannot show it — so it is shown
+/// here, worded to be passed on.
+class _PeerOnOldVersionBanner extends StatelessWidget {
+  const _PeerOnOldVersionBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return _CompactNotice(
+      icon: Icons.system_update_outlined,
+      summary: l10n.peerOnOldVersionSummary,
+      detail: l10n.peerOnOldVersionBanner,
     );
   }
 }

@@ -71,6 +71,22 @@ pub trait Transport: Send + Sync {
     /// which the caller can treat as "fall back to the relay" (§6).
     fn send(&self, peer: &str, frame: &[u8]) -> Result<()>;
 
+    /// Like [`send`](Transport::send), but never over a connection kept open from earlier traffic:
+    /// the frame goes out on a connection this call opened, so `Ok` means the peer's end answered
+    /// just now. A write into a kept-open connection whose other end has gone quiet also returns
+    /// `Ok` — the bytes left our side, nothing more — and a frame nobody confirms is lost with no
+    /// error to fall back on.
+    ///
+    /// For the frames that get no answer of their own, where that silent loss is permanent:
+    /// delivery receipts. A message is covered by its receipt (no receipt in 30 s puts a relay copy
+    /// behind it); a receipt is covered by nothing, so a lost one left the sender's message on "Held
+    /// for delivery" for good (a Windows ↔ phone test, 2026-09-30).
+    ///
+    /// Defaults to `send`, which is already this for transports that keep nothing open.
+    fn send_fresh(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.send(peer, frame)
+    }
+
     /// Non-blocking receive of the next inbound `(sender_address, frame)`, if any.
     fn try_recv(&self) -> Option<(Address, Vec<u8>)>;
 
@@ -92,6 +108,22 @@ pub trait Transport: Send + Sync {
     /// background poller, so composing a message never blocks the UI on a Tor round-trip (§6).
     fn is_synchronous(&self) -> bool {
         false
+    }
+
+    /// Like [`relay_dialer`](Transport::relay_dialer), but every dialer built for the same `group`
+    /// shares circuits only with that group — never with other groups or with default traffic.
+    /// `None` where the transport has no circuits to isolate (tests/TCP); callers then fall back to
+    /// the ordinary client, which is correct there.
+    ///
+    /// What lets per-pair mailbox handles stay unlinked on the relay: polls in one fragment, or
+    /// posts to one recipient, cannot be tied to another fragment or recipient by the circuit they
+    /// arrived on (`docs/design/mailbox-handles.md` §5a/§5c).
+    fn relay_dialer_isolated(
+        &self,
+        _addr: &str,
+        _group: u64,
+    ) -> Option<crate::relay_client::RelayDialer> {
+        None
     }
 
     /// A call that makes this transport abandon network work already in flight —

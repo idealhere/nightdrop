@@ -107,6 +107,24 @@ pub struct PersistedChat {
     /// to a request the user has to re-approve. Files written from now on carry the truth.
     #[serde(default = "yes")]
     pub authorized: bool,
+    /// Our 32-byte contribution to the chat's v2 mailbox secret, base64 (`mailbox-handles.md`).
+    /// Absent on older state files and on chats that have not agreed yet — they post and poll v1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_own: Option<String>,
+    /// The peer's contribution, base64, once received.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_peer: Option<String>,
+    /// The peer proved it holds the same secret, so we post v2 to it. Persisted: forgetting it
+    /// only costs privacy (back to v1), but a restart must not re-open the agreement needlessly.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mailbox_peer_confirmed: bool,
+    /// We have sent our own confirmation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mailbox_confirm_sent: bool,
+    /// When our contribution first reached the peer or a relay (unix secs) — with the peer's later
+    /// activity, what tells an older build from an offline one (`mailbox.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_announced_at: Option<u64>,
 }
 
 /// `serde` default for [`PersistedChat::authorized`] — see the field's note on why absence must
@@ -124,6 +142,10 @@ pub struct PersistedReceipt {
     pub target_msg_id: String,
     #[serde(default)]
     pub relay_addr: Option<String>,
+    /// The mailbox handle the copy was posted under, for recall. Absent on receipts saved before v2
+    /// handles, which were all posted to v1 — an empty string means exactly that.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub handle: String,
     pub msg_id: String,
     pub delete_token: String,
 }
@@ -267,6 +289,10 @@ pub struct PersistedState {
     /// not silently strand the joiner. `#[serde(default)]` for forward-compat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_invites: Vec<PersistedInvite>,
+    /// Base64 of the 32-byte seed keying our mailbox polling fragments (`node::mailbox`), so the
+    /// partition stays fixed for its epoch across restarts. `#[serde(default)]` for older files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_seed: Option<String>,
 }
 
 fn is_zero_u64(n: &u64) -> bool {
@@ -400,6 +426,7 @@ mod tests {
             directory_version: 0,
             pending_control: Vec::new(),
             pending_invites: Vec::new(),
+            poll_seed: None,
         };
 
         // A stale temp from a previously-crashed write must not break the next save.

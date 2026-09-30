@@ -99,6 +99,8 @@ impl Node {
         peer_address: &str,
         bundle: &PreKeyBundle,
     ) -> Result<String> {
+        // Before anything reaches the network: at the cap, nothing is sent.
+        self.check_contact_cap(&bundle.identity_key)?;
         let mut session = crypto::open_outbound(&self.identity, bundle)?;
         let hello = crypto::encrypt(&mut session, b"");
         let frame = Frame::Hello {
@@ -152,6 +154,7 @@ impl Node {
                         last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                         local_name: String::new(),
                         identity_tag: String::new(),
+                        peer_on_old_version: false,
                     },
                     peer_address: peer_address.to_string(),
                     session,
@@ -168,6 +171,7 @@ impl Node {
                     client_key: None, // minted and announced immediately after pairing
                     local_name: String::new(),
                     remote_storage_healthy: true,
+                    mailbox: None,
                 },
             );
         }
@@ -178,6 +182,9 @@ impl Node {
         // otherwise never learn it, and be left reading our silence as "they'd be told".
         self.announce_captures_to(&contact_id);
         self.announce_burns_to(&contact_id);
+        // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
+        // Refused for a chat still awaiting approval; the relay tick picks it up once approved.
+        self.send_mailbox_key(&contact_id);
         Ok(contact_id)
     }
 }

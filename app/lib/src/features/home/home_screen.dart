@@ -1113,8 +1113,8 @@ class _RequestTileState extends State<_RequestTile> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(accept
-                  ? l10n.couldNotApprove(e.toString())
-                  : l10n.couldNotDecline(e.toString()))),
+                  ? l10n.couldNotApprove(cleanCoreError(e))
+                  : l10n.couldNotDecline(cleanCoreError(e)))),
         );
       }
     }

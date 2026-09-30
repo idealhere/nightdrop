@@ -3,6 +3,8 @@
 [workspace]
 resolver = "2"
 members = ["core", "relay", "webtunnel"]
+# Patched dependency, built through [patch.crates-io] below, not a workspace member.
+exclude = ["third_party/saturating-time"]
 
 [workspace.package]
 edition = "2021"
@@ -14,3 +16,8 @@ rust-version = "1.85"
 # Build the security-critical core with overflow checks even in release.
 [profile.release]
 overflow-checks = true
+
+# saturating-time 0.3.0 loops forever on Windows, which hangs Tor over bridges (arti#2726).
+# See third_party/saturating-time/NIGHTDROP-PATCH.md; remove once arti ships the fix.
+[patch.crates-io]
+saturating-time = { path = "third_party/saturating-time" }

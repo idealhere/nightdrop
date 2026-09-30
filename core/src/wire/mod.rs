@@ -192,6 +192,14 @@ pub enum Frame {
     /// the negative, so an older build — which sends nothing — reads as unsupported without
     /// having to say so. Unknown therefore means *do not offer burn*, which is the safe direction.
     Burns { from: String, message: WireOlm },
+    /// Our contribution to this chat's **v2 mailbox secret**, and — once we hold the peer's — a
+    /// confirmation that we computed the same secret (`docs/design/mailbox-handles.md`,
+    /// `node::mailbox`). A peer posts v2 only after receiving a valid confirmation, so a message is
+    /// never addressed to a handle the recipient cannot compute.
+    ///
+    /// **E2E-encrypted** on the session like every control frame. An older build cannot decode it
+    /// and drops it, which is the safe direction: it never confirms, so it keeps receiving on v1.
+    MailboxKey { from: String, message: WireOlm },
     /// Silent **mailbox ack** (§11.3): the receiver drained our mailbox. `from` is the acking
     /// peer's identity key. Never acked itself (no loops). Carries an **E2E-encrypted marker**
     /// (`node::MARK_ACK`) so it can't be forged or replayed.

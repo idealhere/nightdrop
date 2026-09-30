@@ -554,6 +554,42 @@ class RustNightdropCore extends NightdropCore {
     return v == '1' || v == 'true' || v == 'yes';
   }
 
+  static const String _diagLogName = 'nightdrop-diag.log';
+
+  /// Where a diagnostic build keeps its log file. On Android the app-specific *external* dir
+  /// (`/sdcard/Android/data/app.nightdrop/files`): `adb pull` reaches it on a release-signed build,
+  /// where the app-private dir needs `run-as` and so a debuggable APK. Other apps cannot read it on
+  /// Android 11+. Elsewhere, the support dir.
+  static Future<Directory> _diagLogDir() async {
+    if (Platform.isAndroid) {
+      final external = await getExternalStorageDirectory();
+      if (external != null) return external;
+    }
+    return getApplicationSupportDirectory();
+  }
+
+  /// DIAG builds: keep every diagnostic line in a file on the device as well as in logcat, which
+  /// on a phone holds only minutes of history. Best-effort — a diagnostics aid must never stop
+  /// the app from launching.
+  static Future<void> _startDiagnosticsLog() async {
+    try {
+      final dir = await _diagLogDir();
+      await rust.setDiagnosticsLogFile(path: '${dir.path}/$_diagLogName');
+    } catch (_) {}
+  }
+
+  /// Normal builds: delete any log a diagnostic build left behind, so installing a regular build
+  /// over one is also the purge.
+  static Future<void> _purgeDiagnosticsLog() async {
+    try {
+      final dir = await _diagLogDir();
+      for (final name in [_diagLogName, '$_diagLogName.1']) {
+        final f = File('${dir.path}/$name');
+        if (await f.exists()) await f.delete();
+      }
+    } catch (_) {}
+  }
+
   bool _tor = false;
 
   bool _loadError = false;
@@ -848,7 +884,12 @@ class RustNightdropCore extends NightdropCore {
       // other, not silently stall the launch.
       //
       // Diagnostics first, so a failure in the launch path itself is on the record.
-      if (_diagEnabled) await rust.setDiagnostics(enabled: true);
+      if (_diagEnabled) {
+        await rust.setDiagnostics(enabled: true);
+        await _startDiagnosticsLog();
+      } else {
+        await _purgeDiagnosticsLog();
+      }
       _guardHealDone = false;
       // Close anything already running first: this runs again via `retryStart` after a failure,
       // and a second bootstrap over the same (still-locked) Tor state dir would fail no matter
@@ -1728,6 +1769,7 @@ class RustNightdropCore extends NightdropCore {
         peerRelays: c.peerRelays,
         remoteStorageHealthy: c.remoteStorageHealthy,
         lastSeenSecs: c.lastSeenSecs.toInt(),
+        peerOnOldVersion: c.peerOnOldVersion,
         localName: c.localName,
         identityTag: c.identityTag,
       );

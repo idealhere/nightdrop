@@ -76,8 +76,14 @@ static RELAY_POLL_NOW: AtomicBool = AtomicBool::new(true);
 /// expensive part of the loop; the transport pump itself is a cheap local check).
 /// Online messages arrive over the direct Tor stream regardless, so the relay poll only
 /// bounds how quickly *offline/queued* mail shows up.
+///
+/// Background is five minutes, the cadence `mailbox-handles.md` §5c/§8 costs the design at. It was
+/// 60 s while a round was a single request; with fragmented polling a round is one request per
+/// fragment (8–10), and 60 s rounds measured about 900 Tor requests an hour and 7.6% of a Galaxy
+/// S25's battery over 3.5 hours (2026-09-27). Opening the app polls at once regardless
+/// ([`RELAY_POLL_NOW`]), so waiting mail is never five minutes away for someone looking at it.
 const RELAY_POLL_FOREGROUND: Duration = Duration::from_secs(15);
-const RELAY_POLL_BACKGROUND: Duration = Duration::from_secs(60);
+const RELAY_POLL_BACKGROUND: Duration = Duration::from_secs(5 * 60);
 
 /// While a short-code invite is outstanding, the inviter polls the rendezvous this often so
 /// answering a joiner's SPAKE2 opener feels near-instant (pairing is a brief, attended flow).
@@ -153,6 +159,23 @@ pub fn unsubscribe() {
 pub fn set_diagnostics(enabled: bool) {
     crate::diag::set_enabled(enabled);
     crate::diag!("diagnostics enabled");
+}
+
+/// Also keep every diagnostic line in a file at `path` on the device; an empty `path` stops.
+///
+/// **Diagnostic builds only** — the app calls this solely when `NIGHTDROP_DIAG` is set, and a
+/// normal build deletes any file a diagnostic build left behind. A phone's logcat holds minutes of
+/// history, so a field repro away from a PC was lost before anyone could pull it. The file carries
+/// exactly the logcat lines (outcomes only, onion addresses redacted) with UTC timestamps, rotating
+/// at 8 MB to one `.1` backup. See `crate::diag::set_log_file`.
+pub fn set_diagnostics_log_file(path: String) -> Result<()> {
+    let path = (!path.is_empty()).then(|| std::path::PathBuf::from(path));
+    let on = path.is_some();
+    crate::diag::set_log_file(path)?;
+    if on {
+        crate::diag!("diagnostics: also writing to the on-device log file");
+    }
+    Ok(())
 }
 
 /// Write one line to the diagnostics channel from the **app layer**.
@@ -315,6 +338,12 @@ pub struct Contact {
     /// a seized phone, a lost phone and a flat battery all look the same from here, and the UI must
     /// not imply otherwise. That ambiguity is deliberate — see `docs/design/silence-detection.md`.
     pub last_seen_secs: u64,
+    /// This contact's app predates private mailbox addressing (`docs/design/mailbox-handles.md`
+    /// §5.4): offline mail between you still goes to their permanent address, which a relay can
+    /// link across senders and days. Set only on evidence — they have been active well after our
+    /// agreement frame reached them and never answered it — so an offline contact is never
+    /// reported as outdated. Their app cannot show a notice of its own; this is how they hear.
+    pub peer_on_old_version: bool,
 }
 
 /// Reachability of one of our advertised extra relays (#17), for the UI's relay-status surface.
@@ -623,7 +652,13 @@ impl Inner {
             .me
             .plan_pending_sends()
             .map(|plan| crate::node::execute_sends(&plan));
-        self.apply_tick(poll_relay, harvest, sent)
+        let result = self.apply_tick(poll_relay, harvest, sent);
+        // Receipts for what that tick received. The poller sends these after releasing the lock;
+        // a synchronous caller already holds it, so they go now — after the tick has emitted.
+        for s in self.me.take_receipt_sends() {
+            s.execute();
+        }
+        result
     }
 
     /// The state-mutating half of a poll cycle: pump the transport, apply any relay blobs already
@@ -678,6 +713,10 @@ impl Inner {
             // a chat paired before the feature shipped would otherwise never hear it, leaving
             // burn unavailable for precisely the contacts someone already talks to.
             self.me.announce_burns();
+            // v2 mailbox handles (`mailbox-handles.md`): offer our contribution to every chat not
+            // yet confirmed. Once per run per chat, retried while undelivered — the same shape as
+            // the burn announce, and the heal for a lost agreement frame.
+            self.me.announce_mailbox();
             // Inviter side of short-code pairing: answer any joiner's SPAKE2 opener (§5b).
             self.me.service_pending_invites();
             // Retry messages that couldn't reach the peer or any relay when first sent (arti was
@@ -2473,6 +2512,11 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
         let _exit = ExitGuard::new(Arc::clone(&stop));
         // Fire immediately on startup so offline mail is fetched as the app opens.
         let mut last_relay: Option<std::time::Instant> = None;
+        // The relay drain in flight, on its own thread. A drain is many sequential Tor requests
+        // (one per polling fragment, `mailbox.rs`), and a cold round took two minutes on a phone —
+        // run inline, every message composed meanwhile sat "held" until it finished (2026-09-27).
+        // Off this thread, sends keep going every tick while it runs.
+        let mut drain_job: Option<thread::JoinHandle<RelayHarvest>> = None;
         let mut next_cover: Option<std::time::Instant> = None;
         let mut cover_delay = next_cover_delay();
         while !stop.stopped() {
@@ -2499,21 +2543,34 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
             } else {
                 RELAY_POLL_FOREGROUND
             };
-            let relay_due = RELAY_POLL_NOW.swap(false, Ordering::Relaxed)
-                || last_relay.is_none_or(|t| t.elapsed() >= interval);
+            // Due only when no drain is in flight; `&&` keeps a poll-now request queued meanwhile.
+            let relay_due = drain_job.is_none()
+                && (RELAY_POLL_NOW.swap(false, Ordering::Relaxed)
+                    || last_relay.is_none_or(|t| t.elapsed() >= interval));
             // §1.5.2: run the blocking relay reads OFF the lock. Snapshot the relay clients under a
             // brief lock, drain the mailboxes lock-free (seconds over Tor), then re-acquire only to
             // apply the results — so UI calls (send/contacts/messages) aren't stalled behind an
             // in-flight relay poll.
-            let mut harvest = if relay_due {
+            // A finished drain is applied this tick, with the relay-cadence chores (`relay_applied`),
+            // as the inline drain used to be.
+            let mut relay_applied = false;
+            let mut harvest = None;
+            if drain_job.as_ref().is_some_and(|j| j.is_finished()) {
+                harvest = drain_job.take().and_then(|j| j.join().ok());
+                relay_applied = true;
+            }
+            if relay_due {
                 let plan = {
                     let g = inner.lock().unwrap_or_else(|e| e.into_inner());
                     g.me.relay_drain_plan()
                 };
-                plan.map(|plan| drain_relay_mailboxes(&plan))
-            } else {
-                None
-            };
+                match plan {
+                    Some(plan) => {
+                        drain_job = Some(thread::spawn(move || drain_relay_mailboxes(&plan)));
+                    }
+                    None => relay_applied = true, // no relay: still run the chores on cadence
+                }
+            }
             // Same three phases for OUTBOUND messages, and for the same reason — more so, in fact.
             // A send is a peer dial (up to PEER_DIAL_TIMEOUT) plus, on failure, a relay post per
             // target (up to RELAY_DIAL_TIMEOUT each), and it used to run inside `apply_tick` with
@@ -2534,15 +2591,25 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
             // Recover from poisoning, and run the apply inside `catch_unwind` (§1.5.3): a panic in
             // one tick (e.g. a malformed frame) must not kill the background poller for good — and,
             // because the unwind is caught before the guard drops, it also can't *poison* the mutex.
-            {
+            let receipts = {
                 let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let _ = g.apply_tick(relay_due, harvest.take(), sent.take());
+                    let _ = g.apply_tick(relay_applied, harvest.take(), sent.take());
                     // Flush any debounced background write whose window has elapsed (§1.5.4).
                     g.maybe_flush();
                 }));
+                g.me.take_receipt_sends()
+            };
+            // Delivery receipts and relay acks for what that tick received, sent only now: the
+            // "message" event is already out, so the notification does not wait on them, and the
+            // lock is free, so neither does anything else. A receipt is a peer dial and, when that
+            // fails, a relay post — ~45 s on a phone in Doze (2026-09-28), all of it spent before
+            // the notification while they were sent inline. On this thread rather than a spawned
+            // one so nothing outlives the poller holding the transport (see the teardown below).
+            for s in receipts {
+                s.execute();
             }
-            if relay_due {
+            if relay_applied {
                 last_relay = Some(std::time::Instant::now());
             }
             // Cover traffic (#4) runs on its own randomised clock, deliberately NOT tied to the
@@ -2561,6 +2628,18 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
                 }
             } else {
                 next_cover = None; // turning it off resets the clock; on again re-samples
+            }
+        }
+        // A drain still in flight must be applied, not dropped: a relay `take` is destructive, so
+        // the blobs it holds exist nowhere else. Joining waits for it; its requests abandon as the
+        // transport closes, so this does not outlast the shutdown's own bound.
+        if let Some(job) = drain_job.take() {
+            if let Ok(harvest) = job.join() {
+                let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = g.apply_tick(true, Some(harvest), None);
+                    g.maybe_flush();
+                }));
             }
         }
         // Drop our handle on the core — and through it the transport, if we are the last holder —
@@ -2631,6 +2710,115 @@ fn random_secret_words() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The background cadence is what the mailbox design is costed at; a faster one multiplies
+    /// every fragment's request (2026-09-27: 60 s rounds, ~900 Tor requests an hour).
+    #[test]
+    fn background_relay_polling_runs_at_the_designed_cadence() {
+        const { assert!(RELAY_POLL_BACKGROUND.as_secs() == 300) };
+        const { assert!(RELAY_POLL_FOREGROUND.as_secs() < RELAY_POLL_BACKGROUND.as_secs()) };
+    }
+
+    /// A memory transport that reports itself asynchronous, as Tor does, so messages go through the
+    /// poller's deferred send path instead of being delivered inline.
+    struct AsyncMemory(crate::transport::MemoryTransport);
+
+    impl Transport for AsyncMemory {
+        fn address(&self) -> crate::transport::Address {
+            self.0.address()
+        }
+        fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+            self.0.send(peer, frame)
+        }
+        fn try_recv(&self) -> Option<(crate::transport::Address, Vec<u8>)> {
+            self.0.try_recv()
+        }
+        fn is_synchronous(&self) -> bool {
+            false
+        }
+        fn published(&self) -> bool {
+            self.0.published()
+        }
+    }
+
+    /// A drain is many sequential Tor requests; a cold round took two minutes on a phone, and with
+    /// the drain inline every message composed meanwhile waited for it (2026-09-27).
+    #[test]
+    fn a_message_goes_out_while_a_relay_drain_is_stuck() {
+        let (block, entered) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let dialer: crate::relay_client::RelayDialer = {
+            let (block, entered) = (Arc::clone(&block), Arc::clone(&entered));
+            Arc::new(move |_request: &str| -> Result<String> {
+                if block.load(Ordering::Relaxed) {
+                    entered.store(true, Ordering::Relaxed);
+                    while block.load(Ordering::Relaxed) {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                }
+                anyhow::bail!("relay unreachable")
+            })
+        };
+        let net = MemoryNetwork::new();
+        let a = NightdropCore::new_with_transport(
+            Box::new(AsyncMemory(net.endpoint("a.onion"))),
+            Some(RelayClient::with_dialer(dialer)),
+            true,
+        );
+        let b = NightdropCore::new_with_transport(Box::new(net.endpoint("b.onion")), None, false);
+        let invite = a.create_invite().unwrap();
+        b.connect_via_qr(&invite.qr_payload).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let a_contact = loop {
+            a.poll_once().unwrap();
+            if let Some(r) = a.incoming_requests().first() {
+                break r.id.clone();
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pairing request never arrived"
+            );
+            thread::sleep(Duration::from_millis(20));
+        };
+        a.authorize(&a_contact, true).unwrap();
+        b.poll_once().unwrap();
+
+        // Wedge the next drain inside a relay round-trip.
+        block.store(true, Ordering::Relaxed);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !entered.load(Ordering::Relaxed) {
+            RELAY_POLL_NOW.store(true, Ordering::Relaxed);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the poller never started a drain"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        a.send_message(&a_contact, "while draining").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let arrived = loop {
+            b.poll_once().unwrap();
+            let got = b
+                .contacts()
+                .iter()
+                .flat_map(|c| b.messages(&c.id))
+                .any(|m| m.text == "while draining");
+            if got || std::time::Instant::now() > deadline {
+                break got;
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        assert!(block.load(Ordering::Relaxed), "the drain was still stuck");
+        block.store(false, Ordering::Relaxed);
+        a.shutdown();
+        assert!(
+            arrived,
+            "the message waited for the drain instead of going out"
+        );
+    }
 
     /// `shutdown` must not return until the background poller has actually exited. Stopping it and
     /// returning — which is what this did — leaves the poller holding whatever it snapshotted, and
@@ -2826,6 +3014,115 @@ mod tests {
         release.store(true, Ordering::Relaxed);
         let outcomes = driver.join().unwrap().expect("a send was planned");
         core.lock().me.apply_send_outcomes(outcomes);
+    }
+
+    /// A received message must be surfaced before its delivery receipt goes out. The receipt is a
+    /// dial back to the sender and, when that fails, a relay post; it used to be sent inside
+    /// `pump`, under the lock and before `apply_tick` emitted, so the notification waited for all
+    /// of it — ~45 s on a phone in Doze whose dial back failed (2026-09-28).
+    #[test]
+    fn a_received_message_is_surfaced_before_its_receipt_is_sent() {
+        // Same black-hole dial as above: `send` blocks until released once armed.
+        struct BlockingTransport {
+            inner: crate::transport::MemoryTransport,
+            armed: Arc<AtomicBool>,
+            entered: Arc<AtomicBool>,
+            release: Arc<AtomicBool>,
+        }
+        impl Transport for BlockingTransport {
+            fn address(&self) -> String {
+                self.inner.address()
+            }
+            fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+                if !self.armed.load(Ordering::Relaxed) {
+                    return self.inner.send(peer, frame);
+                }
+                self.entered.store(true, Ordering::Relaxed);
+                while !self.release.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                anyhow::bail!("never got there")
+            }
+            fn try_recv(&self) -> Option<(String, Vec<u8>)> {
+                self.inner.try_recv()
+            }
+        }
+
+        let net = MemoryNetwork::new();
+        let armed = Arc::new(AtomicBool::new(false));
+        let entered = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let core = NightdropCore::new_with_transport(
+            Box::new(BlockingTransport {
+                inner: net.endpoint("me.onion"),
+                armed: Arc::clone(&armed),
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+            None,
+            false,
+        );
+        let invite = core.create_invite().unwrap();
+        let mut peer = crate::node::Node::new(Box::new(net.endpoint("peer.onion")));
+        let (addr, bundle) = parse_invite(&invite.qr_payload).unwrap();
+        peer.connect_with_bundle(&addr, &bundle).unwrap();
+        core.poll_once().unwrap();
+        let contact = core.incoming_requests()[0].id.clone();
+        core.authorize(&contact, true).unwrap();
+        peer.pump().unwrap(); // the peer learns it was approved
+
+        // From here on, our dial back to the peer hangs. The peer's own send is in-memory, so the
+        // message is already waiting in our inbox.
+        armed.store(true, Ordering::Relaxed);
+        let me = core.lock().me.identity_key();
+        peer.send(&me, "arrived").unwrap();
+
+        // One poller tick, exactly as the loop runs it: apply under the lock, send receipts after.
+        let driver = {
+            let inner = Arc::clone(&core.inner);
+            thread::spawn(move || {
+                let receipts = {
+                    let mut g = inner.lock().unwrap();
+                    g.apply_tick(false, None, None).unwrap();
+                    g.me.take_receipt_sends()
+                };
+                let queued = receipts.len();
+                for s in receipts {
+                    s.execute();
+                }
+                queued
+            })
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !entered.load(Ordering::Relaxed) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the receipt was never sent"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        // THE ASSERTIONS: the receipt is mid-dial, the lock is free, and the message is already in
+        // the chat — so the "message" event, and with it the notification, did not wait.
+        let guard = core.inner.try_lock();
+        assert!(
+            guard.is_ok(),
+            "the receipt is being sent with the core lock held"
+        );
+        drop(guard);
+        assert!(
+            core.messages(&contact)
+                .iter()
+                .any(|m| !m.from_me && m.text == "arrived"),
+            "the message was not surfaced until its receipt had been sent"
+        );
+
+        release.store(true, Ordering::Relaxed);
+        assert_eq!(
+            driver.join().unwrap(),
+            1,
+            "exactly one receipt, sent after the tick"
+        );
     }
 
     /// `shutdown` must not block on the core lock, however long someone else holds it.

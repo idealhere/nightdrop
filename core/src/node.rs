@@ -162,9 +162,26 @@ fn write_private_file(path: &std::path::Path, data: &[u8]) -> Result<()> {
 /// TCP address or an `Arc` dialer). Built by [`Node::relay_drain_plan`], consumed by
 /// [`drain_relay_mailboxes`].
 pub(crate) struct RelayDrainPlan {
-    handle: String,
-    /// `(advertised-address, client)` per relay; `None` address = the primary/default relay.
-    clients: Vec<(Option<String>, RelayClient)>,
+    /// One job per (relay, polling fragment), in this round's random order. Each carries a client on
+    /// its fragment's isolated circuits (`mailbox.rs`, `poll_fragments`), so a relay sees one reader
+    /// per fragment, never one reader of everything (`mailbox-handles.md` §5a/§5c).
+    jobs: Vec<DrainJob>,
+    /// The epoch this round can retire ([`Node::settling_epoch`]): if every one of its jobs answers,
+    /// yesterday's handles are empty past the skew margin and need not be polled again.
+    settles: Option<u64>,
+    /// Pause a random moment between jobs. Only where circuits are really isolated (Tor): the point
+    /// is that fragments do not arrive at fixed offsets from each other, and without isolation there
+    /// is nothing to protect — tests would only be slowed down.
+    stagger: bool,
+}
+
+pub(crate) struct DrainJob {
+    /// `None` = the primary relay; `Some(addr)` = an advertised extra.
+    addr: Option<String>,
+    client: RelayClient,
+    /// The fragment's UTC day; `None` for the v1 handle.
+    epoch: Option<u64>,
+    handles: Vec<String>,
 }
 
 /// The result of draining the relay mailboxes lock-free: the raw blobs (fan-out duplicates still
@@ -173,32 +190,100 @@ pub(crate) struct RelayDrainPlan {
 pub(crate) struct RelayHarvest {
     blobs: Vec<Vec<u8>>,
     reachability: Vec<(String, bool)>,
+    /// The plan's settling epoch, if every one of its jobs on every relay answered this round.
+    settled: Option<u64>,
 }
 
 /// Drain every relay mailbox in `plan` — the blocking `take` round-trips — with **no** core lock
 /// held (§1.5.2), so UI calls aren't stalled for seconds behind an in-flight Tor relay poll. A
 /// relay that errors is recorded unreachable and skipped, never aborting the drain from the rest.
 pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
+    use rand::Rng as _;
     let mut blobs = Vec::new();
-    let mut reachability = Vec::new();
-    for (addr, client) in &plan.clients {
-        match client.take(&plan.handle) {
-            Ok(taken) => {
-                if let Some(addr) = addr {
-                    reachability.push((addr.clone(), true));
-                }
-                blobs.extend(taken);
+    // A relay is reachable if any take on it answered. One failed take must not stop the rest: the
+    // others may hold mail, and a take that errors has not removed anything.
+    let mut answered: Vec<(String, bool)> = Vec::new();
+    // Per relay this round: (fragments answered, fragments failed). A relay that has failed
+    // [`DEAD_AFTER`] fragments and answered none is skipped for the rest of the round: each
+    // remaining fragment would open a fresh isolated circuit and wait out the full dial timeout, so
+    // one dead relay would hold up every other relay's mail for fragments × timeout. One failure is
+    // not enough: arti keeps onion-service state per isolation group, so each fragment is a cold
+    // connection (its own descriptor fetch and circuits), and on a phone a cold build fails often
+    // enough that one miss says little about the relay. A relay that answered anything is alive and
+    // keeps its fragments. Skipping loses nothing — a failed take removed nothing, and the next
+    // round asks again.
+    const DEAD_AFTER: usize = 2;
+    let mut tally: Vec<(&Option<String>, usize, usize)> = Vec::new();
+    let (mut ok_jobs, mut failed_jobs, mut skipped_jobs) = (0usize, 0usize, 0usize);
+    let mut slowest_ok = Duration::ZERO;
+    // Retiring yesterday needs every one of its fragments answered on every relay: a skipped or
+    // failed one may still hold mail, which stops being polled once the epoch is retired.
+    let mut settle_ok = plan.settles.is_some();
+    for (i, job) in plan.jobs.iter().enumerate() {
+        let entry = match tally.iter().position(|(a, _, _)| *a == &job.addr) {
+            Some(n) => n,
+            None => {
+                tally.push((&job.addr, 0, 0));
+                tally.len() - 1
             }
-            Err(_) => {
-                if let Some(addr) = addr {
-                    reachability.push((addr.clone(), false));
-                }
+        };
+        if tally[entry].1 == 0 && tally[entry].2 >= DEAD_AFTER {
+            skipped_jobs += 1;
+            settle_ok &= job.epoch != plan.settles;
+            continue;
+        }
+        if plan.stagger && i > 0 {
+            std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(0..=300)));
+        }
+        // One request per fragment where the relay supports it (`take_many`).
+        let started = std::time::Instant::now();
+        let ok = match job.client.take_many(&job.handles) {
+            Ok(taken) => {
+                blobs.extend(taken);
+                tally[entry].1 += 1;
+                ok_jobs += 1;
+                slowest_ok = slowest_ok.max(started.elapsed());
+                true
+            }
+            Err(e) => {
+                crate::diag!(
+                    "relay: fragment take failed ({}) after {}s: {e:#}",
+                    if job.addr.is_some() {
+                        "extra"
+                    } else {
+                        "primary"
+                    },
+                    started.elapsed().as_secs()
+                );
+                tally[entry].2 += 1;
+                failed_jobs += 1;
+                settle_ok &= job.epoch != plan.settles;
+                false
+            }
+        };
+        if let Some(addr) = &job.addr {
+            match answered.iter_mut().find(|(a, _)| a == addr) {
+                Some((_, seen)) => *seen |= ok,
+                None => answered.push((addr.clone(), ok)),
             }
         }
     }
+    crate::diag!(
+        "relay: drain round: {} fragment jobs ({} handles) on {} relay(s) — {} ok (slowest {}s), \
+         {} failed, {} skipped; {} blobs",
+        plan.jobs.len(),
+        plan.jobs.iter().map(|j| j.handles.len()).sum::<usize>(),
+        tally.len(),
+        ok_jobs,
+        slowest_ok.as_secs(),
+        failed_jobs,
+        skipped_jobs,
+        blobs.len()
+    );
     RelayHarvest {
         blobs,
-        reachability,
+        reachability: answered,
+        settled: plan.settles.filter(|_| settle_ok),
     }
 }
 
@@ -207,20 +292,38 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
 /// fan-out). Best-effort: succeeds if ≥1 relay accepts. Returns each `(relay, receipt)` so an
 /// edit/unsend can later recall every copy. Posting the identical sealed bytes to all relays
 /// lets the receiver de-duplicate by blob hash.
+///
+/// `handle` is the mailbox to post under — [`Node::post_handle`] for a live chat (v2 once the pair
+/// is confirmed), v1 where there is no chat state to consult. It is recorded in each receipt, so a
+/// later recall targets the handle the copy actually went to.
 fn queue_on_relays(
     transport: &dyn Transport,
     primary: &Option<RelayClient>,
     peer_relays: &[String],
     contact_id: &str,
+    handle: &str,
     bytes: &[u8],
 ) -> Result<Vec<QueuedReceipt>> {
     let sealed = relay_wrap(contact_id, bytes)?;
-    let handle = mailbox_handle(contact_id);
+    crate::diag!(
+        "relay: queueing a copy under a {} handle",
+        if handle == mailbox_handle(contact_id) {
+            "v1"
+        } else {
+            "v2"
+        }
+    );
+    // Each recipient on its own circuits: posts for two people over one circuit would tell the
+    // relay they share a correspondent — the contact graph per-pair handles exist to hide
+    // (`mailbox.rs`, `post_group`). A no-op off Tor.
+    let group = mailbox::post_group(contact_id);
     let mut copies = Vec::new();
     if let Some(primary) = primary {
-        if let Ok(r) = primary.post(&handle, &sealed, RELAY_TTL) {
+        let primary = mailbox::isolated(transport, primary, group);
+        if let Ok(r) = primary.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {
                 relay_addr: None,
+                handle: handle.to_string(),
                 msg_id: r.msg_id,
                 delete_token: r.delete_token,
             });
@@ -235,10 +338,11 @@ fn queue_on_relays(
             continue;
         }
         posted.push(addr);
-        let relay = build_relay(transport, addr);
-        if let Ok(r) = relay.post(&handle, &sealed, RELAY_TTL) {
+        let relay = mailbox::isolated(transport, &build_relay(transport, addr), group);
+        if let Ok(r) = relay.post(handle, &sealed, RELAY_TTL) {
             copies.push(QueuedReceipt {
                 relay_addr: Some(addr.clone()),
+                handle: handle.to_string(),
                 msg_id: r.msg_id,
                 delete_token: r.delete_token,
             });
@@ -262,15 +366,22 @@ fn recall_receipts(
     contact_id: &str,
     receipts: &[QueuedReceipt],
 ) -> bool {
-    let handle = mailbox_handle(contact_id);
     if receipts.is_empty() {
         return false;
     }
     let mut all_recalled = true;
+    let group = mailbox::post_group(contact_id);
     for r in receipts {
+        // On the recipient's posting circuits, like the post itself.
         let relay = match &r.relay_addr {
-            None => primary.clone(),
-            Some(addr) => Some(build_relay(transport, addr)),
+            None => primary
+                .as_ref()
+                .map(|p| mailbox::isolated(transport, p, group)),
+            Some(addr) => Some(mailbox::isolated(
+                transport,
+                &build_relay(transport, addr),
+                group,
+            )),
         };
         let Some(relay) = relay else {
             all_recalled = false;
@@ -279,6 +390,11 @@ fn recall_receipts(
         let receipt = crate::relay_client::PostReceipt {
             msg_id: r.msg_id.clone(),
             delete_token: r.delete_token.clone(),
+        };
+        let handle = if r.handle.is_empty() {
+            mailbox_handle(contact_id)
+        } else {
+            r.handle.clone()
         };
         if !relay.recall(&handle, &receipt).unwrap_or(false) {
             all_recalled = false;
@@ -317,6 +433,9 @@ fn random_msg_id() -> String {
 struct QueuedReceipt {
     /// `None` = the primary (baked-in) relay; `Some(addr)` = an advertised extra relay.
     relay_addr: Option<String>,
+    /// The mailbox handle the copy was posted under (v1 or a v2 day handle), so a recall targets
+    /// it. Empty on receipts persisted before v2, which were all v1.
+    handle: String,
     /// The relay's own id for the queued blob.
     msg_id: String,
     /// The secret token that authorizes deleting (recalling) the blob.
@@ -366,6 +485,8 @@ struct Chat {
     /// the UI downgrades the storage banner instead of silently pretending the copy exists.
     /// In-memory only (recomputed on the next send); starts optimistic.
     remote_storage_healthy: bool,
+    /// Our side of the v2 mailbox agreement (`mailbox.rs`). `None` until we first announce.
+    mailbox: Option<mailbox::MailboxPair>,
 }
 
 /// One device. Owns the identity, the transport endpoint, and all chats. A contact is
@@ -404,6 +525,23 @@ pub struct Node {
     /// for that chat until the app is restarted. Not persisted — re-announcing on a fresh launch
     /// is cheap and self-heals.
     burns_announced: std::collections::HashSet<String>,
+    /// Contacts this run has sent our v2 mailbox contribution to (see [`Node::announce_mailbox`]).
+    /// Per run, like [`burns_announced`](Self::burns_announced): an unconfirmed pair is retried on
+    /// every launch, which is what heals a lost frame.
+    mailbox_announced: std::collections::HashSet<String>,
+    /// Keys our polling-fragment partition (`mailbox.rs`, `poll_fragments`). Random per device,
+    /// persisted, so a partition stays fixed for its epoch across restarts.
+    poll_seed: [u8; 32],
+    /// Yesterday's epoch once a drain past the skew margin emptied it on every relay, so it is no
+    /// longer polled (`mailbox.rs`, `polled_epochs`). In memory only: after a restart it is polled
+    /// again until the next such drain, which costs a few requests and loses nothing.
+    prev_epoch_drained: Option<u64>,
+    /// When this node started, for [`announce_ready`](Self::announce_ready)'s fallback.
+    started: std::time::Instant,
+    /// Tests only: behave like a build from before v2 mailboxes — never send a
+    /// [`Frame::MailboxKey`], and drop any that arrive undecoded, as an older build does.
+    #[cfg(test)]
+    legacy_v1_only: bool,
     /// Where media attachments are stored at rest: `(dir, key)`. Each attachment is sealed
     /// under `key` into its own file in `dir`, and the message only references its id — so
     /// large media never inflates the JSON state blob. `None` disables media (demo/tests).
@@ -470,6 +608,14 @@ pub struct Node {
     /// Frames sealed by a UI call and waiting to be sent **off** the lock by that call's caller
     /// (see [`DetachedSend`]). Drained by [`Node::take_detached_sends`]; in memory only.
     detached_sends: Vec<DetachedSend>,
+    /// Delivery receipts and relay acks for messages this tick received, sealed under the lock and
+    /// waiting for the poller to send them **after** it has surfaced those messages and released
+    /// the lock. Sent inline instead, they held back the "message" event — and so the notification
+    /// — for a whole failed direct dial plus the relay fallback: ~45 s on a phone in Doze
+    /// (2026-09-28). Drained by [`Node::take_receipt_sends`]; empty on synchronous transports, which
+    /// still send inline. In memory only: a receipt lost to a restart is recovered by the sender's
+    /// relay retry, which is receipted again when it lands.
+    receipt_sends: Vec<DetachedSend>,
     /// Shared default relays learned from the operator-signed **relay directory** (§3.1): fetched
     /// from a live relay on the poll, verified against the baked-in [`directory::DIRECTORY_PUBKEY`],
     /// and treated like additional primaries (drained, paired over, and posted to). This is how the
@@ -529,6 +675,8 @@ pub(crate) struct SendPlan {
 
 struct PlannedSend {
     contact_id: String,
+    /// The mailbox handle for a relay copy, chosen under the lock ([`Node::post_handle`]).
+    handle: String,
     msg_id: String,
     bytes: Vec<u8>,
     peer_address: String,
@@ -562,7 +710,19 @@ struct SendOutcome {
 pub(crate) fn execute_sends(plan: &SendPlan) -> SendOutcomes {
     let mut items = Vec::with_capacity(plan.items.len());
     for p in &plan.items {
-        let delivered = plan.transport.send(&p.peer_address, &p.bytes).is_ok();
+        let started = std::time::Instant::now();
+        let sent = plan.transport.send(&p.peer_address, &p.bytes);
+        match &sent {
+            Ok(()) => crate::diag!(
+                "send: handed to the peer's onion in {}ms",
+                started.elapsed().as_millis()
+            ),
+            Err(e) => crate::diag!(
+                "send: direct dial failed after {}s — relay fallback: {e:#}",
+                started.elapsed().as_secs()
+            ),
+        }
+        let delivered = sent.is_ok();
         let mut copies = None;
         let mut relay_failed = false;
         if !delivered || p.remote_storage {
@@ -571,6 +731,7 @@ pub(crate) fn execute_sends(plan: &SendPlan) -> SendOutcomes {
                 &plan.primary,
                 &p.relay_targets,
                 &p.contact_id,
+                &p.handle,
                 &p.bytes,
             ) {
                 Ok(c) => copies = Some(c),
@@ -602,22 +763,42 @@ pub(crate) struct DetachedSend {
     primary: Option<RelayClient>,
     peer_relays: Vec<String>,
     recipient_ik: String,
+    /// The mailbox handle for a relay copy, chosen under the lock ([`Node::post_handle`]).
+    handle: String,
     peer_address: String,
     bytes: Vec<u8>,
+    /// Dial a new connection rather than write into one kept open ([`Transport::send_fresh`]):
+    /// for frames nothing confirms, which a dead kept-open connection would swallow.
+    fresh: bool,
 }
 
 impl DetachedSend {
     /// Deliver it: the peer's onion first, the relay mailbox if that fails. True if either took it.
     pub(crate) fn execute(&self) -> bool {
-        self.transport.send(&self.peer_address, &self.bytes).is_ok()
-            || queue_on_relays(
-                self.transport.as_ref(),
-                &self.primary,
-                &self.peer_relays,
-                &self.recipient_ik,
-                &self.bytes,
-            )
-            .is_ok()
+        let direct = if self.fresh {
+            self.transport.send_fresh(&self.peer_address, &self.bytes)
+        } else {
+            self.transport.send(&self.peer_address, &self.bytes)
+        };
+        if direct.is_ok() {
+            return true;
+        }
+        crate::diag!("detached send: direct dial failed — falling back to the relay");
+        let queued = queue_on_relays(
+            self.transport.as_ref(),
+            &self.primary,
+            &self.peer_relays,
+            &self.recipient_ik,
+            &self.handle,
+            &self.bytes,
+        )
+        .is_ok();
+        if queued {
+            crate::diag!("detached send: queued on the relay for the peer to drain");
+        } else {
+            crate::diag!("detached send: relay fallback also failed — not retried");
+        }
+        queued
     }
 }
 
@@ -676,6 +857,7 @@ struct PendingInvite {
 
 mod backup;
 mod frames;
+mod mailbox;
 mod messaging;
 mod pairing;
 
@@ -702,6 +884,17 @@ impl Node {
             last_invite_code: None,
             captures_visible: None,
             burns_announced: std::collections::HashSet::new(),
+            mailbox_announced: std::collections::HashSet::new(),
+            poll_seed: {
+                use rand::RngCore;
+                let mut seed = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut seed);
+                seed
+            },
+            prev_epoch_drained: None,
+            started: std::time::Instant::now(),
+            #[cfg(test)]
+            legacy_v1_only: false,
             burn_receipts: false,
             media_store: None,
             pending_media: Vec::new(),
@@ -715,6 +908,7 @@ impl Node {
             pending_sends: Vec::new(),
             pending_control: Vec::new(),
             detached_sends: Vec::new(),
+            receipt_sends: Vec::new(),
             discovered_relays: Vec::new(),
             directory_version: 0,
             awaiting_receipt: Vec::new(),
@@ -819,6 +1013,9 @@ impl Node {
                 chat.authorized,
             )
         };
+        if !already_authorized {
+            self.check_contact_cap(contact_id)?;
+        }
         // Idempotent: a second approval (e.g. an impatient double-tap while the Approved
         // signal is still going out over Tor) must NOT send another Approved frame.
         if already_authorized {
@@ -897,6 +1094,7 @@ impl Node {
                 &self.relay,
                 &targets,
                 contact_id,
+                &self.post_handle(contact_id),
                 &bytes,
             )
             .is_ok();
@@ -1005,6 +1203,9 @@ impl Node {
     /// exactly the contacts someone already talks to. Called once per run; the flag keeps a
     /// restart from re-announcing to everyone.
     pub fn announce_burns(&mut self) {
+        if !self.announce_ready() {
+            return;
+        }
         let ids: Vec<String> = self
             .chats
             .iter()
@@ -1162,6 +1363,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 id,
+                &self.post_handle(id),
                 &bytes,
             )
             .is_ok();
@@ -1235,8 +1437,26 @@ impl Node {
     /// `recipient_ik` (the peer's identity key) addresses and seals the relay copy — the
     /// relay never sees the address or the frame's routing metadata.
     fn deliver(&self, peer_address: &str, recipient_ik: &str, frame: &Frame) -> Result<()> {
+        self.deliver_on(peer_address, recipient_ik, frame, false)
+    }
+
+    /// [`deliver`](Self::deliver), or with `fresh` over a connection opened for this frame
+    /// ([`Transport::send_fresh`]), so a peer that has gone away is a failed dial — and a relay
+    /// copy — rather than a silent write into a connection left open from earlier traffic.
+    fn deliver_on(
+        &self,
+        peer_address: &str,
+        recipient_ik: &str,
+        frame: &Frame,
+        fresh: bool,
+    ) -> Result<()> {
         let bytes = wire::encode(frame);
-        if self.transport.send(peer_address, &bytes).is_err() {
+        let direct = if fresh {
+            self.transport.send_fresh(peer_address, &bytes)
+        } else {
+            self.transport.send(peer_address, &bytes)
+        };
+        if direct.is_err() {
             // The direct onion dial failed. Expected while their descriptor is (re)publishing, but
             // also what a *restricted* onion looks like to a peer it hasn't authorized yet (#22) —
             // in which case the relay is the only way in until our ClientKey reaches them.
@@ -1252,6 +1472,7 @@ impl Node {
                 &self.relay,
                 &peer_relays,
                 recipient_ik,
+                &self.post_handle(recipient_ik),
                 &bytes,
             )
             .inspect_err(|_| {
@@ -1391,6 +1612,15 @@ impl Node {
         self.transport.published()
     }
 
+    /// Whether to send the optional once-per-run announcements (burn support, the v2 mailbox
+    /// contribution). Before Tor is up every one of them costs a failed dial and a failed relay post
+    /// and is retried anyway, so they wait for the onion to publish — or for
+    /// [`ANNOUNCE_FALLBACK`] after start, because `published()` has been measured reading false on
+    /// a published service, and gating on it alone would leave a pair on v1 mailboxes for good.
+    pub(crate) fn announce_ready(&self) -> bool {
+        self.transport.published() || self.started.elapsed() >= ANNOUNCE_FALLBACK
+    }
+
     pub fn identity_id(&self) -> String {
         self.identity.id()
     }
@@ -1412,6 +1642,7 @@ impl Node {
                 dto.last_seen_secs = c.last_seen.unwrap_or(0);
                 dto.local_name = c.local_name.clone();
                 dto.identity_tag = identity_tag(&c.contact.id);
+                dto.peer_on_old_version = Self::peer_on_old_version(c);
                 dto
             })
             .collect()
@@ -1522,6 +1753,10 @@ fn pack_unsend(target_msg_id: &str) -> Vec<u8> {
 fn unpack_unsend(buf: &[u8]) -> Result<String> {
     Ok(String::from_utf8(buf.to_vec())?)
 }
+
+/// How long after start the optional announcements go out even if the transport never reports
+/// itself published ([`Node::announce_ready`]). Tor publishes in ~1–3 minutes.
+const ANNOUNCE_FALLBACK: Duration = Duration::from_secs(3 * 60);
 
 /// A human label for a disappearing-messages timer value (for the in-chat system notice).
 fn disappearing_label(secs: u64) -> String {
@@ -1882,3 +2117,5 @@ fn base64_handle(bytes: &[u8]) -> String {
 mod tests_a;
 #[cfg(test)]
 mod tests_b;
+#[cfg(test)]
+mod tests_mailbox;

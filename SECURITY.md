@@ -129,6 +129,22 @@ vulnerability under the device-theft threat model, but each is worth an auditor'
   platform**, **screen recording**, and **a camera pointed at the screen**. So a peer who sees no
   notice has learned nothing, and the UI/website must never imply otherwise. What *is* blocked is
   the Recents thumbnail, since that capture has no user intent behind it.
+- **What a relay can still link about your mailboxes.** *(Known limit.)* Through 0.1.24 offline
+  mail went to a handle that was a static hash of the recipient's identity key, so a relay (or
+  whoever seizes one) could tell that deposits from different senders, on different days, were for
+  the same person. From 0.1.25 each chat agrees its own secret and the handle rotates daily
+  (`docs/design/mailbox-handles.md`), and polling is split into fragments fixed for the day, each
+  on its own Tor circuit, padded with dummy mailboxes. What remains linkable: **one pair's deposits
+  within one UTC day**; **the handles within one polling fragment**, which share a reader (about
+  seven at the 50-contact cap); a **long-watched dummy**, which never receives anything and so
+  looks like one; the **fan-out burst** when you send to several people at once; and **everything
+  about a chat whose peer runs an older build**, which stays on the static handle in both
+  directions until they update. The newer side is shown a banner saying so, because the older app
+  cannot show one. The 50-contact cap is an app limit, not a protocol one: a modified client can
+  exceed it and pay the polling cost. And offline mail now depends on clocks: a sender whose device
+  clock is wrong by more than **3 hours** posts under a day's handle the recipient no longer polls,
+  and that message expires unread after 24 hours. Timezone settings do not matter, only a clock
+  that is actually wrong; messages delivered directly are unaffected.
 - **Bridges get past a blocked relay list; getting past traffic inspection is tested but not
   proven.** *(Known limit.)* Where a network blocks the public list of Tor relays, a bridge is an
   unlisted way in. Where a network instead inspects traffic and blocks Tor by how it *looks*, the

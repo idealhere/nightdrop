@@ -79,10 +79,26 @@ const ARTI_NOISE: [&str; 2] = [
 ];
 
 /// A `std::io::Write` that turns each completed line from the tracing formatter into one
-/// [`crate::diag::emit_tor`] call. A fresh instance is made per event (one line ending in `\n`).
+/// [`crate::diag::emit_tor`] call. A fresh instance is made per event (usually one line ending in
+/// `\n`; an error with a backtrace spans several), so the rate limiter is asked once, on the
+/// event's first line, and its answer covers the rest.
 #[derive(Default)]
 struct ArtiDiagWriter {
     buf: Vec<u8>,
+    admitted: Option<bool>,
+}
+impl ArtiDiagWriter {
+    fn emit(&mut self, line: &str) {
+        if ARTI_NOISE.iter().any(|n| line.contains(n)) {
+            return;
+        }
+        let admitted = *self
+            .admitted
+            .get_or_insert_with(|| crate::diag::admit_tor_event(line));
+        if admitted {
+            crate::diag::emit_tor(line);
+        }
+    }
 }
 impl std::io::Write for ArtiDiagWriter {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
@@ -90,17 +106,14 @@ impl std::io::Write for ArtiDiagWriter {
         while let Some(nl) = self.buf.iter().position(|&b| b == b'\n') {
             let line: Vec<u8> = self.buf.drain(..=nl).collect();
             let line = String::from_utf8_lossy(&line);
-            let line = line.trim_end();
-            if !ARTI_NOISE.iter().any(|n| line.contains(n)) {
-                crate::diag::emit_tor(line);
-            }
+            self.emit(line.trim_end());
         }
         Ok(data.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
         if !self.buf.is_empty() {
-            crate::diag::emit_tor(String::from_utf8_lossy(&self.buf).trim_end());
-            self.buf.clear();
+            let rest = std::mem::take(&mut self.buf);
+            self.emit(String::from_utf8_lossy(&rest).trim_end());
         }
         Ok(())
     }
@@ -224,7 +237,15 @@ pub struct TorTransport {
     /// Whether the service has ever been fully reachable this run — see
     /// [`published`](Transport::published) for why that answer is monotonic.
     ever_published: std::sync::atomic::AtomicBool,
+    /// One arti isolation token per caller-chosen group (`relay_dialer_isolated`). Streams with the
+    /// same token may share circuits; different tokens never do. Bounded: cleared past
+    /// [`MAX_ISOLATION_GROUPS`], which only costs fresh circuits.
+    isolation: Mutex<HashMap<u64, arti_client::IsolationToken>>,
 }
+
+/// Enough for a day's polling fragments on every epoch, plus one posting group per contact, with
+/// room to spare; beyond it the map is cleared rather than grown.
+const MAX_ISOLATION_GROUPS: usize = 512;
 
 impl Drop for TorTransport {
     fn drop(&mut self) {
@@ -394,6 +415,7 @@ impl TorTransport {
             nickname: nickname_owned,
             last_state: Mutex::new(String::from("<start>")),
             ever_published: std::sync::atomic::AtomicBool::new(false),
+            isolation: Mutex::new(HashMap::new()),
         })
     }
 
@@ -448,6 +470,19 @@ impl TorTransport {
     ///
     /// [`NightdropCore::shutdown`]: crate::api::NightdropCore::shutdown
     pub fn make_relay_dialer(&self, relay_onion: String) -> crate::relay_client::RelayDialer {
+        self.relay_dialer_with(relay_onion, None)
+    }
+
+    /// [`make_relay_dialer`](Self::make_relay_dialer) on the circuits of one isolation group.
+    fn relay_dialer_with(
+        &self,
+        relay_onion: String,
+        isolation: Option<arti_client::IsolationToken>,
+    ) -> crate::relay_client::RelayDialer {
+        let mut prefs = arti_client::StreamPrefs::new();
+        if let Some(token) = isolation {
+            prefs.set_isolation(token);
+        }
         let client = Arc::clone(&self.client);
         let runtime = Arc::clone(&self.runtime);
         let closing = Arc::clone(&self.closing);
@@ -461,7 +496,7 @@ impl TorTransport {
                 let exchange = async {
                     let mut stream = tokio::time::timeout(
                         RELAY_DIAL_TIMEOUT,
-                        client.connect((relay_onion.as_str(), RELAY_PORT)),
+                        client.connect_with_prefs((relay_onion.as_str(), RELAY_PORT), &prefs),
                     )
                     .await
                     .map_err(|_| anyhow::anyhow!("relay dial timed out"))?
@@ -575,6 +610,22 @@ impl Transport for TorTransport {
     /// chosen relay set (#17).
     fn relay_dialer(&self, addr: &str) -> Option<crate::relay_client::RelayDialer> {
         Some(self.make_relay_dialer(addr.to_string()))
+    }
+
+    fn relay_dialer_isolated(
+        &self,
+        addr: &str,
+        group: u64,
+    ) -> Option<crate::relay_client::RelayDialer> {
+        let token = {
+            let mut map = self.isolation.lock().unwrap_or_else(|e| e.into_inner());
+            if map.len() >= MAX_ISOLATION_GROUPS && !map.contains_key(&group) {
+                map.clear();
+            }
+            *map.entry(group)
+                .or_insert_with(arti_client::IsolationToken::new)
+        };
+        Some(self.relay_dialer_with(addr.to_string(), Some(token)))
     }
 
     /// Fetch a small static file from an onion over Tor (the update check, `crate::update`).
@@ -798,6 +849,25 @@ impl Transport for TorTransport {
     }
 
     fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.send_on(peer, frame, true)
+    }
+
+    /// Dial a new stream even when a warm one is open, so the write rides a stream the peer's
+    /// onion service just accepted. The warm stream is dropped: it may be the dead one, and the
+    /// fresh stream replaces it for whatever follows.
+    fn send_fresh(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.send_on(peer, frame, false)
+    }
+
+    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
+        self.inbound.lock().unwrap().try_recv().ok()
+    }
+}
+
+impl TorTransport {
+    /// [`Transport::send`] (`reuse`: write into a warm stream to `peer` if one is open) and
+    /// [`Transport::send_fresh`] (always dial).
+    fn send_on(&self, peer: &str, frame: &[u8], reuse: bool) -> Result<()> {
         if self.closing.stopped() {
             anyhow::bail!("peer send abandoned: the transport is closing");
         }
@@ -814,7 +884,8 @@ impl Transport for TorTransport {
             .lock()
             .unwrap()
             .remove(&peer)
-            .map(|(s, _)| s);
+            .map(|(s, _)| s)
+            .filter(|_| reuse);
         let peer2 = peer.clone();
         let stream = self.runtime.block_on(async move {
             let exchange = async {
@@ -852,10 +923,6 @@ impl Transport for TorTransport {
             .unwrap()
             .insert(peer, (stream, Instant::now()));
         Ok(())
-    }
-
-    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
-        self.inbound.lock().unwrap().try_recv().ok()
     }
 }
 

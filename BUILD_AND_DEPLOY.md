@@ -2,6 +2,8 @@
 
 Complete guide to build and deploy Night Drop on Desktop (Linux) and Mobile (Android) with relay store-and-forward messaging.
 
+Windows has its own page: [`docs/building-windows.md`](docs/building-windows.md).
+
 ---
 
 ## 🎯 Quick Start

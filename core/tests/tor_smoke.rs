@@ -64,6 +64,59 @@ fn two_onions_round_trip_a_frame() {
     assert_eq!(received.expect("frame over Tor"), b"hello over tor");
 }
 
+/// `send_fresh` must never report a vanished peer as reached: it is what makes a delivery receipt
+/// fall back to the relay instead of disappearing (`Transport::send_fresh`). B warms a stream to A,
+/// A goes away, and B's fresh send has to fail within the peer-dial bound.
+///
+/// Dropping A in-process tears its circuits down cleanly, which B's warm stream may well notice, so
+/// this cannot reproduce the silent case (a phone in airplane mode) where `send` into the warm
+/// stream still returns `Ok`; what `send` did is printed, not asserted.
+#[test]
+#[ignore = "needs network; two onion services (very slow)"]
+fn a_fresh_send_to_a_vanished_peer_fails() {
+    use std::time::{Duration, Instant};
+
+    let a = TorTransport::bootstrap("nightdropfresha", None, None, None).expect("bootstrap A");
+    let b = TorTransport::bootstrap("nightdropfreshb", None, None, None).expect("bootstrap B");
+    let a_addr = a.address();
+
+    let mut warm = false;
+    for _ in 0..30 {
+        if b.send(&a_addr, b"warm up").is_ok() {
+            warm = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    assert!(warm, "could not dial A's onion service");
+    assert!(
+        b.send_fresh(&a_addr, b"fresh while A is up").is_ok(),
+        "a fresh send to a live peer succeeds"
+    );
+
+    drop(a);
+    std::thread::sleep(Duration::from_secs(2));
+
+    let started = Instant::now();
+    let reused = b.send(&a_addr, b"into the warm stream");
+    eprintln!(
+        "send over the warm stream after A left: {:?} in {:?}",
+        reused.as_ref().map_err(|e| e.to_string()),
+        started.elapsed()
+    );
+    let started = Instant::now();
+    let fresh = b.send_fresh(&a_addr, b"fresh after A left");
+    eprintln!(
+        "send_fresh after A left: {:?} in {:?}",
+        fresh.as_ref().map_err(|e| e.to_string()),
+        started.elapsed()
+    );
+    assert!(
+        fresh.is_err(),
+        "a fresh send must not reach a peer that is gone"
+    );
+}
+
 /// A fresh, unique temp dir for a sub-path of this test run (no `tempfile` dev-dep).
 fn scratch(tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!(

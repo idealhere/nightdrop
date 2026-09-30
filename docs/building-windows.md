@@ -3,7 +3,8 @@
 Night Drop builds and runs on Windows 11 x64 from the same tree as Linux and Android. As of
 2026-09-30 it has been built and tested in a Windows 11 25H2 VM: a Tor identity created over
 WebTunnel bridges, paired with an Android phone, and messages sent and received in both directions.
-There is no signed installer or release download yet; this page is for building it yourself.
+`scripts/build-windows-installer.ps1` turns a release build into an installer (below); it is not
+code-signed and not published yet.
 
 Flutter cannot cross-compile a Windows desktop app, so the build has to run **on Windows**.
 
@@ -69,6 +70,36 @@ The app is `app\build\windows\x64\runner\Release\night_drop.exe`, and it needs t
 
 A first build takes around 10 minutes on 4 cores; most of it is arti and BoringSSL.
 
+## Installer
+
+```powershell
+winget install JRSoftware.InnoSetup      # once
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-installer.ps1
+```
+
+It builds the release app with the production wiring (Tor on; the relay address is read from
+`fdroid/app.nightdrop.yml`, so it always matches the published Android builds; no diagnostics),
+stages the bundle with the Visual C++ runtime, and compiles `app/windows/installer/night_drop.iss`
+into `app\build\windows\installer\NightDropSetup-<version>.exe` (about 20 MB).
+
+- **Per-user, no administrator rights:** installs to `%LOCALAPPDATA%\Programs\Night Drop`, with a
+  Start-menu entry, an optional desktop icon and an uninstaller. Upgrades install over the old
+  version in place (same `AppId`, which must never change).
+- **The C++ runtime is bundled app-local** (`msvcp140.dll`, `vcruntime140.dll`,
+  `vcruntime140_1.dll`) — exactly what the runner, plugins and core import (`dumpbin /dependents`);
+  the Universal CRT ships with Windows 10+. The installed app loads these copies, not the system's.
+- **Uninstalling keeps your identity and chats** (`%APPDATA%\Night Drop`), so a reinstall or upgrade
+  picks them up. Use the app's wipe, or delete that folder, to remove them.
+- **No licence click-through:** the AGPL needs no acceptance to run the program, so the installer
+  does not ask for one; `LICENSE.txt` is installed next to the app.
+- **Not code-signed.** Without a Windows code-signing certificate, SmartScreen warns about an
+  unknown publisher. Publish it with a GPG signature and a `SHA256SUMS` entry like the other
+  binaries.
+
+Tested 2026-09-30 in the Windows 11 VM: silent and interactive install, launch (connected over
+WebTunnel bridges), uninstall (program, shortcut and uninstall entry gone, identity kept),
+reinstall (same identity restored), and an in-place upgrade.
+
 ## Known limits on Windows
 
 - **No background delivery.** Android keeps a foreground service running; Windows has no equivalent
@@ -79,7 +110,7 @@ A first build takes around 10 minutes on 4 cores; most of it is arti and BoringS
   ships the upstream fix.
 - **Bridge bootstraps can take longer than the app's 120 s limit** on slow volunteer bridges. This
   is not Windows-specific: the same bridges measured 9–88 s on Linux and 10–73 s on Windows.
-- **Not reproducible or signed yet**, unlike the Android and Linux releases.
+- **Not reproducible or code-signed yet**, unlike the Android and Linux releases.
 
 ## Testing in a VM
 

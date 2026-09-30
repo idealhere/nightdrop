@@ -3,8 +3,8 @@
 Night Drop builds and runs on Windows 11 x64 from the same tree as Linux and Android. As of
 2026-09-30 it has been built and tested in a Windows 11 25H2 VM: a Tor identity created over
 WebTunnel bridges, paired with an Android phone, and messages sent and received in both directions.
-`scripts/build-windows-installer.ps1` turns a release build into an installer (below); it is not
-code-signed and not published yet.
+`scripts/build-windows-installer.ps1` turns a release build into an installer (below), published
+from 0.1.26 as `NightDropSetup.exe`. It is not code-signed.
 
 Flutter cannot cross-compile a Windows desktop app, so the build has to run **on Windows**.
 
@@ -80,7 +80,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-windows-installer.ps1
 It builds the release app with the production wiring (Tor on; the relay address is read from
 `fdroid/app.nightdrop.yml`, so it always matches the published Android builds; no diagnostics),
 stages the bundle with the Visual C++ runtime, and compiles `app/windows/installer/night_drop.iss`
-into `app\build\windows\installer\NightDropSetup-<version>.exe` (about 20 MB).
+into `app\build\windows\installer\NightDropSetup.exe` (about 20 MB). The name carries no version on
+purpose: the website links `/releases/latest/download/NightDropSetup.exe`.
 
 - **Per-user, no administrator rights:** installs to `%LOCALAPPDATA%\Programs\Night Drop`, with a
   Start-menu entry, an optional desktop icon and an uninstaller. Upgrades install over the old

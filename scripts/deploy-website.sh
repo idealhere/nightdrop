@@ -52,7 +52,7 @@ verify_apk() {
     return 0
 }
 
-mkdir -p "$WEB/android" "$WEB/linux" "$WEB/signatures"
+mkdir -p "$WEB/android" "$WEB/linux" "$WEB/windows" "$WEB/signatures"
 
 for f in "$@"; do
     [ -f "$f" ] || { err "no such file: $f"; exit 1; }
@@ -66,6 +66,12 @@ for f in "$@"; do
             cp -f "$f" "$WEB/linux/$(basename "$f")"
             ok "published linux/$(basename "$f")"
             ;;
+        *.exe)
+            # Windows installer (scripts/build-windows-installer.ps1). Not code-signed, so the GPG
+            # signature and SHA256SUMS below are the only way to verify it.
+            cp -f "$f" "$WEB/windows/$(basename "$f")"
+            ok "published windows/$(basename "$f")"
+            ;;
         *) err "don't know where to put $(basename "$f")"; exit 1 ;;
     esac
 done
@@ -73,7 +79,7 @@ done
 # Re-sign everything present, not just what was copied: a stale SHA256SUMS is worse than none,
 # because SECURITY.md tells people to trust it.
 cd "$WEB"
-mapfile -t files < <(cd "$WEB" && ls android/*.apk linux/*.AppImage 2>/dev/null || true)
+mapfile -t files < <(cd "$WEB" && ls android/*.apk linux/*.AppImage windows/*.exe 2>/dev/null || true)
 [ ${#files[@]} -gt 0 ] || { c "nothing deployed yet — nothing to sign"; exit 0; }
 
 # Paths in SHA256SUMS are bare filenames so `sha256sum -c` works from the download directory,

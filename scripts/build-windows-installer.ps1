@@ -1,4 +1,4 @@
-# Build the Night Drop Windows installer (NightDropSetup-<version>.exe). Runs on Windows; see
+# Build the Night Drop Windows installer (NightDropSetup.exe). Runs on Windows; see
 # docs/building-windows.md for the toolchain. Also needs Inno Setup 6 (winget install JRSoftware.InnoSetup).
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\build-windows-installer.ps1
@@ -56,5 +56,5 @@ $Out = Join-Path $App 'build\windows\installer'
 New-Item -ItemType Directory -Force $Out | Out-Null
 & $iscc /Q "/DAppVersion=$Version" "/DBundleDir=$Stage" "/DOutputDir=$Out" (Join-Path $App 'windows\installer\night_drop.iss')
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
-$setup = Join-Path $Out "NightDropSetup-$Version.exe"
-Write-Host "==> $setup ($([math]::Round((Get-Item $setup).Length / 1MB, 1)) MB)"
+$setup = Join-Path $Out "NightDropSetup.exe"
+Write-Host "==> $setup, Night Drop $Version ($([math]::Round((Get-Item $setup).Length / 1MB, 1)) MB)"

@@ -36,7 +36,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir={#OutputDir}
-OutputBaseFilename=NightDropSetup-{#AppVersion}
+; A stable name, like NightDrop.apk: the website links /releases/latest/download/NightDropSetup.exe,
+; and a versioned name would pin a release (see CLAUDE.md, "A download link must never pin a release tag").
+OutputBaseFilename=NightDropSetup
 SetupIconFile=..\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\night_drop.exe
 UninstallDisplayName=Night Drop

@@ -101,6 +101,8 @@ as of 0.1.22; `cargo clippy` and `flutter analyze` clean):
   (which removed `Project.exec()`), and `app/rust_builder/android/build.gradle` uses
   `compileSdk 36`.
 - **iOS/macOS** builds need a Mac with Xcode (not buildable on Linux).
+- **Windows** builds run on Windows (Flutter cannot cross-compile it); toolchain, long-path
+  setup and known limits are in `docs/building-windows.md`.
 - The demo app still pairs with an in-process peer (two real `Node`s) until you start it
   via `new_with_transport` pointed at Tor + a deployed relay — that swap doesn't change the
   `NightdropCore` API.

@@ -1258,7 +1258,7 @@ impl Node {
             if let Some((addr, frame)) = self.authed_control(&from, MARK_ACK, |me, message| {
                 Frame::Ack { from: me, message }
             }) {
-                let _ = self.deliver(&addr, &from, &frame);
+                self.send_after_surfacing(&from, &addr, &frame, false);
             }
         }
         // …and a precise receipt per message on top. The coarse `Ack` above stays on the wire for
@@ -1277,7 +1277,16 @@ impl Node {
     /// belongs to — the message *has* arrived, and the only casualty is the sender's badge, which
     /// stays at "sent". That is the honest failure direction. Falls back to the relay like any
     /// control frame, so a peer who has gone offline still learns their message landed.
+    ///
+    /// The first receipt to each peer goes over a **fresh** connection. Nothing confirms a receipt,
+    /// so one written into a connection kept open from earlier traffic, whose other end has gone,
+    /// was lost without an error, and the relay fallback never ran: the sender's message sat on
+    /// "Held for delivery" for good (2026-09-30). A fresh dial to a gone peer fails, and the receipt
+    /// goes to the relay. Later receipts to the same peer in this batch take the ordinary send, which
+    /// reuses the connection the first one opened if it got through, so a burst of messages costs
+    /// one extra dial, not one per message.
     pub(crate) fn send_receipts(&mut self, receipts: &[(String, String)]) {
+        let mut proven: Vec<&str> = Vec::new();
         for (from, msg_id) in receipts {
             if let Some((addr, frame)) =
                 self.authed_control(from, msg_id.as_bytes(), |me, message| Frame::Delivered {
@@ -1285,9 +1294,58 @@ impl Node {
                     message,
                 })
             {
-                let _ = self.deliver(&addr, from, &frame);
+                let fresh = !proven.contains(&from.as_str());
+                self.send_after_surfacing(from, &addr, &frame, fresh);
+                if fresh {
+                    proven.push(from);
+                }
             }
         }
+    }
+
+    /// Deliver a receipt or ack for something this tick received. Inline on a synchronous
+    /// transport (in-memory: instant, and tests expect the round trip done on return); otherwise
+    /// sealed now — the ratchet must advance under the lock — and queued in
+    /// [`receipt_sends`](Node::receipt_sends) for the poller to send once it has surfaced the
+    /// messages. A receipt is a peer dial plus, on failure, a relay post; sent inline it made the
+    /// notification wait for both.
+    ///
+    /// `fresh` sends it over a connection opened for it ([`Transport::send_fresh`]); see
+    /// [`send_receipts`](Self::send_receipts) for why receipts need that.
+    fn send_after_surfacing(
+        &mut self,
+        contact_id: &str,
+        peer_address: &str,
+        frame: &Frame,
+        fresh: bool,
+    ) {
+        if self.transport.is_synchronous() {
+            let _ = self.deliver_on(peer_address, contact_id, frame, fresh);
+            return;
+        }
+        let peer_relays = self
+            .chats
+            .get(contact_id)
+            .map(|c| c.contact.peer_relays.clone())
+            .unwrap_or_default();
+        let send = DetachedSend {
+            transport: Arc::clone(&self.transport),
+            primary: self.relay.clone(),
+            peer_relays,
+            recipient_ik: contact_id.to_string(),
+            handle: self.post_handle(contact_id),
+            peer_address: peer_address.to_string(),
+            bytes: wire::encode(frame),
+            fresh,
+        };
+        self.receipt_sends.push(send);
+    }
+
+    /// Hand over the receipts and acks queued by [`send_after_surfacing`](Self::send_after_surfacing),
+    /// for the poller to [`execute`](DetachedSend::execute) **after** it has emitted the messages
+    /// they confirm and released the core lock.
+    pub(crate) fn take_receipt_sends(&mut self) -> Vec<DetachedSend> {
+        std::mem::take(&mut self.receipt_sends)
     }
 
     /// Set our per-chat display name (§4). Blank falls back to [`DEFAULT_NAME`]; on a live
@@ -1599,6 +1657,9 @@ impl Node {
             handle,
             peer_address: chat.peer_address.clone(),
             bytes: wire::encode(&frame),
+            // A view receipt is confirmed by nothing either: the same dead-connection loss as a
+            // delivery receipt (`send_receipts`), with the burn timer's reveal riding on it.
+            fresh: true,
         };
         self.detached_sends.push(send);
     }

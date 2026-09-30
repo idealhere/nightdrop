@@ -608,6 +608,14 @@ pub struct Node {
     /// Frames sealed by a UI call and waiting to be sent **off** the lock by that call's caller
     /// (see [`DetachedSend`]). Drained by [`Node::take_detached_sends`]; in memory only.
     detached_sends: Vec<DetachedSend>,
+    /// Delivery receipts and relay acks for messages this tick received, sealed under the lock and
+    /// waiting for the poller to send them **after** it has surfaced those messages and released
+    /// the lock. Sent inline instead, they held back the "message" event — and so the notification
+    /// — for a whole failed direct dial plus the relay fallback: ~45 s on a phone in Doze
+    /// (2026-09-28). Drained by [`Node::take_receipt_sends`]; empty on synchronous transports, which
+    /// still send inline. In memory only: a receipt lost to a restart is recovered by the sender's
+    /// relay retry, which is receipted again when it lands.
+    receipt_sends: Vec<DetachedSend>,
     /// Shared default relays learned from the operator-signed **relay directory** (§3.1): fetched
     /// from a live relay on the poll, verified against the baked-in [`directory::DIRECTORY_PUBKEY`],
     /// and treated like additional primaries (drained, paired over, and posted to). This is how the
@@ -759,21 +767,38 @@ pub(crate) struct DetachedSend {
     handle: String,
     peer_address: String,
     bytes: Vec<u8>,
+    /// Dial a new connection rather than write into one kept open ([`Transport::send_fresh`]):
+    /// for frames nothing confirms, which a dead kept-open connection would swallow.
+    fresh: bool,
 }
 
 impl DetachedSend {
     /// Deliver it: the peer's onion first, the relay mailbox if that fails. True if either took it.
     pub(crate) fn execute(&self) -> bool {
-        self.transport.send(&self.peer_address, &self.bytes).is_ok()
-            || queue_on_relays(
-                self.transport.as_ref(),
-                &self.primary,
-                &self.peer_relays,
-                &self.recipient_ik,
-                &self.handle,
-                &self.bytes,
-            )
-            .is_ok()
+        let direct = if self.fresh {
+            self.transport.send_fresh(&self.peer_address, &self.bytes)
+        } else {
+            self.transport.send(&self.peer_address, &self.bytes)
+        };
+        if direct.is_ok() {
+            return true;
+        }
+        crate::diag!("detached send: direct dial failed — falling back to the relay");
+        let queued = queue_on_relays(
+            self.transport.as_ref(),
+            &self.primary,
+            &self.peer_relays,
+            &self.recipient_ik,
+            &self.handle,
+            &self.bytes,
+        )
+        .is_ok();
+        if queued {
+            crate::diag!("detached send: queued on the relay for the peer to drain");
+        } else {
+            crate::diag!("detached send: relay fallback also failed — not retried");
+        }
+        queued
     }
 }
 
@@ -883,6 +908,7 @@ impl Node {
             pending_sends: Vec::new(),
             pending_control: Vec::new(),
             detached_sends: Vec::new(),
+            receipt_sends: Vec::new(),
             discovered_relays: Vec::new(),
             directory_version: 0,
             awaiting_receipt: Vec::new(),
@@ -1411,8 +1437,26 @@ impl Node {
     /// `recipient_ik` (the peer's identity key) addresses and seals the relay copy — the
     /// relay never sees the address or the frame's routing metadata.
     fn deliver(&self, peer_address: &str, recipient_ik: &str, frame: &Frame) -> Result<()> {
+        self.deliver_on(peer_address, recipient_ik, frame, false)
+    }
+
+    /// [`deliver`](Self::deliver), or with `fresh` over a connection opened for this frame
+    /// ([`Transport::send_fresh`]), so a peer that has gone away is a failed dial — and a relay
+    /// copy — rather than a silent write into a connection left open from earlier traffic.
+    fn deliver_on(
+        &self,
+        peer_address: &str,
+        recipient_ik: &str,
+        frame: &Frame,
+        fresh: bool,
+    ) -> Result<()> {
         let bytes = wire::encode(frame);
-        if self.transport.send(peer_address, &bytes).is_err() {
+        let direct = if fresh {
+            self.transport.send_fresh(peer_address, &bytes)
+        } else {
+            self.transport.send(peer_address, &bytes)
+        };
+        if direct.is_err() {
             // The direct onion dial failed. Expected while their descriptor is (re)publishing, but
             // also what a *restricted* onion looks like to a peer it hasn't authorized yet (#22) —
             // in which case the relay is the only way in until our ClientKey reaches them.

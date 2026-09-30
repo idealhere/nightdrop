@@ -635,7 +635,13 @@ impl Inner {
             .me
             .plan_pending_sends()
             .map(|plan| crate::node::execute_sends(&plan));
-        self.apply_tick(poll_relay, harvest, sent)
+        let result = self.apply_tick(poll_relay, harvest, sent);
+        // Receipts for what that tick received. The poller sends these after releasing the lock;
+        // a synchronous caller already holds it, so they go now — after the tick has emitted.
+        for s in self.me.take_receipt_sends() {
+            s.execute();
+        }
+        result
     }
 
     /// The state-mutating half of a poll cycle: pump the transport, apply any relay blobs already
@@ -2568,13 +2574,23 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
             // Recover from poisoning, and run the apply inside `catch_unwind` (§1.5.3): a panic in
             // one tick (e.g. a malformed frame) must not kill the background poller for good — and,
             // because the unwind is caught before the guard drops, it also can't *poison* the mutex.
-            {
+            let receipts = {
                 let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let _ = g.apply_tick(relay_applied, harvest.take(), sent.take());
                     // Flush any debounced background write whose window has elapsed (§1.5.4).
                     g.maybe_flush();
                 }));
+                g.me.take_receipt_sends()
+            };
+            // Delivery receipts and relay acks for what that tick received, sent only now: the
+            // "message" event is already out, so the notification does not wait on them, and the
+            // lock is free, so neither does anything else. A receipt is a peer dial and, when that
+            // fails, a relay post — ~45 s on a phone in Doze (2026-09-28), all of it spent before
+            // the notification while they were sent inline. On this thread rather than a spawned
+            // one so nothing outlives the poller holding the transport (see the teardown below).
+            for s in receipts {
+                s.execute();
             }
             if relay_applied {
                 last_relay = Some(std::time::Instant::now());
@@ -2981,6 +2997,115 @@ mod tests {
         release.store(true, Ordering::Relaxed);
         let outcomes = driver.join().unwrap().expect("a send was planned");
         core.lock().me.apply_send_outcomes(outcomes);
+    }
+
+    /// A received message must be surfaced before its delivery receipt goes out. The receipt is a
+    /// dial back to the sender and, when that fails, a relay post; it used to be sent inside
+    /// `pump`, under the lock and before `apply_tick` emitted, so the notification waited for all
+    /// of it — ~45 s on a phone in Doze whose dial back failed (2026-09-28).
+    #[test]
+    fn a_received_message_is_surfaced_before_its_receipt_is_sent() {
+        // Same black-hole dial as above: `send` blocks until released once armed.
+        struct BlockingTransport {
+            inner: crate::transport::MemoryTransport,
+            armed: Arc<AtomicBool>,
+            entered: Arc<AtomicBool>,
+            release: Arc<AtomicBool>,
+        }
+        impl Transport for BlockingTransport {
+            fn address(&self) -> String {
+                self.inner.address()
+            }
+            fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+                if !self.armed.load(Ordering::Relaxed) {
+                    return self.inner.send(peer, frame);
+                }
+                self.entered.store(true, Ordering::Relaxed);
+                while !self.release.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                anyhow::bail!("never got there")
+            }
+            fn try_recv(&self) -> Option<(String, Vec<u8>)> {
+                self.inner.try_recv()
+            }
+        }
+
+        let net = MemoryNetwork::new();
+        let armed = Arc::new(AtomicBool::new(false));
+        let entered = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let core = NightdropCore::new_with_transport(
+            Box::new(BlockingTransport {
+                inner: net.endpoint("me.onion"),
+                armed: Arc::clone(&armed),
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+            None,
+            false,
+        );
+        let invite = core.create_invite().unwrap();
+        let mut peer = crate::node::Node::new(Box::new(net.endpoint("peer.onion")));
+        let (addr, bundle) = parse_invite(&invite.qr_payload).unwrap();
+        peer.connect_with_bundle(&addr, &bundle).unwrap();
+        core.poll_once().unwrap();
+        let contact = core.incoming_requests()[0].id.clone();
+        core.authorize(&contact, true).unwrap();
+        peer.pump().unwrap(); // the peer learns it was approved
+
+        // From here on, our dial back to the peer hangs. The peer's own send is in-memory, so the
+        // message is already waiting in our inbox.
+        armed.store(true, Ordering::Relaxed);
+        let me = core.lock().me.identity_key();
+        peer.send(&me, "arrived").unwrap();
+
+        // One poller tick, exactly as the loop runs it: apply under the lock, send receipts after.
+        let driver = {
+            let inner = Arc::clone(&core.inner);
+            thread::spawn(move || {
+                let receipts = {
+                    let mut g = inner.lock().unwrap();
+                    g.apply_tick(false, None, None).unwrap();
+                    g.me.take_receipt_sends()
+                };
+                let queued = receipts.len();
+                for s in receipts {
+                    s.execute();
+                }
+                queued
+            })
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !entered.load(Ordering::Relaxed) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the receipt was never sent"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        // THE ASSERTIONS: the receipt is mid-dial, the lock is free, and the message is already in
+        // the chat — so the "message" event, and with it the notification, did not wait.
+        let guard = core.inner.try_lock();
+        assert!(
+            guard.is_ok(),
+            "the receipt is being sent with the core lock held"
+        );
+        drop(guard);
+        assert!(
+            core.messages(&contact)
+                .iter()
+                .any(|m| !m.from_me && m.text == "arrived"),
+            "the message was not surfaced until its receipt had been sent"
+        );
+
+        release.store(true, Ordering::Relaxed);
+        assert_eq!(
+            driver.join().unwrap(),
+            1,
+            "exactly one receipt, sent after the tick"
+        );
     }
 
     /// `shutdown` must not block on the core lock, however long someone else holds it.

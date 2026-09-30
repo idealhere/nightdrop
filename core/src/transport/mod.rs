@@ -71,6 +71,22 @@ pub trait Transport: Send + Sync {
     /// which the caller can treat as "fall back to the relay" (§6).
     fn send(&self, peer: &str, frame: &[u8]) -> Result<()>;
 
+    /// Like [`send`](Transport::send), but never over a connection kept open from earlier traffic:
+    /// the frame goes out on a connection this call opened, so `Ok` means the peer's end answered
+    /// just now. A write into a kept-open connection whose other end has gone quiet also returns
+    /// `Ok` — the bytes left our side, nothing more — and a frame nobody confirms is lost with no
+    /// error to fall back on.
+    ///
+    /// For the frames that get no answer of their own, where that silent loss is permanent:
+    /// delivery receipts. A message is covered by its receipt (no receipt in 30 s puts a relay copy
+    /// behind it); a receipt is covered by nothing, so a lost one left the sender's message on "Held
+    /// for delivery" for good (a Windows ↔ phone test, 2026-09-30).
+    ///
+    /// Defaults to `send`, which is already this for transports that keep nothing open.
+    fn send_fresh(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.send(peer, frame)
+    }
+
     /// Non-blocking receive of the next inbound `(sender_address, frame)`, if any.
     fn try_recv(&self) -> Option<(Address, Vec<u8>)>;
 

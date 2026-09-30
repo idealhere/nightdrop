@@ -948,6 +948,13 @@ Operations (idempotent, authenticated only by capability tokens, never identity)
   receipts it**, which is what settles the sender; a peer too old to send receipts never confirms,
   so each of its messages costs one relay copy and shows twice on their screen — the safe direction
   to be wrong in.
+- **The receipt itself travels over a fresh connection** (`Transport::send_fresh`) — the first one
+  to each peer in a batch; later ones reuse what it opened. Nothing confirms a receipt, so one
+  written into a stream kept open from earlier traffic whose other end had gone was lost with no
+  error: `send` returned `Ok`, the relay fallback never ran, and the sender's message stayed
+  `queued` for good (a Windows ↔ phone test, 2026-09-30). A fresh dial to a vanished peer fails and
+  the receipt goes to the relay. Burn-view receipts (`Frame::Viewed`) do the same. The cost is one
+  stream setup per peer per batch, paid after the messages are surfaced, never under the core lock.
 - **Sender gets `Ack`:** nothing. See below.
 
 **Only a named receipt confirms a message (2026-08-02, revised on review).** `sent` used to be

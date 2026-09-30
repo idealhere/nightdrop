@@ -295,6 +295,7 @@ fn an_edit_recalls_a_copy_posted_under_v2() {
 
 use crate::relay_client::RelayDialer;
 use crate::transport::{Address, MemoryTransport, Transport};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// (isolation group — `None` for the default circuits, op, handle), one per relay request.
@@ -854,4 +855,103 @@ fn launch_announcements_wait_for_the_onion_or_the_fallback() {
             }
         );
     }
+}
+
+/// Bob's transport with a kept-open connection that has gone dead underneath him: while `stale`,
+/// an ordinary `send` "succeeds" and the frame goes nowhere — what a write into a Tor stream whose
+/// other end has vanished looks like — but a `send_fresh` dials and tells the truth.
+struct StaleStream {
+    inner: MemoryTransport,
+    stale: Arc<AtomicBool>,
+    /// Cleared, it behaves like Tor: receipts are sealed under the lock and sent afterwards as
+    /// [`DetachedSend`]s rather than inline. Pairing runs synchronous either way.
+    synchronous: Arc<AtomicBool>,
+}
+
+impl Transport for StaleStream {
+    fn address(&self) -> Address {
+        self.inner.address()
+    }
+    fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        if self.stale.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.inner.send(peer, frame)
+    }
+    fn send_fresh(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.inner.send(peer, frame)
+    }
+    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
+        self.inner.try_recv()
+    }
+    fn is_synchronous(&self) -> bool {
+        self.synchronous.load(Ordering::SeqCst)
+    }
+}
+
+/// The 2026-09-30 Windows ↔ phone case: Alice's message went to the relay, Bob drained it, and his
+/// receipt went into a connection to Alice that was already dead. `send` reported success, so the
+/// relay fallback never ran and Alice's message stayed "Held for delivery". The receipt must dial
+/// fresh, fail, and reach her through the relay instead.
+#[test]
+fn a_receipt_is_not_lost_in_a_dead_kept_open_connection() {
+    receipt_survives_a_dead_connection(true);
+}
+
+/// The same on the path the app takes over Tor, where receipts leave after the lock is released.
+#[test]
+fn a_detached_receipt_is_not_lost_in_a_dead_kept_open_connection() {
+    receipt_survives_a_dead_connection(false);
+}
+
+fn receipt_survives_a_dead_connection(synchronous: bool) {
+    let relay = RelayClient::new(RelayServer::spawn("127.0.0.1:0").unwrap().to_string());
+    let net = MemoryNetwork::new();
+    let stale = Arc::new(AtomicBool::new(false));
+    let sync_flag = Arc::new(AtomicBool::new(true));
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(StaleStream {
+        inner: net.endpoint("bob"),
+        stale: Arc::clone(&stale),
+        synchronous: Arc::clone(&sync_flag),
+    }));
+    alice.set_relay(relay.clone());
+    bob.set_relay(relay.clone());
+    let bundle = alice.publish_bundle();
+    let alice_id = bob.connect_with_bundle("alice", &bundle).unwrap();
+    for _ in 0..3 {
+        alice.pump().unwrap();
+        bob.pump().unwrap();
+    }
+    let bob_id = alice.contacts()[0].id.clone();
+
+    // Bob is away, so Alice's message goes to the relay.
+    net.disconnect("bob");
+    alice.send(&bob_id, "via the relay").unwrap();
+    let delivery = |alice: &Node| {
+        alice.chats[&bob_id]
+            .history
+            .iter()
+            .rev()
+            .find(|m| m.from_me && m.text == "via the relay")
+            .map(|m| m.delivery.clone())
+            .unwrap()
+    };
+    assert_ne!(delivery(&alice), "delivered");
+
+    // Bob comes back and drains it, but Alice is gone now and his connection to her is dead.
+    net.reconnect("bob");
+    net.disconnect("alice");
+    stale.store(true, Ordering::SeqCst);
+    sync_flag.store(synchronous, Ordering::SeqCst);
+    bob.poll_relay().unwrap();
+    assert!(received_texts(&bob, &alice_id).contains(&"via the relay".to_string()));
+    for send in bob.take_receipt_sends() {
+        send.execute();
+    }
+
+    // Alice returns and drains her mailbox: the receipt is there.
+    net.reconnect("alice");
+    alice.poll_relay().unwrap();
+    assert_eq!(delivery(&alice), "delivered");
 }

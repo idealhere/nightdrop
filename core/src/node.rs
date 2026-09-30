@@ -767,12 +767,20 @@ pub(crate) struct DetachedSend {
     handle: String,
     peer_address: String,
     bytes: Vec<u8>,
+    /// Dial a new connection rather than write into one kept open ([`Transport::send_fresh`]):
+    /// for frames nothing confirms, which a dead kept-open connection would swallow.
+    fresh: bool,
 }
 
 impl DetachedSend {
     /// Deliver it: the peer's onion first, the relay mailbox if that fails. True if either took it.
     pub(crate) fn execute(&self) -> bool {
-        if self.transport.send(&self.peer_address, &self.bytes).is_ok() {
+        let direct = if self.fresh {
+            self.transport.send_fresh(&self.peer_address, &self.bytes)
+        } else {
+            self.transport.send(&self.peer_address, &self.bytes)
+        };
+        if direct.is_ok() {
             return true;
         }
         crate::diag!("detached send: direct dial failed — falling back to the relay");
@@ -1429,8 +1437,26 @@ impl Node {
     /// `recipient_ik` (the peer's identity key) addresses and seals the relay copy — the
     /// relay never sees the address or the frame's routing metadata.
     fn deliver(&self, peer_address: &str, recipient_ik: &str, frame: &Frame) -> Result<()> {
+        self.deliver_on(peer_address, recipient_ik, frame, false)
+    }
+
+    /// [`deliver`](Self::deliver), or with `fresh` over a connection opened for this frame
+    /// ([`Transport::send_fresh`]), so a peer that has gone away is a failed dial — and a relay
+    /// copy — rather than a silent write into a connection left open from earlier traffic.
+    fn deliver_on(
+        &self,
+        peer_address: &str,
+        recipient_ik: &str,
+        frame: &Frame,
+        fresh: bool,
+    ) -> Result<()> {
         let bytes = wire::encode(frame);
-        if self.transport.send(peer_address, &bytes).is_err() {
+        let direct = if fresh {
+            self.transport.send_fresh(peer_address, &bytes)
+        } else {
+            self.transport.send(peer_address, &bytes)
+        };
+        if direct.is_err() {
             // The direct onion dial failed. Expected while their descriptor is (re)publishing, but
             // also what a *restricted* onion looks like to a peer it hasn't authorized yet (#22) —
             // in which case the relay is the only way in until our ClientKey reaches them.

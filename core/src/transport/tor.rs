@@ -836,6 +836,25 @@ impl Transport for TorTransport {
     }
 
     fn send(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.send_on(peer, frame, true)
+    }
+
+    /// Dial a new stream even when a warm one is open, so the write rides a stream the peer's
+    /// onion service just accepted. The warm stream is dropped: it may be the dead one, and the
+    /// fresh stream replaces it for whatever follows.
+    fn send_fresh(&self, peer: &str, frame: &[u8]) -> Result<()> {
+        self.send_on(peer, frame, false)
+    }
+
+    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
+        self.inbound.lock().unwrap().try_recv().ok()
+    }
+}
+
+impl TorTransport {
+    /// [`Transport::send`] (`reuse`: write into a warm stream to `peer` if one is open) and
+    /// [`Transport::send_fresh`] (always dial).
+    fn send_on(&self, peer: &str, frame: &[u8], reuse: bool) -> Result<()> {
         if self.closing.stopped() {
             anyhow::bail!("peer send abandoned: the transport is closing");
         }
@@ -852,7 +871,8 @@ impl Transport for TorTransport {
             .lock()
             .unwrap()
             .remove(&peer)
-            .map(|(s, _)| s);
+            .map(|(s, _)| s)
+            .filter(|_| reuse);
         let peer2 = peer.clone();
         let stream = self.runtime.block_on(async move {
             let exchange = async {
@@ -890,10 +910,6 @@ impl Transport for TorTransport {
             .unwrap()
             .insert(peer, (stream, Instant::now()));
         Ok(())
-    }
-
-    fn try_recv(&self) -> Option<(Address, Vec<u8>)> {
-        self.inbound.lock().unwrap().try_recv().ok()
     }
 }
 

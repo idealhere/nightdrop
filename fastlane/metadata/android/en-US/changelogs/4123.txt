@@ -1,0 +1,3 @@
+Offline messages now use a private mailbox per chat that changes daily, so a relay can no longer link messages from different contacts or days to the same person. A chat with someone on an older version says so: offline messages with them stop working two releases from now, so ask them to update. Up to 50 contacts.
+
+Fixed: a message could stay "Held for delivery" after it arrived. Notifications show sooner; background checks use less battery.

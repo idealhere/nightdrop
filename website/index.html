@@ -103,7 +103,7 @@
         <a class="btn primary" href="#download">Get Night Drop</a>
         <a class="btn ghost" href="#features">See how it works</a>
       </div>
-      <p class="fineprint">Free and open. Peer-to-peer over Tor. Android ·<!-- iOS · Windows · macOS ·--> Linux.</p>
+      <p class="fineprint">Free and open. Peer-to-peer over Tor. Android · Windows ·<!-- iOS · macOS ·--> Linux.</p>
     </div>
   </header>
 
@@ -207,7 +207,7 @@
         </article>
         <article class="card">
           <h3>💻 One app, every device</h3>
-          <p>Android <!--iOS, Windows, macOS,--> and Linux from one codebase — with the same
+          <p>Android, Windows <!--iOS, macOS,--> and Linux from one codebase — with the same
              Rust security core doing the cryptography on every platform.</p>
         </article>
       </div>
@@ -293,7 +293,7 @@
       <div class="downloads" id="download-links">
         <!--<a class="btn ghost" href="#">iOS</a>-->
         <a class="btn ghost" href="#">Android</a>
-        <!--<a class="btn ghost" href="#">Windows</a>-->
+        <a class="btn ghost" href="#">Windows</a>
         <!--a class="btn ghost" href="#">macOS</a>-->
         <a class="btn ghost" href="#">Linux</a>
       </div>
@@ -303,6 +303,11 @@
         <code>arm64-v8a</code> suits almost every phone made since 2015. If you install a
         per-processor build you can't switch back to the universal one without uninstalling
         first, because Android reads it as a downgrade.
+      </p>
+      <p class="fineprint">
+        The Windows installer (Windows 10 or later, 64-bit) needs no administrator rights. It is not
+        code-signed yet, so Windows may warn about an unknown publisher; check it against the signed
+        <code>SHA256SUMS</code> first (see <a href="https://github.com/nightdropapp/nightdrop/blob/main/SECURITY.md">SECURITY.md</a>).
       </p>
     </section>
   </main>

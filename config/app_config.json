@@ -28,14 +28,14 @@
   "downloads": {
     "ios": "",
     "android": "https://github.com/nightdropapp/nightdrop/releases/latest",
-    "windows": "",
+    "windows": "https://github.com/nightdropapp/nightdrop/releases/latest/download/NightDropSetup.exe",
     "macos": "",
     "linux": "https://github.com/nightdropapp/nightdrop/releases/latest/download/Night_Drop-x86_64.AppImage"
   },
   "downloads_onion": {
     "ios": "",
     "android": "/applications/android/",
-    "windows": "",
+    "windows": "/applications/windows/NightDropSetup.exe",
     "macos": "",
     "linux": "/applications/linux/Night_Drop-x86_64.AppImage"
   },

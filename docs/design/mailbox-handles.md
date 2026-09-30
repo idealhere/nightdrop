@@ -219,7 +219,7 @@ At the cap the app should refuse a new contact with a reason, not fail quietly â
 worth giving plainly, because "this app limits you to 50 contacts so that a relay cannot rebuild
 your address book" is a sentence that explains the product.
 
-## 9. As built (0.1.25)
+## 9. As built (0.1.26)
 
 Where the implementation differs from, or makes concrete, the sections above.
 

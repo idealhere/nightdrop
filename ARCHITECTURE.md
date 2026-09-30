@@ -402,10 +402,10 @@ on a re-pair (new session) exactly like `verified`.
   server storage to save device space.
   - The relay never holds keys and cannot read content.
   - Metadata is minimized; blobs are addressed by derived handles that carry no identity
-    key and no onion address. **Through 0.1.24 a handle was a static hash of the recipient's
+    key and no onion address. **Through 0.1.25 a handle was a static hash of the recipient's
     long-term identity key**, stable for the life of that identity: the relay could not tell
     *who* a mailbox belonged to, but could tell that two deposits were for the same person and
-    build a contact graph from co-occurrence. **From 0.1.25** each chat agrees its own secret and
+    build a contact graph from co-occurrence. **From 0.1.26** each chat agrees its own secret and
     mail goes to a handle derived from it, the recipient and the UTC day
     (`docs/design/mailbox-handles.md`): unlinkable across senders and across days, but **not**
     within one pair-day, and never "ephemeral" — §5b of that doc defines both words. Polling is

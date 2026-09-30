@@ -129,10 +129,10 @@ vulnerability under the device-theft threat model, but each is worth an auditor'
   platform**, **screen recording**, and **a camera pointed at the screen**. So a peer who sees no
   notice has learned nothing, and the UI/website must never imply otherwise. What *is* blocked is
   the Recents thumbnail, since that capture has no user intent behind it.
-- **What a relay can still link about your mailboxes.** *(Known limit.)* Through 0.1.24 offline
+- **What a relay can still link about your mailboxes.** *(Known limit.)* Through 0.1.25 offline
   mail went to a handle that was a static hash of the recipient's identity key, so a relay (or
   whoever seizes one) could tell that deposits from different senders, on different days, were for
-  the same person. From 0.1.25 each chat agrees its own secret and the handle rotates daily
+  the same person. From 0.1.26 each chat agrees its own secret and the handle rotates daily
   (`docs/design/mailbox-handles.md`), and polling is split into fragments fixed for the day, each
   on its own Tor circuit, padded with dummy mailboxes. What remains linkable: **one pair's deposits
   within one UTC day**; **the handles within one polling fragment**, which share a reader (about

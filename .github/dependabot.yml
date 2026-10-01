@@ -1,0 +1,16 @@
+# Keeps the commit-pinned GitHub Actions in .github/workflows current: a weekly PR moves each
+# pin to the newest release's commit (the "# vX.Y.Z" comment is updated with it).
+#
+# Only Actions. Cargo and pub version bumps are deliberately not automated: every dependency
+# change in this repo needs the release verification in CLAUDE.md (reproducible F-Droid build)
+# before it ships. Vulnerable dependencies are still covered by Dependabot security updates,
+# enabled in the repository settings, which open PRs only for known advisories.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

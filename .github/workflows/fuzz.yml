@@ -44,6 +44,12 @@ env:
   # the sanitizer is incompatible with static musl). Force the gnu host target.
   FUZZ_TARGET: x86_64-unknown-linux-gnu
 
+# Read-only token for every job: nothing here pushes, comments or publishes (CodeQL
+# actions/missing-workflow-permissions). Third-party actions are pinned to commits; Dependabot
+# (.github/dependabot.yml) proposes updates to the pins.
+permissions:
+  contents: read
+
 jobs:
   # Fast gate: the targets must compile against the current core, and every committed seed
   # must load without crashing (-runs=0 = load + replay, no mutation).
@@ -54,14 +60,14 @@ jobs:
       run:
         working-directory: core
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: ${{ env.FUZZ_TOOLCHAIN }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core/fuzz
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-fuzz@${{ env.CARGO_FUZZ_VERSION }}
       - name: Build all fuzz targets
@@ -87,21 +93,21 @@ jobs:
       matrix:
         target: [wire_decode, relay_handle_line, directory_from_wire]
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: ${{ env.FUZZ_TOOLCHAIN }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core/fuzz
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-fuzz@${{ env.CARGO_FUZZ_VERSION }}
 
       # Persist the corpus between runs so coverage accumulates. A unique key per run saves a
       # fresh snapshot; restore-keys pulls the most recent prior corpus for this target.
       - name: Restore corpus
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: core/fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
@@ -119,7 +125,7 @@ jobs:
       # A crash writes fuzz/artifacts/<target>/crash-*; keep it so the failure is reproducible.
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: core/fuzz/artifacts/${{ matrix.target }}/

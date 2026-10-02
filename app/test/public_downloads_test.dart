@@ -23,6 +23,7 @@ void main() {
   tearDown(() {
     messenger.setMockMethodCallHandler(downloads, null);
     PublicDownloads.externalDirectory = getExternalStorageDirectory;
+    PublicDownloads.downloadsDirectory = getDownloadsDirectory;
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
@@ -76,5 +77,49 @@ void main() {
     expect(where, source.path);
     expect(source.readAsStringSync(), 'a build',
         reason: 'the file must still be where the user was told it is');
+  });
+
+  group('desktop', () {
+    // Before this existed, a desktop download went through publish(), found neither MediaStore nor
+    // external storage, and was left in app-private storage under ~/.local/share — as an .apk.
+    test('a verified build lands in Downloads under its name, executable, with no copy left',
+        () async {
+      final downloadsDir = Directory('${tmp.path}/Downloads');
+      PublicDownloads.downloadsDirectory = () async => downloadsDir;
+
+      final where = await PublicDownloads.toDownloadsFolder(source,
+          displayName: 'Night_Drop-0.1.27-x86_64.AppImage', executable: true);
+
+      expect(where, '${downloadsDir.path}/Night_Drop-0.1.27-x86_64.AppImage');
+      expect(File(where).readAsStringSync(), 'a build');
+      expect(source.existsSync(), isFalse,
+          reason: 'the staged copy must not survive a successful move');
+      expect(downloadsDir.listSync().map((e) => e.uri.pathSegments.last),
+          ['Night_Drop-0.1.27-x86_64.AppImage'],
+          reason: 'no hidden .part may be left in the user\'s Downloads');
+      if (!Platform.isWindows) {
+        // Owner rwx: the AppImage can be started from the file manager. Nothing here runs it.
+        expect(File(where).statSync().mode & 0x1c0, 0x1c0);
+      }
+    });
+
+    test('the installer is not marked executable', () async {
+      final downloadsDir = Directory('${tmp.path}/Downloads')..createSync();
+      PublicDownloads.downloadsDirectory = () async => downloadsDir;
+      final where = await PublicDownloads.toDownloadsFolder(source,
+          displayName: 'NightDropSetup-0.1.27.exe');
+      expect(where, '${downloadsDir.path}/NightDropSetup-0.1.27.exe');
+      if (!Platform.isWindows) {
+        expect(File(where).statSync().mode & 0x40, 0, reason: 'only asked-for files get +x');
+      }
+    });
+
+    test('with no Downloads folder, the verified build stays where it is', () async {
+      PublicDownloads.downloadsDirectory = () async => null;
+      final where = await PublicDownloads.toDownloadsFolder(source,
+          displayName: 'Night_Drop-0.1.27-x86_64.AppImage', executable: true);
+      expect(where, source.path);
+      expect(source.readAsStringSync(), 'a build');
+    });
   });
 }

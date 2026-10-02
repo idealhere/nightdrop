@@ -30,8 +30,46 @@ for abi in universal arm64-v8a armeabi-v7a x86_64; do
   entries="$entries\"$abi\":{\"url\":\"/applications/android/$name\",\"sha256\":\"$sum\"}"
 done
 
-if [ -n "$entries" ]; then
-  printf '{"latest":"%s","android":{%s}}\n' "$ver" "$entries" > website/update.json
-else
-  printf '{"latest":"%s"}\n' "$ver" > website/update.json
+# Desktop builds (the AppImage and the Windows installer), keyed by CPU architecture in their own
+# sections. Never under "android": "x86_64" there is the Android x86_64 APK, and that is exactly
+# the entry a PC used to find, so Linux and Windows users were handed an APK.
+#
+# Unlike the APKs, these files are copied in by deploy-website.sh without a version check, so one
+# can lag behind the release (an AppImage is rebuilt separately, the installer comes from the VM).
+# Offering a stale one under the new version is the forever-prompt described above, so each is
+# included only if the version embedded in the file is this release.
+desktop_entry() { # file url embedded-version
+  local file=$1 url=$2 got=$3
+  if [ "$got" != "$ver" ]; then
+    echo "gen-update-manifest: NOT offering $url: the file is ${got:-unreadable}, the release is $ver" >&2
+    return 1
+  fi
+  printf '"x86_64":{"url":"%s","sha256":"%s"}' "$url" "$(sha256sum "$file" | cut -d' ' -f1)"
+}
+
+appimage="website/applications/linux/Night_Drop-x86_64.AppImage"
+linux=""
+if [ -f "$appimage" ]; then
+  # The version Flutter compiled in ("0.1.26+412"), read from libapp.so inside the AppImage. The
+  # AppImage extracts that one file itself; nothing of the app runs.
+  tmp="$(mktemp -d)"
+  (cd "$tmp" && "$OLDPWD/$appimage" --appimage-extract 'usr/bin/lib/libapp.so' >/dev/null 2>&1) || true
+  got="$(strings -a "$tmp/squashfs-root/usr/bin/lib/libapp.so" 2>/dev/null \
+    | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$' | head -1)"
+  rm -rf "$tmp"
+  linux="$(desktop_entry "$appimage" "/applications/linux/Night_Drop-x86_64.AppImage" "${got%%+*}")" || linux=""
 fi
+
+installer="website/applications/windows/NightDropSetup.exe"
+windows=""
+if [ -f "$installer" ]; then
+  # Inno Setup stamps AppVersion into the PE version resource, which is stored uncompressed.
+  got="$(strings -el "$installer" | grep -A1 -x 'ProductVersion' | tail -1 | tr -d '[:space:]')"
+  windows="$(desktop_entry "$installer" "/applications/windows/NightDropSetup.exe" "$got")" || windows=""
+fi
+
+json="{\"latest\":\"$ver\""
+[ -n "$entries" ] && json="$json,\"android\":{$entries}"
+[ -n "$linux" ] && json="$json,\"linux\":{$linux}"
+[ -n "$windows" ] && json="$json,\"windows\":{$windows}"
+printf '%s}\n' "$json" > website/update.json

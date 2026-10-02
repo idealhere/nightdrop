@@ -292,14 +292,15 @@ abstract class NightdropCore implements RustOpaqueInterface {
   /// Download the published build **for this device** over Tor and write it to `dest_path`,
   /// verifying its SHA-256 against the manifest first. Returns the byte count.
   ///
-  /// The ABI is not a parameter on purpose: it comes from
-  /// [`update::native_abi`](crate::update::native_abi), which reads the architecture this core
-  /// was compiled for. The caller cannot know better, and getting it wrong produces a build
-  /// Android will refuse to install after the user has waited out the whole download.
+  /// Which build is not a parameter on purpose: it comes from
+  /// [`update::native_build`](crate::update::native_build), which reads the OS and architecture
+  /// this core was compiled for — the Android APK for this ABI, the AppImage on Linux, the
+  /// installer on Windows. The caller cannot know better, and getting it wrong produces a build
+  /// that will not install (or, on a PC, an Android APK) after a download of minutes.
   ///
-  /// Nothing is installed: the file is handed to the user, who chooses. Android verifies the
-  /// signature itself and refuses to replace Night Drop with anything not signed by our release
-  /// key, so the app never becomes the thing that decides what code runs.
+  /// Nothing is installed or run: the file is handed to the user, who chooses. Android verifies
+  /// the signature itself and refuses to replace Night Drop with anything not signed by our
+  /// release key, so the app never becomes the thing that decides what code runs.
   ///
   /// Slow by nature — tens of megabytes over Tor — so call it off the UI path and expect it to
   /// take minutes on a poor circuit.

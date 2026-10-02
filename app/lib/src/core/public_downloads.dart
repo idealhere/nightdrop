@@ -1,4 +1,4 @@
-import 'dart:io' show Directory, File;
+import 'dart:io' show Directory, File, Platform, Process;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
@@ -76,6 +76,52 @@ class PublicDownloads {
       // Same reasoning: the file is downloaded and verified. Report where it is.
     }
     return source.path;
+  }
+
+  /// The desktop Downloads folder, injectable for the same reason as [externalDirectory].
+  @visibleForTesting
+  static Future<Directory?> Function() downloadsDirectory =
+      getDownloadsDirectory;
+
+  /// Desktop counterpart of [publish]: moves an already-verified [source] into the user's
+  /// Downloads folder (`XDG_DOWNLOAD_DIR` on Linux, the Downloads known folder on Windows) as
+  /// [displayName], deleting the original. With [executable], the file is marked runnable
+  /// (`chmod 755`, Linux), so an AppImage can be started from the file manager — it is never run
+  /// from here. Returns where the file is, which is the source's own path if it could not be moved:
+  /// a verified download is never discarded over where to put it.
+  ///
+  /// Before this existed, desktop went through [publish], found neither MediaStore nor external
+  /// storage, and left the file in app-private storage under `~/.local/share` — named `.apk`.
+  ///
+  /// The copy lands under a hidden temporary name and is renamed into place, so the visible name
+  /// only ever holds a complete file.
+  static Future<String> toDownloadsFolder(
+    File source, {
+    required String displayName,
+    bool executable = false,
+  }) async {
+    File? temp;
+    try {
+      final dir = await downloadsDirectory();
+      if (dir == null) return source.path;
+      await dir.create(recursive: true);
+      final sep = Platform.pathSeparator;
+      final dest = File('${dir.path}$sep$displayName');
+      temp = File('${dir.path}$sep.$displayName.part');
+      // A copy, not a rename: staging and Downloads can be on different filesystems.
+      await source.copy(temp.path);
+      if (executable && !Platform.isWindows) {
+        // A failure here still delivers the file; the user can mark it executable by hand.
+        await Process.run('chmod', ['755', temp.path]);
+      }
+      await temp.rename(dest.path);
+      await source.delete().catchError((_) => source);
+      return dest.path;
+    } catch (_) {
+      // Never leave a half-copied file in the user's Downloads; the verified original is intact.
+      await temp?.delete().catchError((_) => temp!);
+      return source.path;
+    }
   }
 
   /// Where a download should be assembled before it is verified: app-private, unreadable by other

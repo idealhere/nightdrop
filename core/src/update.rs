@@ -92,6 +92,42 @@ pub struct UpdateManifest {
     /// newer version, but no download to offer" — tell the user, promise nothing.
     #[serde(default)]
     pub android: std::collections::HashMap<String, UpdateDownload>,
+    /// Desktop downloads, keyed by CPU architecture (`std::env::consts::ARCH`, so `"x86_64"`):
+    /// the AppImage and the Windows installer. Separate maps rather than more keys in `android`,
+    /// because `"x86_64"` is already an Android ABI there — the Android x86_64 APK — and a PC
+    /// looking itself up in that map is exactly how desktop users were handed an APK.
+    ///
+    /// Absent in manifests from before 0.1.27, and unknown fields are ignored by older apps, so
+    /// adding these changes nothing for an install that does not know them.
+    #[serde(default)]
+    pub linux: std::collections::HashMap<String, UpdateDownload>,
+    #[serde(default)]
+    pub windows: std::collections::HashMap<String, UpdateDownload>,
+}
+
+impl UpdateManifest {
+    /// The builds published for `platform` (a [`Build::platform`]); empty for one we do not
+    /// publish, which reads as "a newer version exists, but no download to offer".
+    pub fn builds(
+        &self,
+        platform: &str,
+    ) -> Option<&std::collections::HashMap<String, UpdateDownload>> {
+        match platform {
+            "android" => Some(&self.android),
+            "linux" => Some(&self.linux),
+            "windows" => Some(&self.windows),
+            _ => None,
+        }
+    }
+}
+
+/// Which published build to fetch: the manifest section and the key inside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Build {
+    /// `"android"`, `"linux"` or `"windows"` — the manifest section.
+    pub platform: &'static str,
+    /// The Android ABI (`"arm64-v8a"`) on Android, the CPU architecture (`"x86_64"`) elsewhere.
+    pub key: &'static str,
 }
 
 /// The answer for the UI.
@@ -149,7 +185,9 @@ pub fn check(transport: &dyn Transport, current_version: &str) -> Result<Option<
             "up to date"
         },
         started.elapsed(),
-        manifest.android.len()
+        manifest
+            .builds(native_build().platform)
+            .map_or(0, std::collections::HashMap::len)
     );
     Ok(Some(status))
 }
@@ -187,36 +225,66 @@ pub fn native_abi() -> &'static str {
     }
 }
 
-/// Download the build for `abi` over Tor and write it to `dest`, but **only** if its SHA-256
-/// matches what the manifest published.
+/// The build that belongs on **this** machine: its platform's section of the manifest, and the
+/// Android ABI ([`native_abi`]) or desktop CPU architecture within it.
+///
+/// The platform is the OS this core was compiled for. It used to be implied — the manifest only
+/// had Android builds — so on a PC `native_abi` answered `"x86_64"`, which is also an Android ABI,
+/// and desktop users were handed the Android x86_64 APK.
+pub fn native_build() -> Build {
+    if cfg!(target_os = "android") {
+        Build {
+            platform: "android",
+            key: native_abi(),
+        }
+    } else {
+        Build {
+            platform: if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "linux") {
+                "linux"
+            } else {
+                // No published build for any other OS; the lookup fails and says so.
+                std::env::consts::OS
+            },
+            key: std::env::consts::ARCH,
+        }
+    }
+}
+
+/// Download `build` over Tor and write it to `dest`, but **only** if its SHA-256 matches what the
+/// manifest published.
 ///
 /// The write happens after verification, never during: a file that exists is a file the user may
 /// be about to install, so a partial or wrong download must never reach that path. Returns the
 /// number of bytes written.
 ///
-/// This does not install anything, and deliberately cannot. Android verifies the signature itself
-/// and will refuse to replace Night Drop with anything not signed by our release key — so the
-/// worst a compromised site can do is waste the download, not swap the app.
+/// This does not install or run anything, and deliberately cannot. On Android the system verifies
+/// the signature itself and will refuse to replace Night Drop with anything not signed by our
+/// release key — so the worst a compromised site can do is waste the download, not swap the app.
+/// On desktop the hash check against our authenticated onion is the guarantee, and the file is
+/// only handed to the user.
 /// `on_progress` is called as the transfer runs, throttled to [`UI_PROGRESS_INTERVAL`], with
 /// `(bytes_so_far, content_length)`. It exists so the UI can show a real bar; the same numbers go
 /// to the log on a slower cadence.
 pub fn download(
     transport: &dyn Transport,
     manifest: &UpdateManifest,
-    abi: &str,
+    build: Build,
     dest: &std::path::Path,
     on_progress: &dyn Fn(u64, Option<u64>),
 ) -> Result<u64> {
-    let Some(entry) = manifest.android.get(abi) else {
-        // Names the ABI, because the failure is silent otherwise and the answer is always "the
+    let Build { platform, key } = build;
+    let Some(entry) = manifest.builds(platform).and_then(|b| b.get(key)) else {
+        // Names the build, because the failure is silent otherwise and the answer is always "the
         // manifest does not publish the one this device needs".
         crate::diag!(
-            "update: download ABORTED — no published build for {abi} (site offers: {})",
-            abi_list(manifest)
+            "update: download ABORTED — no published build for {platform}/{key} (site offers: {})",
+            build_list(manifest, platform)
         );
-        anyhow::bail!("no published build for {abi}");
+        anyhow::bail!("no published build for {platform}/{key}");
     };
-    crate::diag!("update: downloading the {abi} build");
+    crate::diag!("update: downloading the {platform}/{key} build");
     let started = std::time::Instant::now();
     // Streamed here, never to `dest`. `dest` is the path the caller will make reachable, so a file
     // must not appear there until it has passed — and the scratch name is what makes that possible
@@ -498,10 +566,14 @@ fn sha256_file(path: &std::path::Path) -> Result<String> {
         .collect())
 }
 
-/// The ABIs the site currently publishes, sorted so the line is stable between runs. Only ever
-/// used for a diagnostic; these are public artifact names, not anything identity-linked.
-fn abi_list(manifest: &UpdateManifest) -> String {
-    let mut names: Vec<&str> = manifest.android.keys().map(String::as_str).collect();
+/// The builds the site currently publishes for `platform`, sorted so the line is stable between
+/// runs. Only ever used for a diagnostic; these are public artifact names, not anything
+/// identity-linked.
+fn build_list(manifest: &UpdateManifest, platform: &str) -> String {
+    let mut names: Vec<&str> = manifest
+        .builds(platform)
+        .map(|b| b.keys().map(String::as_str).collect())
+        .unwrap_or_default();
     names.sort_unstable();
     if names.is_empty() {
         return "none".into();
@@ -757,6 +829,12 @@ mod tests {
             .unwrap_or(0)
     }
 
+    /// The build the Android tests download.
+    const ARM64: Build = Build {
+        platform: "android",
+        key: "arm64-v8a",
+    };
+
     fn manifest_with(sha: &str) -> UpdateManifest {
         serde_json::from_str(&format!(
             r#"{{"latest":"0.1.18","android":{{"arm64-v8a":{{"url":"/applications/android/NightDrop-arm64-v8a.apk","sha256":"{sha}"}}}}}}"#
@@ -792,6 +870,119 @@ mod tests {
                 assert_eq!(native_abi(), abi);
             }
         }
+    }
+
+    #[test]
+    fn this_machine_asks_for_its_own_platform_build() {
+        let b = native_build();
+        assert_eq!(
+            b.key,
+            if b.platform == "android" {
+                native_abi()
+            } else {
+                std::env::consts::ARCH
+            }
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(b.platform, "linux");
+        #[cfg(target_os = "windows")]
+        assert_eq!(b.platform, "windows");
+        #[cfg(target_os = "android")]
+        assert_eq!(b.platform, "android");
+    }
+
+    /// The bug this pins: on a PC, `"x86_64"` was looked up in the Android section, which
+    /// publishes the Android x86_64 APK under exactly that key, so Linux and Windows users were
+    /// handed an APK. A desktop must fetch its own section's file, and must not fall back to the
+    /// APK when its section is missing (manifests from before 0.1.27 have none).
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn a_desktop_never_downloads_the_android_x86_64_apk() {
+        use std::sync::Mutex;
+        struct Server {
+            body: Vec<u8>,
+            asked: Mutex<Vec<String>>,
+        }
+        impl Transport for Server {
+            fn address(&self) -> crate::transport::Address {
+                "srv".into()
+            }
+            fn send(&self, _p: &str, _f: &[u8]) -> Result<()> {
+                Ok(())
+            }
+            fn try_recv(&self) -> Option<(crate::transport::Address, Vec<u8>)> {
+                None
+            }
+            fn onion_get_to_file(
+                &self,
+                req: crate::transport::FileFetch<'_>,
+                _progress: &dyn Fn(u64, Option<u64>),
+            ) -> Option<Result<u64>> {
+                self.asked.lock().unwrap().push(req.path.to_string());
+                Some(
+                    std::fs::write(req.dest, &self.body)
+                        .map(|()| self.body.len() as u64)
+                        .map_err(Into::into),
+                )
+            }
+        }
+
+        let dir = std::env::temp_dir().join(format!("nd-update-desktop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("update.bin");
+        let _ = std::fs::remove_file(&dest);
+        let body = b"the desktop build".to_vec();
+        let sha = sha256_hex(&body);
+        let section = native_build().platform;
+        let url = if section == "windows" {
+            "/applications/windows/NightDropSetup.exe"
+        } else {
+            "/applications/linux/Night_Drop-x86_64.AppImage"
+        };
+        let apk = r#""x86_64":{"url":"/applications/android/NightDrop-x86_64.apk","sha256":"SHA"}"#
+            .replace("SHA", &sha);
+        let both: UpdateManifest = serde_json::from_str(&format!(
+            r#"{{"latest":"0.1.27","android":{{{apk}}},"{section}":{{"{}":{{"url":"{url}","sha256":"{sha}"}}}}}}"#,
+            std::env::consts::ARCH
+        ))
+        .unwrap();
+        let server = Server {
+            body: body.clone(),
+            asked: Mutex::new(vec![]),
+        };
+        download(&server, &both, native_build(), &dest, &|_, _| {}).unwrap();
+        assert_eq!(*server.asked.lock().unwrap(), vec![url.to_string()]);
+        assert_eq!(std::fs::read(&dest).unwrap(), body);
+
+        // An old manifest: Android builds only. No download at all, rather than the APK.
+        let _ = std::fs::remove_file(&dest);
+        let old: UpdateManifest =
+            serde_json::from_str(&format!(r#"{{"latest":"0.1.27","android":{{{apk}}}}}"#)).unwrap();
+        let server = Server {
+            body,
+            asked: Mutex::new(vec![]),
+        };
+        let err = download(&server, &old, native_build(), &dest, &|_, _| {}).unwrap_err();
+        assert!(err.to_string().contains("no published build"), "{err}");
+        assert!(
+            server.asked.lock().unwrap().is_empty(),
+            "nothing may be fetched"
+        );
+        assert!(!dest.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn desktop_sections_parse_and_are_optional() {
+        let m: UpdateManifest = serde_json::from_str(
+            r#"{"latest":"0.1.27","android":{},"linux":{"x86_64":{"url":"/a","sha256":"aa"}},"windows":{"x86_64":{"url":"/b","sha256":"bb"}},"future":1}"#,
+        )
+        .unwrap();
+        assert_eq!(m.builds("linux").unwrap()["x86_64"].url, "/a");
+        assert_eq!(m.builds("windows").unwrap()["x86_64"].url, "/b");
+        assert!(m.builds("macos").is_none());
+        let old: UpdateManifest = serde_json::from_str(r#"{"latest":"0.1.26"}"#).unwrap();
+        assert!(old.linux.is_empty() && old.windows.is_empty());
     }
 
     #[test]
@@ -833,14 +1024,7 @@ mod tests {
 
         let served = b"not the build you were promised".to_vec();
         let wrong = manifest_with(&"0".repeat(64));
-        let err = download(
-            &Server(served.clone()),
-            &wrong,
-            "arm64-v8a",
-            &dest,
-            &|_, _| {},
-        )
-        .unwrap_err();
+        let err = download(&Server(served.clone()), &wrong, ARM64, &dest, &|_, _| {}).unwrap_err();
         assert!(err.to_string().contains("did not match"), "{err}");
         assert!(
             !dest.exists(),
@@ -856,14 +1040,7 @@ mod tests {
 
         // The same bytes with the right hash do land.
         let right = manifest_with(&sha256_hex(&served));
-        let n = download(
-            &Server(served.clone()),
-            &right,
-            "arm64-v8a",
-            &dest,
-            &|_, _| {},
-        )
-        .unwrap();
+        let n = download(&Server(served.clone()), &right, ARM64, &dest, &|_, _| {}).unwrap();
         assert_eq!(n as usize, served.len());
         assert_eq!(std::fs::read(&dest).unwrap(), served);
         assert_eq!(
@@ -873,7 +1050,17 @@ mod tests {
         );
 
         // An ABI we publish nothing for is an error, not a silent empty file.
-        assert!(download(&Server(served), &right, "riscv64", &dest, &|_, _| {}).is_err());
+        assert!(download(
+            &Server(served),
+            &right,
+            Build {
+                platform: "android",
+                key: "riscv64"
+            },
+            &dest,
+            &|_, _| {}
+        )
+        .is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -934,7 +1121,7 @@ mod tests {
             dest: dest.clone(),
         };
         assert_eq!(
-            download(&t, &m, "arm64-v8a", &dest, &|_, _| {}).unwrap(),
+            download(&t, &m, ARM64, &dest, &|_, _| {}).unwrap(),
             body.len() as u64
         );
         assert_eq!(std::fs::read(&dest).unwrap(), body);
@@ -998,12 +1185,12 @@ mod tests {
         let m = manifest_with(&sha256_hex(&body));
 
         // First attempt fails, and must LEAVE the partial behind — that is the whole point.
-        assert!(download(&t, &m, "arm64-v8a", &dest, &|_, _| {}).is_err());
+        assert!(download(&t, &m, ARM64, &dest, &|_, _| {}).is_err());
         assert_eq!(leftover_parts(&dir), 1, "the partial is the resume state");
         assert!(!dest.exists(), "nothing lands at dest on a failure");
 
         // Second attempt resumes from exactly what was kept, and completes.
-        let n = download(&t, &m, "arm64-v8a", &dest, &|_, _| {}).unwrap();
+        let n = download(&t, &m, ARM64, &dest, &|_, _| {}).unwrap();
         assert_eq!(n as usize, body.len());
         assert_eq!(
             std::fs::read(&dest).unwrap(),
@@ -1064,7 +1251,7 @@ mod tests {
             }
         }
 
-        download(&Server(body.clone()), &m, "arm64-v8a", &dest, &|_, _| {}).unwrap();
+        download(&Server(body.clone()), &m, ARM64, &dest, &|_, _| {}).unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), body);
         assert!(
             !old_slot.exists(),

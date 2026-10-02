@@ -751,6 +751,21 @@ app to learn why. F-Droid ships per-ABI, so that is most users. `update::native_
 the architecture the core was compiled for, which is by definition the ABI Android chose at
 install time; the Dart side is not consulted because it cannot know better.
 
+**On desktop it is the desktop build, from its own section.** The manifest has `linux` and
+`windows` sections beside `android`, each keyed by CPU architecture (`"x86_64"`), holding the
+AppImage and the Windows installer; `update::native_build` picks the section from the OS the core
+was compiled for. They are separate sections, not more keys in `android`, because `"x86_64"` is
+already an Android ABI there: until 0.1.27 a PC looked itself up in `android`, found the Android
+x86_64 APK under exactly that key, and Linux users were handed an `.apk` (left in
+`~/.local/share`). A desktop whose section is missing (any manifest from before 0.1.27) gets no
+download rather than the APK. `scripts/gen-update-manifest.sh` adds a desktop entry only when the
+version embedded in the file (`libapp.so` inside the AppImage, the installer's PE version
+resource) is the release being announced: `deploy-website.sh` copies those files in without a
+version check, and a stale one under the new number is the forever-prompt described above. The
+verified file goes to the user's Downloads folder (`PublicDownloads.toDownloadsFolder`), named
+with its version; the AppImage is marked executable so it can be started from the file manager.
+Nothing runs it.
+
 **Downloads are verified before they land.** `update::download` fetches that build,
 hashes it, and writes to the destination **only** on a match. A file that exists is a file the
 user may be one tap from installing, so a partial or mismatched download must never reach that

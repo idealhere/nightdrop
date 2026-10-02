@@ -734,9 +734,13 @@ class RustNightdropCore extends NightdropCore {
       // hash matches what the onion site said, so the file only ever becomes visible to the user
       // after it has passed — there is no window where a file manager can offer a bad build.
       final dir = await PublicDownloads.staging();
-      final dest = '${dir.path}/NightDrop-update.apk';
-      // Which ABI's build to fetch is Rust's call, not ours — it reads the architecture the core
-      // was compiled for, which is the one Android actually chose. See `update::native_abi`.
+      // Which build to fetch is Rust's call, not ours — it reads the OS and architecture the core
+      // was compiled for (on Android, the ABI Android actually chose). See `update::native_build`.
+      // Only the file's name and where it ends up differ here: an APK on Android, the AppImage on
+      // Linux, the installer on Windows.
+      final desktop = Platform.isLinux || Platform.isWindows;
+      final ext = Platform.isLinux ? 'AppImage' : (Platform.isWindows ? 'exe' : 'apk');
+      final dest = '${dir.path}/NightDrop-update.$ext';
       final n = await _core?.downloadUpdate(destPath: dest);
       if (n == null || n <= BigInt.zero) {
         // Rust has already said why on its own diag line; this one marks that the UI gave up, so
@@ -747,6 +751,21 @@ class RustNightdropCore extends NightdropCore {
       // Named for the version it actually is. "NightDrop-update.apk" tells a user nothing months
       // later, and collides with the last one they downloaded.
       final version = _updateAvailable;
+      if (desktop) {
+        // The user's Downloads folder, under the website's name plus the version. The AppImage is
+        // marked executable so it can be started from the file manager; nothing here runs it.
+        final name = Platform.isLinux
+            ? 'Night_Drop-${version ?? 'update'}-x86_64.AppImage'
+            : 'NightDropSetup-${version ?? 'update'}.exe';
+        final where = await PublicDownloads.toDownloadsFolder(File(dest),
+            displayName: name, executable: Platform.isLinux);
+        await rust.diagNote(
+          line: where == dest
+              ? 'update: Downloads folder unavailable — file left in app-private storage'
+              : 'update: saved to the Downloads folder',
+        );
+        return where;
+      }
       final where = await PublicDownloads.publish(
         File(dest),
         displayName:

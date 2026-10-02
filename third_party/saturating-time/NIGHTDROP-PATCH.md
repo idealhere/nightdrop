@@ -7,9 +7,11 @@ Used through `[patch.crates-io]` in the workspace `Cargo.toml`.
 under 100ns rounds to zero and returns `Some` unchanged; the search never reaches the 1ns `None`
 that ends it. arti calls `max_value()` while parsing bridge descriptors, so Tor over bridges never
 bootstrapped on Windows: one core at 100%, logs frozen (found 2026-09-30 in a Windows 11 VM, stack
-taken with cdb). Upstream: arti#2678, arti#2726; fix expected with saturating-time 0.5.0 (arti#2753).
+taken with cdb). Upstream: arti#2678, arti#2726; fixed in saturating-time 0.5.0 (arti#2753, released
+2026-10-01), which arti 0.47.0's tor-netdoc requires.
 
-**What changed** (the patch posted on arti#2726):
+**What changed** (the patch another reporter posted on arti#2726, applied here; we did not send one
+upstream):
 
 - `internal.rs`: `SaturatingTime` requires `PartialEq`, and `find_limit` returns when a step makes
   no progress. Plus a test with a simulated 100ns clock that did not terminate before.

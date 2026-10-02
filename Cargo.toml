@@ -3,8 +3,8 @@
 [workspace]
 resolver = "2"
 members = ["core", "relay", "webtunnel"]
-# Patched dependency, built through [patch.crates-io] below, not a workspace member.
-exclude = ["third_party/saturating-time"]
+# Patched dependencies, built through [patch.crates-io] below, not workspace members.
+exclude = ["third_party/saturating-time", "third_party/tor-hsservice"]
 
 [workspace.package]
 edition = "2021"
@@ -21,3 +21,4 @@ overflow-checks = true
 # See third_party/saturating-time/NIGHTDROP-PATCH.md; remove once arti ships the fix.
 [patch.crates-io]
 saturating-time = { path = "third_party/saturating-time" }
+tor-hsservice = { path = "third_party/tor-hsservice" }

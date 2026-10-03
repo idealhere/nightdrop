@@ -1,9 +1,10 @@
 # Background traffic and battery on Android: investigation
 
-Status: **cause found, not fixed.** Night Drop uploads far more in the background than its own
-work explains. The main cause is an arti bug: the onion service republishes its descriptor more
-and more often the longer the process runs (below). Once fixed, the conclusion moves to
-`ARCHITECTURE.md` and this file is cut down to the method.
+Status: **cause found and fixed locally, verified on a phone (Run 4); not released.** Night Drop
+uploaded far more in the background than its own work explains. The main cause was an arti bug: the
+onion service republished its descriptor more and more often the longer the process ran (below).
+Once the fix ships, the conclusion moves to `ARCHITECTURE.md` and this file is cut down to the
+method.
 
 Device for every run: Galaxy S25 (`SM_S931W`, battery 3,900 mAh). Data comes from
 `dumpsys battery`, `dumpsys batterystats`, `dumpsys netstats` for the app's uid (10754), and the
@@ -52,6 +53,37 @@ the whole of Run 3 (42 readings, from 1,000 recorded builds). On mobile data at 
 completed given more time. Abandoned circuits fail uploads, failed rounds add reupload timers,
 so the floor feeds the accumulation above. It is not the main cause: Run 3 had half its uploads
 succeed and still uploaded at 200+ per hour.
+
+## Run 4: the fix, overnight 2026-10-03 01:21 to 08:43
+
+Build: branch `hsfix-diag` (0.1.26 / 4122, wake lock as released, diagnostics + timing logs) with
+the patched `third_party/tor-hsservice` (dedups reupload timers), installed 2026-10-02 07:26 - so
+18-25 h of Tor-client uptime during the night, comparable to Run 3's 17-23 h. Same conditions;
+screen off 99.5%, 82.6% deep doze, but **23 network changes** (Run 3: 6).
+
+| | Run 3 (no fix) | Run 4 (fix) |
+|---|---|---|
+| Reupload timer firings | 30.2/h | **0.3/h** |
+| HSDir uploads ok / failed | 217 / 220 per h | 21 / 112 per h |
+| Circuits launched | 491/h | 170/h |
+| Intro-point changes | 4.7/h | 5.7/h |
+| Night Drop traffic | ~5.8 MB/h up, ~2.4 down | ~1.6 MB/h up, ~1.4 down |
+| Night Drop (batterystats) | 411 mAh, 58.5 mAh/h | 253 mAh, 34.4 mAh/h |
+| ...mobile radio / wake lock / CPU | 273 / 126 / 12 mAh | 116 / 132 / 5 mAh |
+| Whole phone | 74.9 mAh/h | 81.8 mAh/h |
+
+- **The fix does what it should.** Timer firings no longer grow with uptime; uploads now follow
+  intro-point changes (each republishes, which is the design) rather than accumulated timers.
+  Night Drop's radio cost fell 58%, its upload traffic 72%, its total 41%.
+- **The whole phone did not drain less** that night: Instagram (64 mAh) and Prime Video (36 mAh)
+  were active in the background, nearly all radio, and were not in Run 3; network changes were
+  four times as frequent. Whole-phone drain is not a measure of Night Drop alone.
+- **The wake lock is now Night Drop's largest cost** (132 of 253 mAh), roughly constant across
+  runs. That is the remaining case for the no-wake-lock experiment (see the TODO).
+- **Still open:** 84% of HSDir upload attempts fail (mostly "could not build circuit to HsDir");
+  6.9% of circuits were abandoned at the 2 s build-timeout floor, as in Run 3. Fewer failed rounds
+  no longer multiply, but they still cost circuits. Intro-point churn (~5-6/h) is the other driver
+  of republishing.
 
 ## The runs
 

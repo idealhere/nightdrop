@@ -495,6 +495,73 @@ worth building, but only with a covert channel behind it; until then the honest 
 exists now — the editor, help text naming where bridges come from, and support for several bridge
 lines at once so one going down is not fatal.
 
+#### 7a.1 Moat, researched 2026-10-03 (for 0.1.28)
+
+Read from primary sources (rdsys `doc/moat.md`, Tor Browser 16.0's `Moat.sys.mjs`,
+`DomainFrontedRequests.sys.mjs` and `000-tor-browser.js`, lyrebird's `transports/meeklite`, Briar's
+`moat-api`), then exercised end to end from this machine with a throwaway prototype.
+
+**The CAPTCHA is gone from the path that matters.** rdsys marks the CAPTCHA endpoints (`/fetch`,
+`/check`) "deprecated and only supported for backward compatibility". The current mechanism is
+**Circumvention Settings**: `POST /moat/circumvention/settings` with an optional
+`{"country": "..", "transports": [..]}` returns bridge lines ranked for the country (geolocated
+from the requester's IP when `country` is absent); `settings: []` means Tor should work there
+unaided. `POST /moat/circumvention/defaults` (transports only) is the answer for a place with no
+specific recommendation where Tor still fails. Anti-enumeration is server-side instead of a
+CAPTCHA: bridges are handed out per IP subnet within a rotation period. Errors come back as HTTP
+200 with an `errors` list (400 bad request, 404 none of our transports helps there, 406 country
+unknown).
+
+**The covert channel is meek, domain-fronted through CDN77.** Tor Browser 16.0 ships
+`bridgedb_targets = "https://1723079976.rsc.cdn77.org|cdn.zk.mk+www.cdn77.com"` and
+`moat_service = "https://bridges.torproject.org/moat"`, and runs lyrebird's meek client as a local
+SOCKS proxy for moat requests (no uTLS option, so Go's TLS fingerprint). Briar's wrapper also
+leaves meek to lyrebird; its last change (2025-02) was "remove-fastly-and-azure" - **fronts get
+retired, so the target list must be easy to update** (it changes with Tor Browser releases).
+
+meek itself is small: each `POST /` to the front (TLS SNI = front, HTTP `Host` = the CDN77 URL's
+host, header `X-Session-Id` = 32 hex chars, empty `User-Agent`) carries upstream bytes in its body;
+the response body (up to 64 KiB) carries downstream bytes; idle polls back off 100 ms -> 5 s by
+x1.5; on error, rotate to the next front. The meek server forwards the byte stream to
+`bridges.torproject.org:443`, so the client runs an ordinary TLS session to that host inside the
+tunnel (its certificate verifies normally) and speaks HTTP/1.1. The meek server answers **570**
+once the inner connection has closed - that is end-of-stream, not a failure. Responses are
+`Transfer-Encoding: chunked`.
+
+**Measured 2026-10-03** (prototype: Python, stdlib only, memory-BIO TLS inside meek):
+
+- Both fronts reach the meek server (HTTP 200 in ~0.4-0.6 s); the same request unfronted is 502.
+- Inner TLS 1.3 to `bridges.torproject.org`, certificate verified; a full settings call takes 2-4
+  meek round trips.
+- `country: "cn"`, transports `webtunnel, obfs4, snowflake, vanilla`: **WebTunnel ranked first**
+  (two freshly allocated, `source: bridgedb`), then Snowflake, then obfs4.
+- Geolocated from here: `{"settings": [], "country": "ca"}`. `/circumvention/defaults` with
+  `["webtunnel"]`: two WebTunnel bridges.
+
+So for Night Drop, which carries WebTunnel in-process (§6.5) and nothing else yet, the useful
+request is `transports: ["webtunnel"]` (plus `vanilla`), `settings` first and `defaults` when that is
+empty or 406.
+
+**What building it means** (an estimate, not yet a plan):
+
+- A meek client in Rust: HTTP/1.1 POST polling over TLS to the front, with the front as SNI.
+  Ideally reusing the `webtunnel` crate's Chrome-identical ClientHello (`chrome-proto`) so the
+  outer connection looks like Chrome rather than Go - but Chrome's hello offers `h2`, so either
+  speak HTTP/2 to the CDN or accept an ALPN that differs from Chrome's.
+- TLS (rustls) to `bridges.torproject.org` over that byte stream, one HTTP/1.1 request, chunked
+  decoding, JSON.
+- The target list (url + fronts) in app config, updated from Tor Browser's when it changes.
+- UI on the bridge screen: the button, what it will contact, a country picker (moat geolocates
+  otherwise), results filled into the editor, and honest failure text.
+- Tests against a local fake meek server, plus a live check like the one above.
+
+**Not anonymous, by construction.** This request has to work exactly when Tor does not, so it goes
+**directly**: the CDN sees the user's IP and the front domain, Tor's moat server sees the IP (it
+uses it for geolocation and subnet grouping), and the network sees TLS to a CDN77 front. It carries
+no identity, contacts or messages. That is a **non-anonymized network path**, which CLAUDE.md's
+invariants forbid hardcoding, so it needs an explicit decision and wording before it is built: only
+on the user's tap, saying first what it contacts and that it does so without Tor; never automatic.
+
 ### 7b. Reaching the relay from a censored network
 
 The relay does not sidestep the hidden-service problem, because **the relay is itself an onion

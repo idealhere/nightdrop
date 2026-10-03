@@ -316,6 +316,9 @@ pub struct Contact {
     /// offering a burn that silently lands as a permanent message is the one failure this
     /// feature must not have.
     pub peer_supports_burn: Option<bool>,
+    /// The Night Drop version the peer last announced (`Frame::Version`, e.g. `"0.1.27"`). `None`
+    /// means they have not said: a build older than 0.1.27, or no announce received yet.
+    pub peer_app_version: Option<String>,
     /// Whether opt-in server storage (§6) is actually working: `false` when it is enabled but the
     /// last send couldn't reach any relay to store the copy (the message still reached the peer
     /// directly). Lets the UI downgrade the storage banner to "not currently stored" instead of
@@ -713,6 +716,8 @@ impl Inner {
             // a chat paired before the feature shipped would otherwise never hear it, leaving
             // burn unavailable for precisely the contacts someone already talks to.
             self.me.announce_burns();
+            // Our app version (`Frame::Version`), same cadence and the same once-per-run guard.
+            self.me.announce_version();
             // v2 mailbox handles (`mailbox-handles.md`): offer our contribution to every chat not
             // yet confirmed. Once per run per chat, retried while undelivered — the same shape as
             // the burn announce, and the heal for a lost agreement frame.
@@ -1860,6 +1865,14 @@ impl NightdropCore {
         let mut g = self.lock();
         g.me.report_screenshot(&contact_id);
         g.save();
+        Ok(())
+    }
+
+    /// Tell the core which Night Drop version this is (the pubspec form, `"0.1.27+412"`), so it
+    /// can announce it to contacts (`Frame::Version`). The core crate does not know the app's
+    /// version; until this is called nothing is announced. Safe to call on every launch.
+    pub fn set_app_version(&self, version: String) -> Result<()> {
+        self.lock().me.set_app_version(&version);
         Ok(())
     }
 

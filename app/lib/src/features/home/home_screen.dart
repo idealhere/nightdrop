@@ -109,6 +109,7 @@ class HomeScreen extends StatelessWidget {
           _OnionBanner(core: core),
           const _BackgroundStoppedBanner(),
           _RelayHealthBanner(core: core),
+          _ProtocolBreakBanner(core: core),
           _BackupReminderBanner(core: core),
           _UpdateBanner(core: core),
           Expanded(
@@ -666,6 +667,62 @@ class _UpdateBannerState extends State<_UpdateBanner> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Warns, in the last 0.1.x releases, that 0.2 changes the protocol: 0.1.x and 0.2 apps cannot
+/// message each other, so people who do not update lose contact with those who do. A changelog
+/// line does not reach most people; this does. Dismissible, and shown once more after each update.
+class _ProtocolBreakBanner extends StatefulWidget {
+  const _ProtocolBreakBanner({required this.core});
+
+  final NightdropCore core;
+
+  @override
+  State<_ProtocolBreakBanner> createState() => _ProtocolBreakBannerState();
+}
+
+class _ProtocolBreakBannerState extends State<_ProtocolBreakBanner> {
+  bool _show = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.core.shouldShowProtocolBreakNotice().then((show) {
+      if (mounted) setState(() => _show = show);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_show) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(Icons.update, size: 18, color: scheme.onTertiaryContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                l10n.protocolBreakNotice,
+                style: TextStyle(color: scheme.onTertiaryContainer, fontSize: 12.5),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                await widget.core.dismissProtocolBreakNotice();
+                if (mounted) setState(() => _show = false);
+              },
+              child: Text(l10n.gotIt),
+            ),
+          ],
         ),
       ),
     );

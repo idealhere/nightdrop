@@ -916,6 +916,18 @@ abstract class AppLocalizations {
   /// **'Back up your identity so you don’t lose your chats. There’s no account to recover from — if you lose this device without a backup, it’s gone.'**
   String get backupReminderBody;
 
+  /// Home-screen notice shown in the last 0.1.x releases: 0.2 changes the protocol, so 0.1.x and 0.2 apps cannot message each other.
+  ///
+  /// In en, this message translates to:
+  /// **'Night Drop 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.'**
+  String get protocolBreakNotice;
+
+  /// Button that dismisses an informational notice.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get gotIt;
+
   /// Body of the update-available banner. {version} is the newer release, e.g. 0.1.18.
   ///
   /// In en, this message translates to:

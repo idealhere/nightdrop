@@ -108,6 +108,7 @@ impl Node {
                                 peer_captures_silent: None,
                                 peer_relays: Vec::new(),
                                 peer_supports_burn: None,
+                                peer_app_version: None,
                                 remote_storage_healthy: true,
                                 last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                                 local_name: String::new(),
@@ -159,6 +160,7 @@ impl Node {
                     // exist when the launch-time broadcast ran.
                     self.announce_captures_to(&contact_id);
                     self.announce_burns_to(&contact_id);
+                    self.announce_version_to(&contact_id);
                     // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
                     // Refused for a chat still awaiting approval; the relay tick picks it up once approved.
                     self.send_mailbox_key(&contact_id);
@@ -291,6 +293,33 @@ impl Node {
                     return Ok(None);
                 }
                 chat.contact.peer_supports_burn = Some(true);
+                Ok(Some((from, String::new())))
+            }
+            Frame::Version { from, message } => {
+                // "This is the Night Drop version I run." Standing property, no history entry.
+                // Decrypted once (a ratchet decrypt spends a message key) and accepted only with the
+                // version prefix and a plausible version after it: the text can reach the UI, and a
+                // forged, replayed or spliced frame must change nothing.
+                let Some(chat) = self.chats.get_mut(&from) else {
+                    return Ok(None);
+                };
+                let Ok(olm) = message.to_olm() else {
+                    return Ok(None);
+                };
+                let Ok(pt) = crypto::decrypt(&mut chat.session, &olm) else {
+                    return Ok(None);
+                };
+                let Some(version) = pt
+                    .strip_prefix(MARK_VERSION_PREFIX)
+                    .and_then(|v| std::str::from_utf8(v).ok())
+                    .filter(|v| is_plausible_version(v))
+                else {
+                    return Ok(None);
+                };
+                if chat.contact.peer_app_version.as_deref() == Some(version) {
+                    return Ok(None);
+                }
+                chat.contact.peer_app_version = Some(version.to_string());
                 Ok(Some((from, String::new())))
             }
             Frame::Edit { from, message } => {

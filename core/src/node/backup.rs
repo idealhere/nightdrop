@@ -59,6 +59,7 @@ impl Node {
                 peer_captures_silent: chat.contact.peer_captures_silent,
                 peer_relays: chat.contact.peer_relays.clone(),
                 peer_supports_burn: chat.contact.peer_supports_burn,
+                peer_app_version: chat.contact.peer_app_version.clone(),
                 mailbox_own: super::mailbox::to_persisted(&chat.mailbox).0,
                 mailbox_peer: super::mailbox::to_persisted(&chat.mailbox).1,
                 mailbox_peer_confirmed: super::mailbox::to_persisted(&chat.mailbox).2,
@@ -349,6 +350,7 @@ impl Node {
                         peer_captures_silent: chat.peer_captures_silent,
                         peer_relays: chat.peer_relays.clone(),
                         peer_supports_burn: chat.peer_supports_burn,
+                        peer_app_version: chat.peer_app_version.clone(),
                         remote_storage_healthy: true,
                         last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                         local_name: String::new(),
@@ -439,6 +441,7 @@ impl Node {
                                 peer_captures_silent: pchat.peer_captures_silent,
                                 peer_relays: pchat.peer_relays.clone(),
                                 peer_supports_burn: pchat.peer_supports_burn,
+                                peer_app_version: pchat.peer_app_version.clone(),
                                 remote_storage_healthy: true,
                                 last_seen_secs: 0, // these three are filled in `contacts()` from the chat
                                 local_name: String::new(),

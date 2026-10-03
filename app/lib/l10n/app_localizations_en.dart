@@ -493,6 +493,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Back up your identity so you don’t lose your chats. There’s no account to recover from — if you lose this device without a backup, it’s gone.';
 
   @override
+  String get protocolBreakNotice =>
+      'Night Drop 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.';
+
+  @override
+  String get gotIt => 'Got it';
+
+  @override
   String updateAvailableBody(String version) {
     return 'Version $version is available. This build is out of date.';
   }

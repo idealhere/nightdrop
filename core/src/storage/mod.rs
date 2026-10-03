@@ -68,6 +68,9 @@ pub struct PersistedChat {
     /// unknown, which is treated as unsupported — burn is never offered on a guess.
     #[serde(default)]
     pub peer_supports_burn: Option<bool>,
+    /// The peer's announced app version (`Frame::Version`). `None`/absent = not announced yet.
+    #[serde(default)]
+    pub peer_app_version: Option<String>,
     /// Recall receipts for our still-**queued** (undelivered) messages, so an edit/unsend after an
     /// app restart can still pull an undelivered blob off the relay instead of letting the peer
     /// receive it and only then tombstoning it (§11.3). The `delete_token`s are secrets, but the

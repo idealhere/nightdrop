@@ -631,6 +631,7 @@ class RustNightdropCore extends NightdropCore {
 
   static const _kBackedUp = 'nightdrop_backed_up';
   static const _kBackupSnoozeUntil = 'nightdrop_backup_snooze_until';
+  static const _kProtocolNoticeDismissed = 'nightdrop_protocol_notice_dismissed_version';
   static const _kUpdateCheckedAt = 'nightdrop_update_checked_at';
   static const _kUpdateHidden = 'nightdrop_update_hidden_version';
 
@@ -683,6 +684,14 @@ class RustNightdropCore extends NightdropCore {
       // Best-effort: a standing capability is not worth failing a launch over, and the next
       // change or re-pair re-announces it.
     }
+  }
+
+  /// Tell the core which app version this is, so it can announce it to contacts (0.2 needs to know
+  /// who is still on 0.1.x). Best-effort, like the capture announce.
+  Future<void> _announceAppVersion() async {
+    try {
+      await _core?.setAppVersion(version: kAppVersion);
+    } catch (_) {}
   }
 
   /// Ask the platform what it can actually do and tell peers, once the core is up.
@@ -857,6 +866,14 @@ class RustNightdropCore extends NightdropCore {
   }
 
   @override
+  Future<bool> shouldShowProtocolBreakNotice() async =>
+      await _secure.read(key: _kProtocolNoticeDismissed) != kAppVersion;
+
+  @override
+  Future<void> dismissProtocolBreakNotice() =>
+      _secure.write(key: _kProtocolNoticeDismissed, value: kAppVersion);
+
+  @override
   Future<void> recordBackupDone() async {
     await _secure.write(key: _kBackedUp, value: 'yes');
     notifyListeners();
@@ -992,6 +1009,7 @@ class RustNightdropCore extends NightdropCore {
       notifyListeners();
       // Tell restored contacts whether this device can report screenshots (#1). Unawaited for the
       // same reason as the update check: it puts a frame on the wire per contact.
+      unawaited(_announceAppVersion());
       unawaited(_announceCaptureReporting());
       unawaited(_restoreCoverTraffic());
       unawaited(_restoreBurnReceipts());
@@ -1112,6 +1130,7 @@ class RustNightdropCore extends NightdropCore {
     _identity = Identity(id: id.id);
     // Settle the screenshot capability before anyone pairs, so the first contact is announced to
     // on pairing rather than left reading our silence as "they'd be told" (#1).
+    unawaited(_announceAppVersion());
     unawaited(_announceCaptureReporting());
     unawaited(_restoreCoverTraffic());
     notifyListeners();

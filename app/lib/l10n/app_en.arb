@@ -644,6 +644,14 @@
   "@backupReminderBody": {
     "description": "Body of the dismissible backup-reminder banner."
   },
+  "protocolBreakNotice": "Night Drop 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.",
+  "@protocolBreakNotice": {
+    "description": "Home-screen notice shown in the last 0.1.x releases: 0.2 changes the protocol, so 0.1.x and 0.2 apps cannot message each other."
+  },
+  "gotIt": "Got it",
+  "@gotIt": {
+    "description": "Button that dismisses an informational notice."
+  },
   "updateAvailableBody": "Version {version} is available. This build is out of date.",
   "@updateAvailableBody": {
     "description": "Body of the update-available banner. {version} is the newer release, e.g. 0.1.18.",

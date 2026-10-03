@@ -223,6 +223,12 @@ pub enum Frame {
     /// contact's `peer_relays` and fans out future offline mail to those relays too. See
     /// `node::announce_relays_if_changed`.
     Relays { from: String, message: WireOlm },
+    /// "This is the Night Drop version I run" (from 0.1.27): the sender's app version, E2E-encrypted
+    /// on the session, as a standing property of the chat - no history entry. Lets a later build
+    /// tell which contacts are still on an older release (0.2 does not talk to 0.1.x, and must say
+    /// so per chat). Fire-and-forget; an older build cannot decode the variant and skips it,
+    /// which `an_unknown_frame_variant_fails_to_decode_rather_than_degrading` pins.
+    Version { from: String, message: WireOlm },
     /// Onion client authorization (#22): the sender's **client descriptor-encryption public key**
     /// for *the receiver's* onion, so the receiver can authorize the sender to fetch its (restricted)
     /// descriptor and connect. Sent whenever the sender (re)learns the receiver's onion address —

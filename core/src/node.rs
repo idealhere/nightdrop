@@ -54,6 +54,8 @@ const MARK_UNVERIFIED: &[u8] = b"nightdrop/ctl/unverified/v1";
 /// Two markers for the screenshot-capability signal (#1), same shape as the verification pair: the
 /// state is *which* marker the receiver's ratchet decrypts, so there is no plaintext flag to flip.
 const MARK_BURNS_V1: &[u8] = b"nightdrop/ctl/burns/v1";
+/// Prefix of a [`Frame::Version`] plaintext; the app version follows it (`"...:0.1.27"`).
+const MARK_VERSION_PREFIX: &[u8] = b"nightdrop/ctl/version/v1:";
 const MARK_CAPTURES_VISIBLE: &[u8] = b"nightdrop/ctl/captures-visible/v1";
 const MARK_CAPTURES_SILENT: &[u8] = b"nightdrop/ctl/captures-silent/v1";
 
@@ -296,6 +298,17 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
 /// `handle` is the mailbox to post under — [`Node::post_handle`] for a live chat (v2 once the pair
 /// is confirmed), v1 where there is no chat state to consult. It is recorded in each receipt, so a
 /// later recall targets the handle the copy actually went to.
+/// A version string worth storing or announcing: `MAJOR.MINOR.PATCH` digits only, kept short. A
+/// peer's announce is untrusted input that ends up in the UI, so anything else is ignored.
+fn is_plausible_version(v: &str) -> bool {
+    let parts: Vec<&str> = v.split('.').collect();
+    v.len() <= 16
+        && parts.len() == 3
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.len() <= 4 && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn queue_on_relays(
     transport: &dyn Transport,
     primary: &Option<RelayClient>,
@@ -525,6 +538,13 @@ pub struct Node {
     /// for that chat until the app is restarted. Not persisted — re-announcing on a fresh launch
     /// is cheap and self-heals.
     burns_announced: std::collections::HashSet<String>,
+    /// This build's app version (`"0.1.27"`), set by the app via [`set_app_version`]
+    /// (Self::set_app_version) — the core crate does not know it. `None` until set, and nothing is
+    /// announced until then: a guessed version would be worse than none.
+    app_version: Option<String>,
+    /// Contacts this run has told our app version (see [`Node::announce_version`]). Per run and
+    /// success-gated, like [`burns_announced`](Self::burns_announced).
+    version_announced: std::collections::HashSet<String>,
     /// Contacts this run has sent our v2 mailbox contribution to (see [`Node::announce_mailbox`]).
     /// Per run, like [`burns_announced`](Self::burns_announced): an unconfirmed pair is retried on
     /// every launch, which is what heals a lost frame.
@@ -884,6 +904,8 @@ impl Node {
             last_invite_code: None,
             captures_visible: None,
             burns_announced: std::collections::HashSet::new(),
+            app_version: None,
+            version_announced: std::collections::HashSet::new(),
             mailbox_announced: std::collections::HashSet::new(),
             poll_seed: {
                 use rand::RngCore;
@@ -1235,6 +1257,56 @@ impl Node {
         // Recorded as done only on success, so an unreachable peer is retried on the next tick.
         if self.deliver(&addr, contact_id, &frame).is_ok() {
             self.burns_announced.insert(contact_id.to_string());
+        }
+    }
+
+    /// Record this build's app version (the pubspec form, `"0.1.27+412"`, is accepted; the build
+    /// number is dropped). A changed version re-announces to every chat.
+    pub fn set_app_version(&mut self, version: &str) {
+        let version = version.split('+').next().unwrap_or("").trim().to_string();
+        if !is_plausible_version(&version) || self.app_version.as_deref() == Some(version.as_str())
+        {
+            return;
+        }
+        self.app_version = Some(version);
+        self.version_announced.clear();
+    }
+
+    /// Tell every open chat which Night Drop version this build is (`Frame::Version`).
+    ///
+    /// Needed so a later build can tell which contacts are still on an older release: 0.2 does not
+    /// talk to 0.1.x and has to say so per chat, which it can only do for contacts that announced.
+    /// Same shape as [`announce_burns`](Self::announce_burns): once per run per chat, retried
+    /// while undelivered, and quiet. An older peer cannot decode the frame and skips it.
+    pub fn announce_version(&mut self) {
+        if self.app_version.is_none() || !self.announce_ready() {
+            return;
+        }
+        let ids: Vec<String> = self
+            .chats
+            .iter()
+            .filter(|(id, c)| !c.closed && !self.version_announced.contains(id.as_str()))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            self.announce_version_to(&id);
+        }
+    }
+
+    /// Tell one chat our app version. Recorded as done only on success, so an unreachable peer is
+    /// retried on the next tick (`deliver` already falls back to the relay mailbox).
+    pub(crate) fn announce_version_to(&mut self, contact_id: &str) {
+        let Some(version) = self.app_version.clone() else {
+            return;
+        };
+        let marker = [MARK_VERSION_PREFIX, version.as_bytes()].concat();
+        let Some((addr, frame)) = self.authed_control(contact_id, &marker, |from, message| {
+            Frame::Version { from, message }
+        }) else {
+            return;
+        };
+        if self.deliver(&addr, contact_id, &frame).is_ok() {
+            self.version_announced.insert(contact_id.to_string());
         }
     }
 

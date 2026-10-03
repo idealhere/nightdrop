@@ -1819,3 +1819,151 @@ fn a_viewed_receipt_cannot_delete_anything_but_our_own_burn_message() {
         "and it must not touch their messages either"
     );
 }
+
+/// `Frame::Version` (0.1.27): each side learns which Night Drop version the other runs, so 0.2 can
+/// tell per chat who is still on 0.1.x. Announced at pairing, stored on the contact.
+#[test]
+fn the_app_version_is_announced_at_pairing_and_stored_on_the_contact() {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    // The pubspec form; the build number is not announced.
+    alice.set_app_version("0.1.27+412");
+    let bundle = bob.publish_bundle();
+    alice.connect_with_bundle("bob", &bundle).unwrap();
+    bob.pump().unwrap();
+    assert_eq!(
+        bob.contacts()[0].peer_app_version.as_deref(),
+        Some("0.1.27")
+    );
+    // Bob never set a version, so he announces nothing and Alice knows nothing: no guessing.
+    alice.pump().unwrap();
+    assert_eq!(alice.contacts()[0].peer_app_version, None);
+    // A standing property: no history line in the chat.
+    let bob_side = bob.contacts()[0].id.clone();
+    assert!(bob
+        .messages(&bob_side)
+        .iter()
+        .all(|m| !m.text.contains("0.1.27")));
+}
+
+#[test]
+fn a_version_announce_is_retried_until_it_lands_and_resent_on_a_new_version() {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    let bundle = bob.publish_bundle();
+    alice.connect_with_bundle("bob", &bundle).unwrap();
+    bob.pump().unwrap();
+    // A chat from before 0.1.27: nothing announced at pairing. The version arrives with the update.
+    alice.set_app_version("0.1.27");
+
+    net.disconnect("bob");
+    alice.announce_version();
+    net.reconnect("bob");
+    bob.pump().unwrap();
+    assert_eq!(bob.contacts()[0].peer_app_version, None, "Bob was offline");
+
+    alice.announce_version();
+    bob.pump().unwrap();
+    assert_eq!(
+        bob.contacts()[0].peer_app_version.as_deref(),
+        Some("0.1.27")
+    );
+
+    // Delivered: not re-sent every tick.
+    alice.announce_version();
+    assert!(
+        bob.transport.try_recv().is_none(),
+        "no second announce once one landed"
+    );
+
+    // An update re-announces.
+    alice.set_app_version("0.1.28+422");
+    alice.announce_version();
+    bob.pump().unwrap();
+    assert_eq!(
+        bob.contacts()[0].peer_app_version.as_deref(),
+        Some("0.1.28")
+    );
+}
+
+#[test]
+fn a_malformed_or_forged_version_changes_nothing() {
+    assert!(is_plausible_version("0.1.27"));
+    assert!(is_plausible_version("10.20.300"));
+    for bad in [
+        "",
+        "0.1",
+        "0.1.27.1",
+        "0.1.x",
+        "0.1.27 ",
+        "<b>0</b>.1.2",
+        "00000.1.2",
+        "1..2",
+    ] {
+        assert!(!is_plausible_version(bad), "{bad:?}");
+    }
+
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    alice.set_app_version("0.1.27");
+    let bundle = bob.publish_bundle();
+    alice.connect_with_bundle("bob", &bundle).unwrap();
+    bob.pump().unwrap();
+    assert_eq!(
+        bob.contacts()[0].peer_app_version.as_deref(),
+        Some("0.1.27")
+    );
+
+    // A garbage version can't be set locally...
+    alice.set_app_version("not a version");
+    alice.announce_version();
+    bob.pump().unwrap();
+    assert_eq!(
+        bob.contacts()[0].peer_app_version.as_deref(),
+        Some("0.1.27")
+    );
+
+    // ...and a peer that sends one anyway (a modified client) is ignored, as is another frame's
+    // marker spliced into a Version frame.
+    let bob_id = alice.contacts()[0].id.clone();
+    for marker in [
+        b"nightdrop/ctl/version/v1:9.9.9; rm -rf" as &[u8],
+        MARK_BURNS_V1,
+    ] {
+        let (addr, frame) = alice
+            .authed_control(&bob_id, marker, |from, message| Frame::Version {
+                from,
+                message,
+            })
+            .unwrap();
+        alice.deliver(&addr, &bob_id, &frame).unwrap();
+        bob.pump().unwrap();
+        assert_eq!(
+            bob.contacts()[0].peer_app_version.as_deref(),
+            Some("0.1.27")
+        );
+    }
+}
+
+#[test]
+fn the_peer_version_survives_a_restart() {
+    use crate::storage;
+    let key: storage::StoreKey = [7u8; 32];
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    alice.set_app_version("0.1.27");
+    let bundle = bob.publish_bundle();
+    alice.connect_with_bundle("bob", &bundle).unwrap();
+    bob.pump().unwrap();
+    let state = bob.export(&key);
+    drop(bob);
+    let bob2 = Node::restore(&state, Box::new(net.endpoint("bob")), &key).unwrap();
+    assert_eq!(
+        bob2.contacts()[0].peer_app_version.as_deref(),
+        Some("0.1.27")
+    );
+}

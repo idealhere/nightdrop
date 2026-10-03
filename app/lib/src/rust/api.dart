@@ -567,6 +567,11 @@ abstract class NightdropCore implements RustOpaqueInterface {
   Future<List<ChatMessage>> sendMessage(
       {required String contactId, required String text});
 
+  /// Tell the core which Night Drop version this is (the pubspec form, `"0.1.27+412"`), so it
+  /// can announce it to contacts (`Frame::Version`). The core crate does not know the app's
+  /// version; until this is called nothing is announced. Safe to call on every launch.
+  Future<void> setAppVersion({required String version});
+
   /// Tell the core the app moved to/from the background. Backgrounded, the poller slows
   /// down to conserve battery/data; foregrounded, it resumes snappy polling and does an
   /// immediate relay catch-up so queued offline mail appears right away.
@@ -923,6 +928,10 @@ class Contact {
   /// feature must not have.
   final bool? peerSupportsBurn;
 
+  /// The Night Drop version the peer last announced (`Frame::Version`, e.g. `"0.1.27"`). `None`
+  /// means they have not said: a build older than 0.1.27, or no announce received yet.
+  final String? peerAppVersion;
+
   /// Whether opt-in server storage (§6) is actually working: `false` when it is enabled but the
   /// last send couldn't reach any relay to store the copy (the message still reached the peer
   /// directly). Lets the UI downgrade the storage banner to "not currently stored" instead of
@@ -969,6 +978,7 @@ class Contact {
     this.peerCapturesSilent,
     required this.peerRelays,
     this.peerSupportsBurn,
+    this.peerAppVersion,
     required this.remoteStorageHealthy,
     required this.localName,
     required this.identityTag,
@@ -990,6 +1000,7 @@ class Contact {
       peerCapturesSilent.hashCode ^
       peerRelays.hashCode ^
       peerSupportsBurn.hashCode ^
+      peerAppVersion.hashCode ^
       remoteStorageHealthy.hashCode ^
       localName.hashCode ^
       identityTag.hashCode ^
@@ -1013,6 +1024,7 @@ class Contact {
           peerCapturesSilent == other.peerCapturesSilent &&
           peerRelays == other.peerRelays &&
           peerSupportsBurn == other.peerSupportsBurn &&
+          peerAppVersion == other.peerAppVersion &&
           remoteStorageHealthy == other.remoteStorageHealthy &&
           localName == other.localName &&
           identityTag == other.identityTag &&

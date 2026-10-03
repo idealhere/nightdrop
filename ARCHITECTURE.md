@@ -220,6 +220,15 @@ on a re-pair (new session) exactly like `verified`.
   rate-limited to 100 events per message shape per minute, with a summary line counting the rest:
   on 2026-09-29 a single hspool retry loop logged 28,000 lines in under a minute and rotated a
   whole day's log away.
+- **Each side announces its app version (from 0.1.27).** `Frame::Version` carries the sender's
+  Night Drop version (`"0.1.27"`, no build number), E2E-encrypted on the session, once per run per
+  chat and at pairing, retried until delivered — the `Frame::Burns` pattern. The receiver stores it
+  as `peer_app_version` (`None` = not announced: an older build). It exists so 0.2, which does not
+  talk to 0.1.x, can tell per chat who is still on 0.1.x. The cost is that a contact learns your
+  exact release; contacts are already authorized and already learn your capabilities, and the
+  version is never sent to a relay in the clear or to anyone outside the chat. Older builds cannot
+  decode the variant and skip it (`an_unknown_frame_variant_fails_to_decode_rather_than_degrading`),
+  without affecting other frames on the direct path or the relay drain.
 - **Sending never blocks on the network.** `send` advances the ratchet and stores the message
   under the core lock (the ordered, security-critical step stays synchronous), but on a
   non-synchronous transport (`Transport::is_synchronous()` — false for Tor, true for the in-memory

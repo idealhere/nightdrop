@@ -22,6 +22,7 @@ DIAG="${NIGHTDROP_DIAG:-0}"
 # Reliability-first fork: when set, build a fast HTTPS-relay APK instead of the Tor-first APK.
 # Example: NIGHTDROP_HTTPS_RELAY=https://relay.example.com/v1/relay ./install-android-app.sh
 HTTPS_RELAY="${NIGHTDROP_HTTPS_RELAY:-}"
+HTTPS_RELAY_BACKUP="${NIGHTDROP_HTTPS_RELAY_BACKUP:-}"
 ONION_RELAY="${NIGHTDROP_RELAY:-}"
 # The single device serial install/launch target (resolved by select_device). Seed it from
 # --device or the standard ANDROID_SERIAL env var so an explicit choice always wins.
@@ -363,6 +364,22 @@ build_apk() {
         defines+=("--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY")
         log_success "HTTPS relay baked in (encrypted, not anonymous): $HTTPS_RELAY"
 
+        # Independent second logical relay/store. The app advertises it through the existing
+        # multi-relay fan-out, so the same sealed frame is posted to both stores and deduplicated
+        # on receipt. This is NOT endpoint failover and must not point at the primary store.
+        if [ -n "$HTTPS_RELAY_BACKUP" ]; then
+            if [[ "$HTTPS_RELAY_BACKUP" != https://* ]]; then
+                log_error "NIGHTDROP_HTTPS_RELAY_BACKUP must start with https://"
+                return 1
+            fi
+            if [ "$HTTPS_RELAY_BACKUP" = "$HTTPS_RELAY" ]; then
+                log_error "NIGHTDROP_HTTPS_RELAY_BACKUP must be an independent relay, not the primary URL"
+                return 1
+            fi
+            defines+=("--dart-define=NIGHTDROP_HTTPS_RELAY_BACKUP=$HTTPS_RELAY_BACKUP")
+            log_success "Independent HTTPS backup relay baked in: $HTTPS_RELAY_BACKUP"
+        fi
+
         # Optional lazy privacy/censorship fallback. This must be the onion endpoint of the SAME
         # logical relay/store as HTTPS_RELAY; the app starts without Tor and only bootstraps
         # Tor/WebTunnel after repeated fast-path failure or a failed short-code join.
@@ -580,6 +597,10 @@ ENVIRONMENT VARIABLES
                            https://relay.example.com/v1/relay. When set, the app starts
                            over HTTPS/443 without waiting for Tor. E2E remains on, but the
                            relay/network can observe source IP and timing.
+  NIGHTDROP_HTTPS_RELAY_BACKUP
+                           Optional independent second HTTPS relay/store. Messages are
+                           fanned out to it for redundancy; it must NOT be the same store
+                           as NIGHTDROP_HTTPS_RELAY.
   NIGHTDROP_RELAY          Optional onion endpoint of the SAME logical relay/store.
                            With NIGHTDROP_HTTPS_RELAY, this becomes the lazy Tor/WebTunnel
                            fallback. Without HTTPS mode, it is the normal Tor relay.
@@ -591,8 +612,9 @@ EXAMPLES
   # Build and install reliability-first HTTPS mode
   NIGHTDROP_HTTPS_RELAY=https://relay.example.com/v1/relay ./install-android-app.sh
 
-  # HTTPS-first + lazy Tor/WebTunnel fallback to the same relay/store
-  NIGHTDROP_HTTPS_RELAY=https://relay.example.com/v1/relay \
+  # HTTPS-first + independent second HTTPS relay + lazy Tor/WebTunnel fallback
+  NIGHTDROP_HTTPS_RELAY=https://relay-a.example.com/v1/relay \
+  NIGHTDROP_HTTPS_RELAY_BACKUP=https://relay-b.example.com/v1/relay \
   NIGHTDROP_RELAY=examplehiddenservice.onion ./install-android-app.sh
 
   # Release build, then install

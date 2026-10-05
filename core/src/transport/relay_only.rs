@@ -60,6 +60,10 @@ impl Transport for RelayOnlyTransport {
         false
     }
 
+    fn is_relay_only(&self) -> bool {
+        true
+    }
+
     /// There is deliberately no directly reachable peer address.
     fn published(&self) -> bool {
         false

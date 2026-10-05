@@ -81,7 +81,7 @@ impl Transport for RelayOnlyTransport {
                 Ok(dialer) => dialer,
                 Err(error) => {
                     let message = format!("invalid HTTPS relay endpoint: {error}");
-                    std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())))
+                    std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {\n                        Err(anyhow::anyhow!(message.clone()))\n                    })
                 }
             });
         }

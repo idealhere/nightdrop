@@ -1,6 +1,6 @@
 # HTTPS-primary transport for the Night Drop fork
 
-Status: design baseline for implementation branch `feature/https-primary-transport`.
+Status: Phase 1–3 foundation implemented on `feature/https-primary-transport`; deployment and real-network validation remain.
 
 ## Goal
 
@@ -165,11 +165,13 @@ depend on one hostname, IP, ASN, or cloud provider.
 
 For the first deployment:
 - relay A: United States, exposed as HTTPS A + onion A by the same RelayCore/store;
-- relay B: Western/Northern Europe, exposed as HTTPS B + onion B by the same RelayCore/store.
+- relay B: Western/Northern Europe, exposed at minimum as HTTPS B, with onion B added next.
 
 Relay A and relay B keep separate state. Redundancy across them comes from Night Drop's existing
-multi-relay fan-out and content-hash deduplication. HTTPS/onion failover happens inside each relay's
-endpoint bundle, never across independent stores.
+multi-relay fan-out and content-hash deduplication. The Android build can bake relay B as
+`NIGHTDROP_HTTPS_RELAY_BACKUP`; it is advertised as an independent extra relay, so peers fan the
+same sealed frame out to both stores. HTTPS/onion failover happens only inside one logical relay,
+never by pretending independent stores are interchangeable.
 
 ## Logging policy
 
@@ -197,23 +199,25 @@ Rate limiting must never depend on a permanent user account.
 
 ## Implementation phases
 
-### Phase 1 — protocol reuse
-- expose the relay request dispatcher through an HTTP handler;
-- add an HTTPS `RelayDialer` client;
-- integration test: post -> fetch through HTTP with opaque bytes;
-- confirm the same `RelayCore` serves both TCP/onion and HTTP paths.
+### Phase 1 — protocol reuse — implemented
+- HTTP ingress reuses `RelayCore::handle_line`;
+- direct HTTPS `RelayDialer` uses rustls + compiled Mozilla roots;
+- HTTP post/take/size-limit tests are in the relay crate;
+- the same `RelayCore` backs onion/TCP and loopback HTTP ingress.
 
-### Phase 2 — route manager
-- add ordered relay routes;
-- health/cooldown state;
-- automatic HTTPS A -> HTTPS B -> WebTunnel/Tor fallback;
-- deterministic tests with injected failing dialers.
+### Phase 2 — routing/fan-out — implemented foundation
+- endpoint failover has 5 s / 15 s / 60 s cooldown;
+- primary HTTPS can lazily upgrade to HTTPS + the SAME relay's onion endpoint;
+- an independent second HTTPS relay can be baked into Android and uses existing fan-out/dedup;
+- advertised/discovered HTTPS relays stay HTTPS even after Tor is bootstrapped.
 
-### Phase 3 — Android
-- wire route state to Flutter;
-- show only user-facing connection states;
-- background mailbox check over HTTPS;
-- no manual bridge UI required for the normal case.
+### Phase 3 — Android — implemented foundation
+- HTTPS-first startup is wired through the existing generated FFI entry point;
+- short-code pairing and messages can run relay-only without waiting for Tor;
+- positive HTTPS failure evidence can trigger lazy Tor/WebTunnel bootstrap;
+- background mailbox polling stays on HTTPS until that fallback is needed;
+- CI builds an arm64 HTTPS-first APK, and an on-demand workflow can produce an installable APK for
+  chosen relay endpoints.
 
 ### Phase 4 — deployment
 - two relay VPS instances;

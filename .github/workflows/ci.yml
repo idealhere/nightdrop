@@ -118,3 +118,17 @@ jobs:
 
       - name: Test (widget + Dart↔Rust bridge)
         run: cd app && flutter test
+
+      # Compile the actual Android reliability-first path, not just the Linux host library.
+      # Use a deliberately non-routable example hostname: build correctness must not depend on
+      # a live relay, and no CI device should make network requests during compilation.
+      #
+      # WebTunnel is disabled in this job so failures isolate the new HTTPS path. The existing
+      # Tor/WebTunnel Android build remains a separate release/on-device gate.
+      - name: Build Android arm64 APK (HTTPS-first)
+        env:
+          NIGHTDROP_WEBTUNNEL: "0"
+        run: |
+          cd app
+          flutter build apk --debug --split-per-abi --target-platform android-arm64 \
+            --dart-define=NIGHTDROP_HTTPS_RELAY=https://relay.invalid/v1/relay

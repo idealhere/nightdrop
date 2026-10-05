@@ -32,6 +32,8 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 
 pub mod failover;
+#[cfg(feature = "https-relay")]
+pub mod https;
 
 /// How often the reaper sweeps expired blobs.
 const REAP_INTERVAL: Duration = Duration::from_secs(60);

@@ -3964,6 +3964,21 @@ mod tests {
         assert!(join(&b, &a, &format!("{slot2}-wrong-secret-words-x")).is_err());
     }
 
+    #[cfg(feature = "https-relay")]
+    #[test]
+    fn bare_https_new_tor_entrypoint_builds_without_tor_feature() {
+        let core = NightdropCore::new_tor(
+            None,
+            Some("https://localhost/v1/relay".to_string()),
+            None,
+            None,
+        )
+        .expect("bare HTTPS relay should construct without bootstrapping Tor");
+
+        assert!(!core.identity().id.is_empty());
+        core.shutdown();
+    }
+
     #[test]
     fn relay_only_clients_pair_and_chat_without_a_peer_socket() {
         use crate::transport::relay_only::RelayOnlyTransport;

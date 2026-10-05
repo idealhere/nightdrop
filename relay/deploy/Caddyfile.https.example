@@ -1,0 +1,18 @@
+# Example Caddy config for one Night Drop fork relay.
+#
+# Replace relay.example.com with the hostname for THIS relay. Caddy obtains and renews the TLS
+# certificate automatically. The Rust relay itself listens only on 127.0.0.1:9080, so plaintext
+# HTTP never leaves the host.
+#
+# Caddy access logging is not enabled here. Do not add request-body logging: relay bodies contain
+# opaque ciphertext and mailbox handles, and retaining them provides no operational value.
+
+relay.example.com {
+    reverse_proxy 127.0.0.1:9080
+
+    header {
+        -Server
+        Cache-Control "no-store"
+        X-Content-Type-Options "nosniff"
+    }
+}

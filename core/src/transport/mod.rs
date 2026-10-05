@@ -111,6 +111,13 @@ pub trait Transport: Send + Sync {
         false
     }
 
+    /// Whether this transport intentionally has no direct peer path and relies on a relay.
+    /// Used only for route-health semantics: a relay-only client can decide its primary HTTPS
+    /// route is unavailable from repeated relay-poll failures even before the user sends a message.
+    fn is_relay_only(&self) -> bool {
+        false
+    }
+
     /// Like [`relay_dialer`](Transport::relay_dialer), but every dialer built for the same `group`
     /// shares circuits only with that group — never with other groups or with default traffic.
     /// `None` where the transport has no circuits to isolate (tests/TCP); callers then fall back to

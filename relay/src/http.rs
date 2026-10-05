@@ -111,10 +111,8 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
     let mut transfer_encoding = false;
 
     loop {
-        let line = read_header_line_capped(
-            &mut reader,
-            MAX_HEADER_BYTES.saturating_sub(header_bytes),
-        )?;
+        let line =
+            read_header_line_capped(&mut reader, MAX_HEADER_BYTES.saturating_sub(header_bytes))?;
         header_bytes = header_bytes.saturating_add(line.len());
         if line == "\r\n" || line == "\n" || line.is_empty() {
             break;

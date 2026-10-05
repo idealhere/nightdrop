@@ -1,0 +1,85 @@
+name: Build Android HTTPS-first APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      https_relay:
+        description: "Public HTTPS relay URL, e.g. https://relay.example.com/v1/relay"
+        required: true
+        type: string
+      onion_relay:
+        description: "Optional v3 .onion endpoint of the SAME relay/store for Tor/WebTunnel fallback"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: arm64 debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: app/.fvmrc
+
+      - name: Validate relay endpoints
+        env:
+          HTTPS_RELAY: ${{ inputs.https_relay }}
+          ONION_RELAY: ${{ inputs.onion_relay }}
+        run: |
+          set -euo pipefail
+          [[ "$HTTPS_RELAY" == https://* ]] || {
+            echo "https_relay must start with https://" >&2
+            exit 1
+          }
+          if [[ -n "$ONION_RELAY" && "$ONION_RELAY" != *.onion ]]; then
+            echo "onion_relay must be a v3 .onion address" >&2
+            exit 1
+          fi
+
+      - name: Resolve Dart dependencies
+        run: cd app && flutter pub get
+
+      - name: Build HTTPS-first APK with lazy Tor/WebTunnel fallback
+        env:
+          HTTPS_RELAY: ${{ inputs.https_relay }}
+          ONION_RELAY: ${{ inputs.onion_relay }}
+        run: |
+          set -euo pipefail
+          cd app
+          defines=("--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY")
+          if [[ -n "$ONION_RELAY" ]]; then
+            defines+=("--dart-define=NIGHTDROP_RELAY=$ONION_RELAY")
+          fi
+
+          # WebTunnel stays ON (the app builder's default), which also compiles embedded Tor.
+          # The app still STARTS on HTTPS; Tor/WebTunnel is lazy and is only bootstrapped on
+          # positive fast-path failure evidence.
+          flutter build apk --debug --split-per-abi --target-platform android-arm64 "${defines[@]}"
+
+      - name: Verify Rust core is bundled
+        run: |
+          set -euo pipefail
+          APK=app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+          test -f "$APK"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libnightdrop.so'
+
+      - name: Upload APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightdrop-https-first-arm64-debug
+          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: 7

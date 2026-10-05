@@ -220,6 +220,20 @@ pub struct PersistedFile {
     pub data: String,
 }
 
+/// An already-sealed user-message frame that has not yet reached either the peer or a relay.
+///
+/// Persisting the ciphertext is load-bearing for transport failover. The sender's Double Ratchet
+/// has already advanced by the time this exists, so after a process/core rebuild we cannot safely
+/// recreate the same frame from plaintext/history. We therefore keep the exact sealed bytes and
+/// retry them verbatim on the next transport. The outer PersistedState is itself encrypted at rest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedPendingSend {
+    pub contact_id: String,
+    pub msg_id: String,
+    /// Base64-encoded sealed wire-frame bytes.
+    pub bytes: String,
+}
+
 /// A chat-delete `Closed` signal (§11.6) that hasn't reached a relay yet, persisted so a delete
 /// survives an app restart before the poller's retry lands (otherwise a delete during a relay/arti
 /// outage, followed by a restart, would silently never notify the peer).
@@ -284,6 +298,11 @@ pub struct PersistedState {
     pub discovered_relays: Vec<String>,
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub directory_version: u64,
+    /// User-message frames that have already advanced the Double Ratchet but have not yet reached
+    /// either a peer or a relay. Persist the exact ciphertext so a restart or HTTPS→Tor transport
+    /// switch retries it verbatim instead of silently stranding a "queued" message.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_sends: Vec<PersistedPendingSend>,
     /// Undelivered chat-delete `Closed` signals (§11.6), persisted so a delete isn't lost across a
     /// restart before the retry lands. `#[serde(default)]` for forward-compat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -427,6 +446,7 @@ mod tests {
             my_relays: Vec::new(),
             discovered_relays: Vec::new(),
             directory_version: 0,
+            pending_sends: Vec::new(),
             pending_control: Vec::new(),
             pending_invites: Vec::new(),
             poll_seed: None,

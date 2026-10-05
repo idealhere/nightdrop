@@ -24,20 +24,35 @@ Do not silently describe the HTTPS path as anonymous. UI copy should say "Encryp
 
 The existing Tor/WebTunnel path remains available as the privacy/censorship fallback.
 
-## V1 routing order
+## V1 routing model
 
-1. HTTPS relay A over TLS 1.3 / port 443.
-2. HTTPS relay B over TLS 1.3 / port 443.
-3. Tor through WebTunnel when direct Tor is blocked.
-4. Direct Tor.
+A relay and a route are different things. This distinction is load-bearing because relay requests
+include destructive drains (take/fetch): two independent servers cannot be treated as interchangeable
+endpoints unless they share the same mailbox store.
 
-A failed path should not destroy or mutate the E2E frame. The same sealed frame is retried through
-the next eligible delivery path.
+V1 therefore uses two logical relays for redundancy:
+
+- relay A has a clearnet HTTPS endpoint plus its existing onion endpoint;
+- relay B has a clearnet HTTPS endpoint plus its existing onion endpoint.
+
+The same sealed blob is fanned out to both logical relays, using Night Drop's existing multi-relay
+deduplication model. Each logical relay then chooses its own network path in this order:
+
+1. HTTPS over TLS / port 443.
+2. The SAME relay's onion endpoint over Tor; WebTunnel is used to bootstrap Tor when direct Tor is
+   blocked.
+
+Do NOT implement "POST to relay A, then FETCH from relay B" as transport failover. A successful empty
+FETCH from B cannot recover a message stored only on A. Cross-relay resilience comes from fan-out;
+endpoint failover is only between two paths to the same RelayCore/store.
+
+A failed path must not destroy or mutate the E2E frame. The same sealed frame is retried through
+the next endpoint of that logical relay.
 
 Backoff must prevent rapid retry loops:
-- immediate failover for a connection error;
-- 5 s, 15 s, 60 s retry delays for the failed route;
-- reset a route after a successful health check.
+- immediate endpoint failover for a connection error;
+- 5 s, 15 s, 60 s retry delays for the failed endpoint;
+- reset an endpoint after a successful round trip.
 
 ## V1 topology
 
@@ -132,15 +147,16 @@ healthy.
 
 ## Server placement
 
-Run at least two independent HTTPS relays in different providers/regions. Do not make the client
+Run at least two independent logical relays in different providers/regions. Do not make the client
 depend on one hostname, IP, ASN, or cloud provider.
 
 For the first deployment:
-- relay A: United States
-- relay B: Western/Northern Europe
+- relay A: United States, exposed as HTTPS A + onion A by the same RelayCore/store;
+- relay B: Western/Northern Europe, exposed as HTTPS B + onion B by the same RelayCore/store.
 
-Both relays should use the same application protocol but separate state. Multi-relay fan-out and
-deduplication already present in Night Drop should be reused where possible.
+Relay A and relay B keep separate state. Redundancy across them comes from Night Drop's existing
+multi-relay fan-out and content-hash deduplication. HTTPS/onion failover happens inside each relay's
+endpoint bundle, never across independent stores.
 
 ## Logging policy
 
@@ -206,8 +222,9 @@ Record only transport success/failure and latency; never capture message plainte
 
 - Two clean Android installs can pair and exchange messages with Tor disabled when HTTPS is
   reachable.
-- Killing relay A causes automatic delivery through relay B.
-- Blocking both HTTPS relays causes fallback to WebTunnel/Tor without re-pairing.
+- Killing relay A still allows delivery from the copy fanned out to relay B.
+- Blocking HTTPS A/B causes each relay bundle to fall back to its onion endpoint over
+  WebTunnel/Tor without re-pairing.
 - Switching paths does not change contact identity or reset the Double Ratchet session.
 - Server never needs an E2E private key.
 - Offline messages expire under the same existing TTL rules.

@@ -37,6 +37,9 @@ RuntimeMaxSec=1w
 # for a system unit) as the dynamic user; the binary reads NIGHTDROP_RELAY_STATE.
 StateDirectory=nightdrop-relay
 Environment=NIGHTDROP_RELAY_STATE=%S/nightdrop-relay
+# HTTPS-primary fork: expose the existing RelayCore on loopback only. A TLS reverse proxy on :443
+# is the public ingress; keeping this loopback-only prevents accidental plaintext exposure.
+Environment=NIGHTDROP_RELAY_HTTP_BIND=127.0.0.1:9080
 
 # The relay needs no privileges and writes only its state dir. DynamicUser gives it an
 # anonymous, transient UID and already implies ProtectSystem=strict, ProtectHome=read-only,

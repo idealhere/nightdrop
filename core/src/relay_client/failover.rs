@@ -1,9 +1,12 @@
 //! Ordered relay failover with per-route cooldown.
 //!
-//! The caller supplies already-built RelayDialers (HTTPS A, HTTPS B, WebTunnel/Tor, ...). This
-//! module knows nothing about crypto or message formats: it retries the exact same serialized relay
-//! request on the next route. That is important for Night Drop because the E2E envelope must be
-//! sealed once and remain byte-identical across failover.
+//! The caller supplies already-built RelayDialers for different network paths to the SAME logical
+//! relay/store (for example that relay's HTTPS endpoint and its onion endpoint over Tor). This
+//! module must not be used to treat independent relay stores as interchangeable: take/fetch drains
+//! are destructive, so cross-relay resilience requires fan-out + deduplication instead.
+//!
+//! The module knows nothing about crypto or message formats: it retries the exact same serialized
+//! relay request on the next endpoint. The E2E envelope stays byte-identical across failover.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -17,8 +20,8 @@ const BACKOFFS: [Duration; 3] = [
     Duration::from_secs(60),
 ];
 
-/// One named route in priority order. Names are diagnostics only; do not put identities or other
-/// user data in them.
+/// One named endpoint for the same logical relay, in priority order. Names are diagnostics only;
+/// do not put identities or other user data in them.
 #[derive(Clone)]
 pub struct FailoverRoute {
     pub name: String,

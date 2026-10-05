@@ -53,8 +53,14 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Tests
+      - name: Core tests
         run: cargo test -p nightdrop
+
+      - name: HTTPS relay tests
+        run: cargo test -p nightdrop --features https-relay
+
+      - name: Relay server tests
+        run: cargo test -p nightdrop_relay
 
       # The Tor path is feature-gated (pulls arti); a plain build never compiles it, so
       # verify it separately. Compile-only — the live circuit test is #[ignore]d.

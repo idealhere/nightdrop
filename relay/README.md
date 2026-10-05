@@ -1,10 +1,20 @@
 # Run your own Night Drop relay
 
-A Night Drop relay is a tiny, stateless **store-and-forward mailbox + rendezvous** service.
+A Night Drop relay is a tiny **store-and-forward mailbox + rendezvous** service.
 It exists so two people can pair by short code and so offline messages have somewhere to wait
 (up to 24h). Everything it holds is an **opaque, end-to-end-encrypted blob** under an unlinkable
-handle — it never sees keys, plaintext, identities, or addresses, and it keeps **no logs**. See
-`ARCHITECTURE.md` §6 and `docs/design/multi-relay-mailboxes.md` for the design.
+handle — it never sees message plaintext or E2E keys.
+
+This fork supports two ingress paths to the **same RelayCore/store**:
+
+- the original v3 onion service over Tor (anonymous at the relay application layer);
+- an optional clearnet HTTPS endpoint for reliability/latency.
+
+The HTTPS path is **not anonymous**. The hosting/network layer can observe client IP addresses,
+timing and traffic sizes even though message contents remain E2E-encrypted. Production application
+logs still keep no request bodies or plaintext. See `ARCHITECTURE.md` §6,
+`docs/design/multi-relay-mailboxes.md`, and
+`docs/design/https-primary-transport.md`.
 
 > For the big picture — the four ways relays reach a client, private vs. public relays, and the
 > signed directory — see **[`../RELAYS.md`](../RELAYS.md)**. This file is the hands-on run guide.
@@ -19,9 +29,10 @@ share one live relay.
 
 - A machine that can stay online (a $5 VPS, a Raspberry Pi at home, a spare box).
 - The Rust toolchain (`rustup`).
-- Outbound network access for Tor. **No inbound ports, no public IP, no domain, no TLS
-  certificate** — the relay publishes its **own v3 onion service** via embedded `arti`, so it's
-  reachable over Tor without any of that.
+- Outbound network access for Tor.
+- Onion-only operation still needs **no inbound ports, public IP, domain, or TLS certificate**.
+- To enable the fork's HTTPS fast path, add a domain/TLS reverse proxy on public port 443. The
+  Rust relay HTTP listener stays on loopback (default service config: `127.0.0.1:9080`).
 
 ## Start it
 
@@ -48,6 +59,7 @@ Environment toggles:
 | `NIGHTDROP_RELAY_STATE` | State/onion-key dir (default `relay-state`). Determines the stable address. |
 | `NIGHTDROP_RELAY_TUI`   | Run the live dashboard (metadata only — never blob bytes). |
 | `NIGHTDROP_RELAY_DEV`   | Dev flow-log to stdout + `relay.log` (metadata only). Leave **off** in production. |
+| `NIGHTDROP_RELAY_HTTP_BIND` | Optional clearnet HTTP ingress, normally `127.0.0.1:9080` behind TLS. Unset = onion-only. |
 
 ## Run it as a service (recommended)
 
@@ -70,6 +82,24 @@ The committed unit lives at [`relay/deploy/nightdrop-relay.service`](deploy/nigh
 (runs as a transient `DynamicUser` with a persisted `StateDirectory`, drops all capabilities,
 and sets neither `NIGHTDROP_RELAY_DEV` nor `NIGHTDROP_RELAY_TUI` — no logs, no dashboard). The
 `--user` mode generates the equivalent unit for the systemd *user* manager and enables linger.
+
+### HTTPS fast path (this fork)
+
+The committed service also binds the optional HTTP adapter to **loopback only**:
+
+```
+127.0.0.1:9080
+```
+
+Do not expose that plaintext listener to the internet. Terminate TLS on port 443 and proxy to
+loopback. A minimal Caddy example is committed as
+[`deploy/Caddyfile.https.example`](deploy/Caddyfile.https.example). The public client endpoint is
+then `https://your-relay.example/v1/relay`.
+
+The HTTP adapter calls the same `RelayCore::handle_line` as the onion/TCP path, so TTLs, mailbox
+limits, recall and the versioned request/response format stay identical. There is no second
+plaintext/message protocol.
+
 
 ### It watches itself (and will restart itself)
 
@@ -143,11 +173,14 @@ key verifies nothing), and nothing changes.
 
 ## What it does and doesn't see
 
-- **Sees:** opaque sealed blobs, unlinkable mailbox/rendezvous handles, blob sizes, TTLs, and the
-  fact that *someone* (an anonymous Tor client) posted or fetched. That's it.
-- **Never sees:** encryption keys, message plaintext, who is talking to whom, real identities, or
-  IP addresses (every client reaches it over Tor), and reaps expired blobs on a timer (server-side
-  24h time-bomb).
+- **Both paths:** RelayCore sees opaque sealed blobs, unlinkable mailbox/rendezvous handles, blob
+  sizes and TTLs. It never receives E2E private keys or message plaintext.
+- **Onion path:** the relay application receives the connection through Tor; the sender's real IP
+  is not exposed to RelayCore.
+- **HTTPS path:** this is deliberately **not anonymous**. The TLS terminator, hosting provider and
+  network can observe source IP addresses and timing. Application request-body logging is disabled
+  by design, but HTTPS must never be described to users as an anonymous route.
+- Expired blobs are reaped on a timer (server-side 24h time-bomb).
 - **Persists to disk** (in `NIGHTDROP_RELAY_STATE`): its onion key, and — by default — the
   **store-and-forward queue** (`queue.json`), so a restart or crash doesn't drop queued mail. Only
   the same **opaque, already-encrypted, time-boxed blobs under unlinkable handles** that were in

@@ -12,6 +12,8 @@
 //!   it keeps the `.onion` **stable** across restarts.
 //! - `NIGHTDROP_RELAY_DEV` — enable the **dev flow-log** (§11.9): one metadata-only line per
 //!   operation to stdout + `relay.log` (never blob bytes). Leave unset in production.
+//! - `NIGHTDROP_RELAY_HTTP_BIND` — optional clearnet HTTP ingress bind address, normally
+//!   `127.0.0.1:9080` behind a TLS reverse proxy. Disabled when unset.
 //!
 //! Operator subcommands (no Tor bootstrap):
 //! - `gen-directory-key` / `sign-directory` — the signed relay directory (§3.1).
@@ -19,6 +21,7 @@
 //!   (§3.2). Any authorized client (a `.auth` file under `<state>/authorized-clients/`) flips the
 //!   relay's onion to **restricted discovery**: only those clients can fetch its descriptor.
 
+mod http;
 mod tui;
 
 use std::path::Path;
@@ -113,6 +116,20 @@ fn main() -> anyhow::Result<()> {
         )
     };
     let core = Arc::new(base.with_directory(directory));
+
+    // Optional clearnet ingress for the HTTPS-primary fork. This is HTTP on loopback only by
+    // convention; production TLS terminates at Caddy/nginx on :443 and proxies to this listener.
+    // The adapter feeds the exact same versioned relay request into RelayCore, so no plaintext,
+    // identity key, or second mailbox protocol is introduced here.
+    if let Ok(bind) = std::env::var("NIGHTDROP_RELAY_HTTP_BIND") {
+        let bound = http::spawn(&bind, Arc::clone(&core)).context("bind HTTP relay ingress")?;
+        if !tui {
+            eprintln!(
+                "nightdrop-relay http ingress: {bound} (put TLS reverse proxy in front; clearnet is not anonymous)"
+            );
+        }
+    }
+
     let start = Instant::now();
 
     // If prior runs kept ending unreachable, plain restarts aren't helping — the guard set is

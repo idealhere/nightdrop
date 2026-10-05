@@ -136,7 +136,7 @@ fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
                 Ok(dialer) => dialer,
                 Err(error) => {
                     let message = format!("invalid HTTPS relay endpoint: {error}");
-                    std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())))
+                    std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {\n                        Err(anyhow::anyhow!(message.clone()))\n                    })
                 }
             };
             return RelayClient::with_dialer_for(addr, dialer);
@@ -145,7 +145,7 @@ fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
         {
             let message = "HTTPS relay support is not compiled into this build".to_string();
             let dialer: crate::relay_client::RelayDialer =
-                std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())));
+                std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {\n                        Err(anyhow::anyhow!(message.clone()))\n                    });
             return RelayClient::with_dialer_for(addr, dialer);
         }
     }

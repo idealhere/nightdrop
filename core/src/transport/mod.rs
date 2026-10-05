@@ -15,6 +15,7 @@ use crate::Result;
 
 pub mod client_auth;
 pub mod lan;
+pub mod relay_only;
 pub mod tcp;
 
 #[cfg(feature = "tor")]

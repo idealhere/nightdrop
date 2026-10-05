@@ -81,7 +81,9 @@ impl Transport for RelayOnlyTransport {
                 Ok(dialer) => dialer,
                 Err(error) => {
                     let message = format!("invalid HTTPS relay endpoint: {error}");
-                    std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {\n                        Err(anyhow::anyhow!(message.clone()))\n                    })
+                    std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {
+                        Err(anyhow::anyhow!(message.clone()))
+                    })
                 }
             });
         }
@@ -89,7 +91,7 @@ impl Transport for RelayOnlyTransport {
         #[cfg(not(feature = "https-relay"))]
         {
             let message = "HTTPS relay support is not compiled into this build".to_string();
-            Some(std::sync::Arc::new(move |_| {
+            Some(std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {
                 Err(anyhow::anyhow!(message.clone()))
             }))
         }

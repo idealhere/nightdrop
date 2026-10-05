@@ -56,7 +56,11 @@ arti-client = { version = "0.43", default-features = false, features = [
     "bridge-client", "pt-client",
 ], optional = true }
 tor-rtcompat = { version = "0.43", features = ["tokio", "rustls"], optional = true }
-rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+# Direct HTTPS relay fast path. Mozilla roots are compiled in so Android does not depend on a
+# platform CA API, and URL parsing is kept out of the crypto/message layers.
+webpki-roots = { version = "1", optional = true }
+url = { version = "2", optional = true }
 tor-hsservice = { version = "0.43", optional = true }
 tor-cell = { version = "0.43", optional = true }
 # Onion-service client authorization (restricted discovery, TODO #22): the config builders come
@@ -81,6 +85,11 @@ futures = { version = "0.3", optional = true }
 libsqlite3-sys = { version = "0.37", features = ["bundled"], optional = true }
 
 [features]
+# Direct clearnet HTTPS relay delivery. This is encrypted in transit but NOT anonymous: the
+# relay/network can observe the client IP and timing. Kept separate from the Tor feature so the
+# fast path can be built/tested independently.
+https-relay = ["dep:rustls", "dep:webpki-roots", "dep:url"]
+
 # Enables the embedded Tor (arti) transport. Off by default so the core builds fast and
 # the bridge/tests don't pull the (large) arti dependency tree.
 tor = ["dep:arti-client", "dep:tor-rtcompat", "dep:tor-hsservice", "dep:tor-cell", "dep:safelog", "dep:tokio", "dep:futures", "dep:libsqlite3-sys", "dep:rustls", "dep:tor-hscrypto", "dep:tor-keymgr", "dep:tor-llcrypto", "dep:tor-config-path", "dep:tor-config", "dep:tracing-subscriber"]

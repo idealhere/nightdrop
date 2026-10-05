@@ -339,6 +339,13 @@ impl Node {
     /// launch would provoke a pointless teardown. Only when nothing at all answers — no peer, no
     /// relay — after [`DIRECT_WEDGED_THRESHOLD`] tries is this device the suspect.
     pub(crate) fn direct_path_wedged(&self) -> bool {
+        if self.transport.is_relay_only() {
+            // There is no meaningful "direct peer" signal in HTTPS relay-only mode. Reuse this
+            // existing FFI health bit for a stronger observation instead: several complete primary
+            // mailbox-drain rounds have failed. This lets a fresh inviter fall back to Tor even
+            // before anyone has sent a chat message.
+            return self.primary_relay_failures >= DIRECT_WEDGED_THRESHOLD;
+        }
         !self.direct_ever_succeeded
             && !self.relay_ever_succeeded
             && self.direct_failures >= DIRECT_WEDGED_THRESHOLD
@@ -1192,6 +1199,14 @@ impl Node {
         harvest: RelayHarvest,
     ) -> Result<Vec<(String, String)>> {
         let me = self.identity_key();
+        if let Some(reachable) = harvest.primary_reachable {
+            if reachable {
+                self.primary_relay_failures = 0;
+                self.relay_ever_succeeded = true;
+            } else {
+                self.primary_relay_failures = self.primary_relay_failures.saturating_add(1);
+            }
+        }
         // Fold each addressed relay's reachability into relay-health (the "your relay is offline"
         // warning); the primary is untracked (baked-in default).
         for (addr, reachable) in harvest.reachability {

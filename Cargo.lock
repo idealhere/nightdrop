@@ -2766,7 +2766,9 @@ dependencies = [
  "tor-llcrypto",
  "tor-rtcompat",
  "tracing-subscriber",
+ "url",
  "vodozemac",
+ "webpki-roots",
  "webtunnel-client",
  "zeroize",
 ]

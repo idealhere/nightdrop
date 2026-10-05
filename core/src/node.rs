@@ -118,10 +118,38 @@ fn relay_unwrap(own_identity_key: &str, blob: &[u8]) -> Result<Vec<u8>> {
     crate::storage::open(&relay_wrap_key(own_identity_key), blob)
 }
 
-/// Build a [`RelayClient`] for an arbitrary relay address: over Tor via the transport's dialer
-/// (anonymized), or a direct connection when the transport can't dial relays by address
-/// (tests/TCP). Free fn (not a method) so call sites keep disjoint field borrows (#17).
+/// Build a [`RelayClient`] for an arbitrary relay address.
+///
+/// HTTPS addresses are always reached by the direct TLS relay client, independent of the current
+/// peer transport. This matters after an HTTPS-first client has lazily bootstrapped Tor: operator
+/// / recipient-advertised HTTPS backup relays must keep working instead of being handed to arti as
+/// if they were onion names.
+///
+/// Non-HTTPS addresses use the transport's relay dialer when available (Tor anonymizes onion
+/// relays), or plain TCP for local/tests. A malformed HTTPS URL becomes an erroring dialer rather
+/// than falling through to plain TCP, which would risk handing URL text to the system resolver.
 fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
+    if addr.starts_with("https://") {
+        #[cfg(feature = "https-relay")]
+        {
+            let dialer = match crate::relay_client::https::https_relay_dialer(addr) {
+                Ok(dialer) => dialer,
+                Err(error) => {
+                    let message = format!("invalid HTTPS relay endpoint: {error}");
+                    std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())))
+                }
+            };
+            return RelayClient::with_dialer_for(addr, dialer);
+        }
+        #[cfg(not(feature = "https-relay"))]
+        {
+            let message = "HTTPS relay support is not compiled into this build".to_string();
+            let dialer: crate::relay_client::RelayDialer =
+                std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())));
+            return RelayClient::with_dialer_for(addr, dialer);
+        }
+    }
+
     match transport.relay_dialer(addr) {
         Some(dialer) => RelayClient::with_dialer_for(addr, dialer),
         None => RelayClient::new(addr),

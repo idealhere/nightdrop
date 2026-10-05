@@ -91,7 +91,9 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
         return Ok(());
     }
 
-    let mut parts = request_line.trim_end_matches(|c| c == '\r' || c == '\n').split_whitespace();
+    let mut parts = request_line
+        .trim_end_matches(|c| c == '\r' || c == '\n')
+        .split_whitespace();
     let method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("");
     let version = parts.next().unwrap_or("");
@@ -151,13 +153,9 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
     }
 
     match (method, path) {
-        ("GET", "/healthz") => write_reader_response(
-            reader,
-            200,
-            "OK",
-            "text/plain; charset=utf-8",
-            b"ok\n",
-        ),
+        ("GET", "/healthz") => {
+            write_reader_response(reader, 200, "OK", "text/plain; charset=utf-8", b"ok\n")
+        }
         ("POST", "/v1/relay") => {
             if transfer_encoding {
                 return write_reader_response(
@@ -205,13 +203,7 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
             // One protocol definition only: RelayCore parses, version-checks, enforces limits,
             // mutates the mailbox store, and serializes the response exactly as it does over Tor.
             let response = core.handle_line(body);
-            write_reader_response(
-                reader,
-                200,
-                "OK",
-                "application/json",
-                response.as_bytes(),
-            )
+            write_reader_response(reader, 200, "OK", "application/json", response.as_bytes())
         }
         ("POST", _) | ("GET", _) => write_reader_response(
             reader,
@@ -230,7 +222,11 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
     }
 }
 
-fn read_header_line<R: BufRead>(reader: &mut R, out: &mut String, remaining: usize) -> io::Result<()> {
+fn read_header_line<R: BufRead>(
+    reader: &mut R,
+    out: &mut String,
+    remaining: usize,
+) -> io::Result<()> {
     if remaining == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

@@ -26,6 +26,7 @@ class RustNightdropCore extends NightdropCore {
   rust.NightdropCore? _core;
   StreamSubscription<rust.AppEvent>? _events;
   bool _networked = false;
+  bool _httpsRelay = false;
   bool _booting = true;
   // Lifecycle + notification bookkeeping: while backgrounded, new received messages/requests
   // raise a notification. Counts are baselined after the first load so existing history
@@ -515,13 +516,17 @@ class RustNightdropCore extends NightdropCore {
 
   // --- Transport configuration -------------------------------------------------------
   //
-  // Networked mode (real two-client comms over TCP + a shared relay) is what lets two
-  // physical devices talk. It is selected by NIGHTDROP_LISTEN + NIGHTDROP_RELAY, resolved from
-  // either a compile-time --dart-define (the only option on Android) or, on desktop, a
-  // process env var. If neither is set we fall back to the in-process demo core.
-  // Tor mode (NIGHTDROP_TOR=1) is the production WAN path: each device bootstraps an embedded
-  // Tor client and gets a reachable .onion, so peers pair (by QR — no relay needed) and
-  // chat over any network including LTE. It takes precedence over TCP networked mode.
+  // Reliability-first fork:
+  //   NIGHTDROP_HTTPS_RELAY=https://relay.example/v1/relay
+  // selects the fast WAN path first. It keeps the existing E2E/session crypto but sends sealed
+  // relay requests directly over TLS/443, so it is encrypted but NOT anonymous (the relay host /
+  // network can observe source IP and timing). It starts without waiting for Tor.
+  //
+  // Legacy networked mode (NIGHTDROP_LISTEN + NIGHTDROP_RELAY) remains for desktop/TCP tests.
+  // Tor mode (NIGHTDROP_TOR=1) remains the anonymity path. A bare HTTPS relay takes precedence on
+  // startup; later failover can upgrade the same logical relay to its onion endpoint.
+  static const String _defineHttpsRelay =
+      String.fromEnvironment('NIGHTDROP_HTTPS_RELAY');
   static const String _defineTor = String.fromEnvironment('NIGHTDROP_TOR');
   static const String _defineListen = String.fromEnvironment('NIGHTDROP_LISTEN');
   static const String _defineRelay = String.fromEnvironment('NIGHTDROP_RELAY');
@@ -542,6 +547,8 @@ class RustNightdropCore extends NightdropCore {
     return (env != null && env.isNotEmpty) ? env : null;
   }
 
+  static String? get _httpsRelayAddr =>
+      _config('NIGHTDROP_HTTPS_RELAY', _defineHttpsRelay);
   static String? get _listenAddr => _config('NIGHTDROP_LISTEN', _defineListen);
   static String? get _relayAddr => _config('NIGHTDROP_RELAY', _defineRelay);
   static bool get _torEnabled {
@@ -931,7 +938,48 @@ class RustNightdropCore extends NightdropCore {
       // and a second bootstrap over the same (still-locked) Tor state dir would fail no matter
       // how many times the user pressed "Try again".
       await _closeCore();
-      if (_torEnabled) {
+      final httpsRelay = _httpsRelayAddr;
+      if (httpsRelay != null) {
+        // Fast WAN restore: use the existing generated newTor FFI entry point, but a bare
+        // https:// relay is recognized by Rust as relay-only mode and does NOT bootstrap Tor.
+        // This keeps persistence compatible without regenerating the bridge merely to add a new
+        // constructor. E2E encryption is unchanged; only network metadata exposure differs.
+        if (await isStoreLocked() && !storeUnlocked) {
+          _lockedOut = true;
+          _booting = false;
+          notifyListeners();
+          return;
+        }
+        final key = await _readStoreKey();
+        final statePath = await _stateFilePath();
+        final hasState = File(statePath).existsSync();
+        if (key != null && hasState) {
+          try {
+            _core = await rust.NightdropCore.newTor(
+              stateDir: await _torStateDir(),
+              relayAddr: httpsRelay,
+              persistPath: statePath,
+              persistKey: key,
+            );
+            _httpsRelay = true;
+            _tor = false;
+            _networked = false;
+            _events = rust.subscribe().listen(_onEvent);
+            final id = await _core!.identity();
+            _identity = Identity(id: id.id);
+            await _refresh();
+          } catch (_) {
+            await _closeCore();
+            _identity = null;
+            // A saved state exists and failed to open through the configured WAN path. Preserve
+            // the same recovery behavior as Tor: never reinterpret that as a fresh install.
+            _loadError = true;
+          }
+        } else if (key == null && hasState) {
+          _identity = null;
+          _loadError = true;
+        }
+      } else if (_torEnabled) {
         // A locked store has no readable key yet, and the check below would then see
         // "no key + saved state" and fall through to onboarding — which is precisely the
         // overwrite-recoverable-data path the comment there warns about. Stop and let the UI
@@ -1104,7 +1152,20 @@ class RustNightdropCore extends NightdropCore {
     _abandonExistingStateApproved = false;
     final listen = _listenAddr;
     final relay = _relayAddr;
-    if (_torEnabled) {
+    final httpsRelay = _httpsRelayAddr;
+    if (httpsRelay != null) {
+      final key = await _ensureStoreKey();
+      final statePath = await _stateFilePath();
+      _core = await rust.NightdropCore.newTor(
+        stateDir: await _torStateDir(),
+        relayAddr: httpsRelay,
+        persistPath: statePath,
+        persistKey: key,
+      );
+      _httpsRelay = true;
+      _tor = false;
+      _networked = false;
+    } else if (_torEnabled) {
       // Embedded Tor: a reachable .onion, WAN-capable. Bootstrapping takes a while.
       // On mobile, arti needs an explicit writable state dir (the app's support dir). A
       // persistence key (held in the OS secure store) makes the identity survive restarts.
@@ -1156,8 +1217,9 @@ class RustNightdropCore extends NightdropCore {
       }
       return PairingInvite(shortCode: code, qrPayload: invite.qrPayload);
     }
-    if (_networked) {
-      // Real rendezvous short code (no QR); the peer joins with this code.
+    if (_networked || _httpsRelay) {
+      // Real rendezvous short code (no QR); the peer joins with this code. In HTTPS relay-only
+      // mode the SPAKE2 rendezvous and the first-contact Hello both use the encrypted mailbox.
       final code = await _core!.createShortCodeInvite();
       return PairingInvite(shortCode: code, qrPayload: '');
     }
@@ -1173,7 +1235,7 @@ class RustNightdropCore extends NightdropCore {
     final rust.Contact created;
     if (code.startsWith('nightdrop://')) {
       created = await _core!.connectViaQr(payload: code);
-    } else if (_networked || _tor) {
+    } else if (_networked || _httpsRelay || _tor) {
       // A bare `slot-secret-words` short code: run the SPAKE2 rendezvous handshake over the
       // relay. Works over Tor too — the relay is reached through the onion transport, so the
       // secret words never leave the device and the rendezvous only ever sees ciphertext.
@@ -1198,7 +1260,8 @@ class RustNightdropCore extends NightdropCore {
   Future<void> saveBackup(String path) => _core!.saveBackup(path: path);
 
   @override
-  Future<bool> onionReady() async => _core == null ? true : await _core!.onionReady();
+  Future<bool> onionReady() async =>
+      !_tor || _core == null ? true : await _core!.onionReady();
 
   @override
   Future<List<int>> backupBytes() => _core!.backupBytes();
@@ -1358,6 +1421,7 @@ class RustNightdropCore extends NightdropCore {
     _messages.clear();
     _pending.clear();
     _networked = false;
+    _httpsRelay = false;
     _tor = false;
     _countsReady = false;
     notifyListeners(); // _Root -> onboarding now

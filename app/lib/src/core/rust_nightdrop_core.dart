@@ -463,6 +463,7 @@ class RustNightdropCore extends NightdropCore {
     final id = await _core!.identity();
     _identity = Identity(id: id.id);
     await _refresh();
+    await _applyBuiltInRelayFanout();
     unawaited(_scheduleGuardHeal(statePath, key));
     notifyListeners();
   }
@@ -579,6 +580,8 @@ class RustNightdropCore extends NightdropCore {
   // startup; later failover can upgrade the same logical relay to its onion endpoint.
   static const String _defineHttpsRelay =
       String.fromEnvironment('NIGHTDROP_HTTPS_RELAY');
+  static const String _defineHttpsRelayBackup =
+      String.fromEnvironment('NIGHTDROP_HTTPS_RELAY_BACKUP');
   static const String _defineTor = String.fromEnvironment('NIGHTDROP_TOR');
   static const String _defineListen = String.fromEnvironment('NIGHTDROP_LISTEN');
   static const String _defineRelay = String.fromEnvironment('NIGHTDROP_RELAY');
@@ -601,6 +604,8 @@ class RustNightdropCore extends NightdropCore {
 
   static String? get _httpsRelayAddr =>
       _config('NIGHTDROP_HTTPS_RELAY', _defineHttpsRelay);
+  static String? get _httpsRelayBackupAddr =>
+      _config('NIGHTDROP_HTTPS_RELAY_BACKUP', _defineHttpsRelayBackup);
   static String? get _listenAddr => _config('NIGHTDROP_LISTEN', _defineListen);
   static String? get _relayAddr => _config('NIGHTDROP_RELAY', _defineRelay);
   static bool get _torEnabled {
@@ -611,6 +616,22 @@ class RustNightdropCore extends NightdropCore {
   static bool get _diagEnabled {
     final v = _config('NIGHTDROP_DIAG', _defineDiag)?.toLowerCase();
     return v == '1' || v == 'true' || v == 'yes';
+  }
+
+  /// Apply the operator-baked independent backup relay through Night Drop's existing multi-relay
+  /// fan-out. This is a DIFFERENT store from the primary, so it must never be placed in the
+  /// primary's HTTPS|onion endpoint bundle. The core advertises it to contacts and drains it
+  /// separately; identical sealed frames are deduplicated on receipt.
+  Future<void> _applyBuiltInRelayFanout() async {
+    final core = _core;
+    final backup = _httpsRelayBackupAddr;
+    final primary = _httpsRelayAddr;
+    if (core == null || backup == null || backup == primary) return;
+
+    final current = await core.myRelays();
+    if (current.contains(backup)) return;
+    await core.setMyRelays(relays: [...current, backup]);
+    await rust.diagNote(line: 'transport: independent HTTPS backup relay enabled');
   }
 
   static const String _diagLogName = 'nightdrop-diag.log';
@@ -1026,6 +1047,7 @@ class RustNightdropCore extends NightdropCore {
             final id = await _core!.identity();
             _identity = Identity(id: id.id);
             await _refresh();
+            await _applyBuiltInRelayFanout();
             unawaited(_scheduleHttpsFallback(statePath, key));
           } catch (_) {
             await _closeCore();
@@ -1250,6 +1272,9 @@ class RustNightdropCore extends NightdropCore {
     _events = rust.subscribe().listen(_onEvent);
     final id = await _core!.identity();
     _identity = Identity(id: id.id);
+    if (_httpsRelay) {
+      await _applyBuiltInRelayFanout();
+    }
     // Settle the screenshot capability before anyone pairs, so the first contact is announced to
     // on pairing rather than left reading our silence as "they'd be told" (#1).
     unawaited(_announceAppVersion());

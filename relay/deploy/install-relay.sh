@@ -149,6 +149,7 @@ install_user() {
     echo "# degradation still refreshes hands-off (see the canonical unit for the rationale)."
     echo "RuntimeMaxSec=1w"
     echo "Environment=NIGHTDROP_RELAY_STATE=$STATE_DIR"
+    echo "Environment=NIGHTDROP_RELAY_HTTP_BIND=127.0.0.1:9080"
     echo "WorkingDirectory=$STATE_DIR"
     echo "# Hardening (user-manager subset of the system unit)."
     echo "NoNewPrivileges=yes"

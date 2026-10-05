@@ -192,6 +192,8 @@ pub(crate) struct DrainJob {
 pub(crate) struct RelayHarvest {
     blobs: Vec<Vec<u8>>,
     reachability: Vec<(String, bool)>,
+    /// Whether any fragment on the baked-in primary relay answered this round.
+    primary_reachable: Option<bool>,
     /// The plan's settling epoch, if every one of its jobs on every relay answered this round.
     settled: Option<u64>,
 }
@@ -282,9 +284,14 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
         skipped_jobs,
         blobs.len()
     );
+    let primary_reachable = tally
+        .iter()
+        .find(|(addr, _, _)| addr.is_none())
+        .map(|(_, ok, _)| *ok > 0);
     RelayHarvest {
         blobs,
         reachability: answered,
+        primary_reachable,
         settled: plan.settles.filter(|_| settle_ok),
     }
 }
@@ -661,6 +668,10 @@ pub struct Node {
     /// peer is offline" and "this device cannot reach the network": the relay is dialled over the
     /// same Tor path, so if it answers, our circuits work and an unreachable peer is their problem.
     relay_ever_succeeded: bool,
+    /// Consecutive relay-drain rounds where the primary answered no fragment. Used only by the
+    /// relay-only HTTPS transport to trigger the lazy Tor/WebTunnel fallback without requiring a
+    /// user to send several messages first. A successful primary round resets it.
+    primary_relay_failures: u32,
     /// `(peer, id)` for every user message we have **accepted**, owed a [`Frame::Delivered`].
     ///
     /// Recorded by the frame handlers themselves, at the point of acceptance, because that is the
@@ -935,6 +946,7 @@ impl Node {
             direct_failures: 0,
             direct_ever_succeeded: false,
             relay_ever_succeeded: false,
+            primary_relay_failures: 0,
         }
     }
 

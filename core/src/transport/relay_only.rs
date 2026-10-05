@@ -74,13 +74,25 @@ impl Transport for RelayOnlyTransport {
         if !addr.starts_with("https://") {
             return None;
         }
-        Some(match crate::relay_client::https::https_relay_dialer(addr) {
-            Ok(dialer) => dialer,
-            Err(error) => {
-                let message = format!("invalid HTTPS relay endpoint: {error}");
-                std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())))
-            }
-        })
+
+        #[cfg(feature = "https-relay")]
+        {
+            return Some(match crate::relay_client::https::https_relay_dialer(addr) {
+                Ok(dialer) => dialer,
+                Err(error) => {
+                    let message = format!("invalid HTTPS relay endpoint: {error}");
+                    std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())))
+                }
+            });
+        }
+
+        #[cfg(not(feature = "https-relay"))]
+        {
+            let message = "HTTPS relay support is not compiled into this build".to_string();
+            Some(std::sync::Arc::new(move |_| {
+                Err(anyhow::anyhow!(message.clone()))
+            }))
+        }
     }
 
     /// There is deliberately no directly reachable peer address.

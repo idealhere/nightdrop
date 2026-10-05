@@ -821,7 +821,10 @@ fn wan_relay_from_spec(
         } else {
             transport.make_relay_dialer(endpoint.clone())
         };
-        routes.push(FailoverRoute::new(format!("endpoint-{}", index + 1), dialer));
+        routes.push(FailoverRoute::new(
+            format!("endpoint-{}", index + 1),
+            dialer,
+        ));
     }
 
     let display_addr = endpoints[0].clone();
@@ -3977,7 +3980,8 @@ mod tests {
         a.poll_once().unwrap();
         b.poll_once().unwrap();
 
-        b.send_message(&b_contact, "https-first mailbox path").unwrap();
+        b.send_message(&b_contact, "https-first mailbox path")
+            .unwrap();
         // Non-synchronous transports defer delivery off the UI/core-lock path. The sender tick
         // queues the sealed frame; the receiver tick drains and decrypts it.
         b.poll_once().unwrap();

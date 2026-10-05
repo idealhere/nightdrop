@@ -784,6 +784,55 @@ impl Inner {
     }
 }
 
+#[cfg(feature = "tor")]
+fn wan_relay_from_spec(
+    transport: &crate::transport::tor::TorTransport,
+    spec: String,
+) -> Result<RelayClient> {
+    use crate::relay_client::failover::{failover_dialer, FailoverRoute};
+
+    // A vertical bar separates multiple NETWORK ENDPOINTS of the SAME logical relay/store:
+    //   https://relay.example/v1/relay|abcdef....onion
+    // It must never be used for independent relay stores; those need the existing multi-relay
+    // fan-out so destructive take/fetch operations remain correct.
+    let endpoints: Vec<String> = spec
+        .split('|')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if endpoints.is_empty() {
+        anyhow::bail!("relay endpoint spec is empty");
+    }
+
+    let mut routes = Vec::with_capacity(endpoints.len());
+    for (index, endpoint) in endpoints.iter().enumerate() {
+        let dialer = if endpoint.starts_with("https://") {
+            #[cfg(feature = "https-relay")]
+            {
+                crate::relay_client::https::https_relay_dialer(endpoint)?
+            }
+            #[cfg(not(feature = "https-relay"))]
+            {
+                anyhow::bail!(
+                    "this build has an HTTPS relay endpoint but was compiled without --features https-relay"
+                )
+            }
+        } else {
+            transport.make_relay_dialer(endpoint.clone())
+        };
+        routes.push(FailoverRoute::new(format!("endpoint-{}", index + 1), dialer));
+    }
+
+    let display_addr = endpoints[0].clone();
+    let dialer = if routes.len() == 1 {
+        routes.remove(0).dialer
+    } else {
+        failover_dialer(routes)
+    };
+    Ok(RelayClient::with_dialer_for(display_addr, dialer))
+}
+
 /// The application core. State lives behind a mutex so a background poller can drive the
 /// live (real-transport) flow concurrently with UI calls.
 ///
@@ -1060,11 +1109,12 @@ impl NightdropCore {
                     write_onion_key(dir, key, &material)?;
                 }
             }
-            // Reach the relay over Tor: build a dialer from the transport's arti client before it
-            // is moved into the node (a relay `.onion` can't be reached over plain TCP).
-            let relay = relay_addr.map(|onion| {
-                RelayClient::with_dialer_for(onion.clone(), transport.make_relay_dialer(onion))
-            });
+            // Build the relay before the transport is moved into the node. The spec may name the
+            // same logical relay through HTTPS first and its onion endpoint second, separated by
+            // '|'. Endpoint failover is safe only because both paths reach the same RelayCore/store.
+            let relay = relay_addr
+                .map(|spec| wan_relay_from_spec(&transport, spec))
+                .transpose()?;
             // Restore from the existing file, or start a fresh identity.
             let restore = persist
                 .as_ref()
@@ -1158,10 +1208,10 @@ impl NightdropCore {
                 // identity is read from there for this run and sealed afterwards.
                 None,
             )?;
-            // Build the relay dialer over Tor before the transport is moved into the node.
-            let relay = relay_addr.map(|onion| {
-                RelayClient::with_dialer_for(onion.clone(), transport.make_relay_dialer(onion))
-            });
+            // Rebuild the same logical relay endpoint bundle before moving the transport.
+            let relay = relay_addr
+                .map(|spec| wan_relay_from_spec(&transport, spec))
+                .transpose()?;
             // Rebuild the node from the same decrypted state (pickles decrypt with bkey).
             let mut me = Node::restore(&state, Box::new(transport), &bkey)?;
             me.set_require_authorization(true);
@@ -1244,12 +1294,9 @@ impl NightdropCore {
                 // identity is read from there for this run and sealed afterwards.
                 None,
             )?;
-            // Build the relay dialer before the transport is moved into the node; it both
+            // Build the same logical relay endpoint bundle before moving the transport; it both
             // fetches the backup and stays attached for store-and-forward afterwards.
-            let relay = RelayClient::with_dialer_for(
-                relay_addr.clone(),
-                transport.make_relay_dialer(relay_addr),
-            );
+            let relay = wan_relay_from_spec(&transport, relay_addr)?;
             let mut me = Node::restore_from_server(&relay, &password, Box::new(transport))?;
             me.set_require_authorization(true);
             if let Some(sd) = &state_dir {

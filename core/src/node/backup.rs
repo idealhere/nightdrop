@@ -715,3 +715,62 @@ impl Node {
         Self::restore_from_backup(&blob, password, transport)
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_sealed_sends_survive_export_restore() {
+        let net = crate::transport::MemoryNetwork::new();
+        let mut node = Node::new(Box::new(net.endpoint("pending-a")));
+        node.pending_sends.push(PendingRelaySend {
+            contact_id: "contact-a".into(),
+            msg_id: "msg-a".into(),
+            bytes: vec![1, 2, 3, 4],
+        });
+        node.pending_relay.push(PendingRelaySend {
+            contact_id: "contact-b".into(),
+            msg_id: "msg-b".into(),
+            bytes: vec![5, 6, 7, 8],
+        });
+        // A defensive duplicate across the two queues must be persisted only once.
+        node.pending_relay.push(PendingRelaySend {
+            contact_id: "contact-a".into(),
+            msg_id: "msg-a".into(),
+            bytes: vec![1, 2, 3, 4],
+        });
+
+        let key = [7u8; 32];
+        let state = node.export(&key);
+        assert_eq!(state.pending_sends.len(), 2);
+
+        let restored =
+            Node::restore(&state, Box::new(net.endpoint("pending-restored")), &key).unwrap();
+        assert!(restored.pending_relay.is_empty());
+        assert_eq!(restored.pending_sends.len(), 2);
+
+        let mut got: Vec<(String, String, Vec<u8>)> = restored
+            .pending_sends
+            .iter()
+            .map(|p| (p.contact_id.clone(), p.msg_id.clone(), p.bytes.clone()))
+            .collect();
+        got.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            got,
+            vec![
+                (
+                    "contact-a".to_string(),
+                    "msg-a".to_string(),
+                    vec![1, 2, 3, 4],
+                ),
+                (
+                    "contact-b".to_string(),
+                    "msg-b".to_string(),
+                    vec![5, 6, 7, 8],
+                ),
+            ]
+        );
+    }
+}

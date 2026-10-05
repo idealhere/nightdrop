@@ -1123,6 +1123,32 @@ impl NightdropCore {
         persist_path: Option<String>,
         persist_key: Option<String>,
     ) -> Result<NightdropCore> {
+        // Reliability-first fork: the existing FFI method is also the mobile entry point for a
+        // direct HTTPS relay. Reusing this signature avoids shipping stale generated bindings while
+        // preserving the persistence arguments Android already passes. A bare https:// endpoint
+        // means "relay-only fast path"; a bundle containing '|' still boots Tor because it names
+        // HTTPS + onion endpoints of the SAME logical relay and needs the onion fallback.
+        if relay_addr
+            .as_deref()
+            .is_some_and(|addr| addr.starts_with("https://") && !addr.contains('|'))
+        {
+            #[cfg(feature = "https-relay")]
+            {
+                return Self::new_https_relay(
+                    relay_addr.expect("checked above"),
+                    persist_path,
+                    persist_key,
+                );
+            }
+            #[cfg(not(feature = "https-relay"))]
+            {
+                let _ = (state_dir, persist_path, persist_key);
+                anyhow::bail!(
+                    "this build was compiled without HTTPS relay support (rebuild with --features https-relay)"
+                )
+            }
+        }
+
         #[cfg(feature = "tor")]
         {
             retire_previous_tor_core();

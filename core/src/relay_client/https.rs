@@ -271,7 +271,8 @@ mod tests {
 
     #[test]
     fn reads_content_length_response() {
-        let raw = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\nok\n\n";
+        let raw =
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\nok\n\n";
         let mut reader = Cursor::new(raw.as_slice());
         assert_eq!(read_http_response(&mut reader).unwrap(), "ok\n\n");
     }

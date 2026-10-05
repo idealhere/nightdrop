@@ -114,7 +114,13 @@ pub fn failover_dialer(routes: Vec<FailoverRoute>) -> RelayDialer {
 
             ready
                 .into_iter()
-                .map(|i| (i, routes[i].route.name.clone(), Arc::clone(&routes[i].route.dialer)))
+                .map(|i| {
+                    (
+                        i,
+                        routes[i].route.name.clone(),
+                        Arc::clone(&routes[i].route.dialer),
+                    )
+                })
                 .collect()
         };
 
@@ -172,7 +178,10 @@ mod tests {
         assert_eq!(dial(request).unwrap(), "response");
 
         let seen = seen.lock().unwrap();
-        assert_eq!(seen.as_slice(), &[format!("a:{request}"), format!("b:{request}")]);
+        assert_eq!(
+            seen.as_slice(),
+            &[format!("a:{request}"), format!("b:{request}")]
+        );
     }
 
     #[test]
@@ -211,9 +220,8 @@ mod tests {
 
     #[test]
     fn reports_each_attempt_when_all_routes_fail() {
-        let fail = |why: &'static str| -> RelayDialer {
-            Arc::new(move |_| Err(anyhow::anyhow!(why)))
-        };
+        let fail =
+            |why: &'static str| -> RelayDialer { Arc::new(move |_| Err(anyhow::anyhow!(why))) };
         let dial = failover_dialer(vec![
             FailoverRoute::new("https-a", fail("a down")),
             FailoverRoute::new("https-b", fail("b down")),

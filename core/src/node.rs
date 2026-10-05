@@ -604,18 +604,15 @@ pub struct Node {
     /// the "your relay is offline — add a backup" warning. Absent = not yet probed (treated as up).
     relay_reachable: std::collections::HashMap<String, bool>,
     /// Sent messages that reached neither the peer directly nor any relay yet — typically because
-    /// arti's Tor circuits were still cold when the user hit send. Re-queued on every relay poll
-    /// (which also warms arti) until a relay accepts the copy, so a message composed during Tor
-    /// warm-up still gets delivered instead of silently failing. In-memory only; a restart drops
-    /// the retry (the message stays "queued" in history), and the common case — app kept open
-    /// through the ~warm-up window — recovers on its own.
+    /// the active route was unavailable when the user hit send. Re-queued on every relay poll until
+    /// a relay accepts the exact sealed frame. Persisted together with pending_sends so a restart or
+    /// HTTPS→Tor transport rebuild retries the same ciphertext without advancing the ratchet again.
     pending_relay: Vec<PendingRelaySend>,
-    /// Messages composed while a **non-synchronous** transport (Tor) is in use: [`Node::send`]
-    /// seals + stores them "queued" and defers the network here so composing never blocks the UI
-    /// on a dial. The poller drains this via [`plan_pending_sends`](Self::plan_pending_sends),
-    /// attempting direct-peer delivery with relay fallback. In-memory only, and drained on the very
-    /// next poll tick (~80 ms), so a restart in that window just leaves the message "queued" — the
-    /// same recovery profile as [`pending_relay`](Self::pending_relay).
+    /// Messages composed while a non-synchronous transport is in use: Node::send seals + stores
+    /// them "queued" and defers network I/O so composing never blocks the UI on a dial. The poller
+    /// drains this via plan_pending_sends, attempting direct delivery with relay fallback. The exact
+    /// sealed bytes are persisted until an outcome is applied, so a process/core rebuild cannot
+    /// strand a ratchet-advanced message.
     pending_sends: Vec<PendingRelaySend>,
     /// Authenticated `Closed` signals (chat deletes, §11.6) that reached neither the peer nor any
     /// relay when the chat was torn down (arti still cold, or the relay briefly unreachable). Unlike

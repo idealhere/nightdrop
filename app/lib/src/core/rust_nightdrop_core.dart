@@ -435,6 +435,58 @@ class RustNightdropCore extends NightdropCore {
     }
   }
 
+  /// Upgrade an HTTPS-first session to the Tor transport only after the fast path has shown
+  /// positive failure evidence. The same encrypted state file/identity is reopened, and the
+  /// primary relay is expressed as two endpoints of ONE logical RelayCore/store:
+  /// HTTPS first, then its onion endpoint. Independent relay stores must never be put in this
+  /// bundle; those use Night Drop's existing fan-out/deduplication instead.
+  Future<void> _switchHttpsToTorFallback(String statePath, String key) async {
+    final https = _httpsRelayAddr;
+    final onion = _relayAddr;
+    final stateDir = await _torStateDir();
+    if (https == null || onion == null || stateDir == null) return;
+
+    _httpsFallbackDone = true;
+    await rust.diagNote(
+        line: 'transport: HTTPS path failed — switching to Tor/WebTunnel fallback');
+    await _closeCore();
+    _core = await rust.NightdropCore.newTor(
+      stateDir: stateDir,
+      relayAddr: '$https|$onion',
+      persistPath: statePath,
+      persistKey: key,
+    );
+    _httpsRelay = true; // relay still prefers HTTPS when it recovers
+    _tor = true; // peer path + onion fallback are now available
+    _networked = false;
+    _events = rust.subscribe().listen(_onEvent);
+    final id = await _core!.identity();
+    _identity = Identity(id: id.id);
+    await _refresh();
+    unawaited(_scheduleGuardHeal(statePath, key));
+    notifyListeners();
+  }
+
+  /// Watch the existing end-to-end liveness signal while running HTTPS-only. In relay-only mode
+  /// every direct peer send fails locally by design; `directPathWedged` becomes true only after
+  /// several such sends AND no relay operation has ever succeeded. That makes it a conservative
+  /// trigger: an offline contact with a healthy HTTPS relay does not switch transports.
+  Future<void> _scheduleHttpsFallback(String statePath, String key) async {
+    if (!_httpsRelay || _tor || _httpsFallbackDone || _relayAddr == null) return;
+    final core = _core;
+    while (!_httpsFallbackDone &&
+        _httpsRelay &&
+        !_tor &&
+        identical(_core, core) &&
+        core != null) {
+      await Future.delayed(_httpsFallbackRecheck);
+      if (await core.directPathWedged()) {
+        await _switchHttpsToTorFallback(statePath, key);
+        return;
+      }
+    }
+  }
+
   /// Reset the entry-guard state and rebuild the core on fresh guards, keeping the `.onion`
   /// identity. Shared by the automatic heal and the manual [resetTorConnection] action.
   Future<void> _resetTorConnection(String statePath, String key) async {
@@ -902,6 +954,11 @@ class RustNightdropCore extends NightdropCore {
   // At most one automatic guard-heal per launch, so a genuinely offline device can't loop.
   bool _guardHealDone = false;
 
+  // HTTPS-first starts without Tor for fast startup. If the fast path repeatedly fails and an
+  // onion endpoint for the same logical relay was baked into the app, switch to Tor once.
+  static const _httpsFallbackRecheck = Duration(seconds: 10);
+  bool _httpsFallbackDone = false;
+
   /// In-flight [start] call, so concurrent launches coalesce instead of interleaving.
   ///
   /// Every path here tears the core down and rebuilds it over the *same* state file and Tor state
@@ -934,6 +991,7 @@ class RustNightdropCore extends NightdropCore {
         await _purgeDiagnosticsLog();
       }
       _guardHealDone = false;
+      _httpsFallbackDone = false;
       // Close anything already running first: this runs again via `retryStart` after a failure,
       // and a second bootstrap over the same (still-locked) Tor state dir would fail no matter
       // how many times the user pressed "Try again".
@@ -968,6 +1026,7 @@ class RustNightdropCore extends NightdropCore {
             final id = await _core!.identity();
             _identity = Identity(id: id.id);
             await _refresh();
+            unawaited(_scheduleHttpsFallback(statePath, key));
           } catch (_) {
             await _closeCore();
             _identity = null;
@@ -1137,6 +1196,7 @@ class RustNightdropCore extends NightdropCore {
     // have left a core holding the Tor state lock.
     await _closeCore();
     _guardHealDone = false;
+    _httpsFallbackDone = false;
     // Refuse to displace a state file nobody agreed to abandon. Onboarding is only ever correct
     // on a genuinely fresh install, or after the recovery screen said the state is unreadable and
     // the user chose to move on (dismissLoadError). Reaching it any other way means a failed or
@@ -1165,6 +1225,7 @@ class RustNightdropCore extends NightdropCore {
       _httpsRelay = true;
       _tor = false;
       _networked = false;
+      unawaited(_scheduleHttpsFallback(statePath, key));
     } else if (_torEnabled) {
       // Embedded Tor: a reachable .onion, WAN-capable. Bootstrapping takes a while.
       // On mobile, arti needs an explicit writable state dir (the app's support dir). A
@@ -1232,14 +1293,22 @@ class RustNightdropCore extends NightdropCore {
   Future<Contact> joinWithShortCode(String code) async {
     // A scanned/typed QR pre-auth payload (the Tor pairing path) goes through connectViaQr;
     // a bare short code uses the rendezvous (networked) or the in-process demo.
-    final rust.Contact created;
+    late rust.Contact created;
     if (code.startsWith('nightdrop://')) {
       created = await _core!.connectViaQr(payload: code);
     } else if (_networked || _httpsRelay || _tor) {
       // A bare `slot-secret-words` short code: run the SPAKE2 rendezvous handshake over the
-      // relay. Works over Tor too — the relay is reached through the onion transport, so the
-      // secret words never leave the device and the rendezvous only ever sees ciphertext.
-      created = await _core!.joinViaShortCode(code: code);
+      // relay. If the direct HTTPS rendezvous is unavailable and this build carries the same
+      // relay's onion endpoint, bootstrap Tor/WebTunnel once and retry the exact pairing flow.
+      try {
+        created = await _core!.joinViaShortCode(code: code);
+      } catch (_) {
+        if (!_httpsRelay || _tor || _relayAddr == null) rethrow;
+        final key = await _readStoreKey();
+        if (key == null) rethrow;
+        await _switchHttpsToTorFallback(await _stateFilePath(), key);
+        created = await _core!.joinViaShortCode(code: code);
+      }
     } else {
       created = await _core!.openChat(code: code);
     }

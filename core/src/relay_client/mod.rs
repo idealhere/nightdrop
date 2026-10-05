@@ -31,6 +31,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
+pub mod failover;
+
 /// How often the reaper sweeps expired blobs.
 const REAP_INTERVAL: Duration = Duration::from_secs(60);
 

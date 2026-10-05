@@ -91,7 +91,7 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
         return Ok(());
     }
 
-    let mut parts = request_line.trim_end_matches(['\r', '\n']).split_whitespace();
+    let mut parts = request_line.trim_end_matches(|c| c == '\r' || c == '\n').split_whitespace();
     let method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("");
     let version = parts.next().unwrap_or("");
@@ -190,7 +190,7 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
             let mut body = vec![0u8; len];
             reader.read_exact(&mut body)?;
             let body = match std::str::from_utf8(&body) {
-                Ok(s) => s.trim_end_matches(['\r', '\n']),
+                Ok(s) => s.trim_end_matches(|c| c == '\r' || c == '\n'),
                 Err(_) => {
                     return write_reader_response(
                         reader,

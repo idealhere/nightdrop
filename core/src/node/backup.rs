@@ -101,6 +101,7 @@ impl Node {
             my_relays: self.my_relays.clone(),
             discovered_relays: self.discovered_relays.clone(),
             directory_version: self.directory_version,
+            pending_sends: self.export_pending_sends(),
             pending_control: self.export_pending_control(),
             pending_invites: self.export_pending_invites(),
             poll_seed: Some(base64_handle(&self.poll_seed)),
@@ -149,6 +150,48 @@ impl Node {
                     payload: p.payload.clone(),
                     ttl: Duration::from_secs(p.ttl_secs),
                     expiry: Instant::now() + Duration::from_secs(remaining),
+                })
+            })
+            .collect()
+    }
+
+    /// Serialize every user-message frame that still needs a network home. `pending_sends`
+    /// has not had its first off-lock delivery attempt yet; `pending_relay` already tried and
+    /// reached neither peer nor relay. Both carry the same exact sealed frame and restore through
+    /// the same retry path. Deduplicate defensively by (contact,msg_id) in case a future transition
+    /// briefly leaves the same item in both queues.
+    fn export_pending_sends(&self) -> Vec<crate::storage::PersistedPendingSend> {
+        use base64::Engine as _;
+        let mut seen = std::collections::HashSet::new();
+        self.pending_sends
+            .iter()
+            .chain(self.pending_relay.iter())
+            .filter(|p| seen.insert((p.contact_id.clone(), p.msg_id.clone())))
+            .map(|p| crate::storage::PersistedPendingSend {
+                contact_id: p.contact_id.clone(),
+                msg_id: p.msg_id.clone(),
+                bytes: base64::engine::general_purpose::STANDARD.encode(&p.bytes),
+            })
+            .collect()
+    }
+
+    /// Restore undelivered sealed frames onto the normal deferred-send queue. Re-running the full
+    /// delivery plan is intentional: after a transport switch (HTTPS → Tor/WebTunnel) a direct
+    /// peer path may now exist, while the exact same ciphertext remains safe to retry.
+    fn import_pending_sends(
+        persisted: &[crate::storage::PersistedPendingSend],
+    ) -> Vec<super::PendingRelaySend> {
+        use base64::Engine as _;
+        persisted
+            .iter()
+            .filter_map(|p| {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(p.bytes.as_bytes())
+                    .ok()?;
+                Some(super::PendingRelaySend {
+                    contact_id: p.contact_id.clone(),
+                    msg_id: p.msg_id.clone(),
+                    bytes,
                 })
             })
             .collect()
@@ -313,6 +356,7 @@ impl Node {
         } else {
             node.dirty = true;
         }
+        node.pending_sends = Self::import_pending_sends(&state.pending_sends);
         node.pending_control = Self::import_pending_control(&state.pending_control);
         node.pending_invites = Self::import_pending_invites(&state.pending_invites);
         for chat in &state.chats {

@@ -3873,6 +3873,60 @@ mod tests {
     }
 
     #[test]
+    fn relay_only_clients_pair_and_chat_without_a_peer_socket() {
+        use crate::transport::relay_only::RelayOnlyTransport;
+        use std::time::Duration;
+
+        let relay = RelayClient::new(RelayServer::spawn("127.0.0.1:0").unwrap().to_string());
+        let a = NightdropCore::new_with_transport(
+            Box::new(RelayOnlyTransport::new()),
+            Some(relay.clone()),
+            false,
+        );
+        let b = NightdropCore::new_with_transport(
+            Box::new(RelayOnlyTransport::new()),
+            Some(relay),
+            false,
+        );
+
+        // The short-code handshake itself lives in relay mailboxes. No direct peer listener is
+        // available on either side, so the Hello and every later frame must also use the relay.
+        let code = a.create_short_code_invite().unwrap();
+        let b_contact = std::thread::scope(|s| {
+            let joiner = s.spawn(|| b.join_via_short_code(&code));
+            while !joiner.is_finished() {
+                a.poll_once().unwrap();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            joiner.join().unwrap().unwrap().id
+        });
+
+        // The joiner's first-contact Hello was queued because the direct path is intentionally
+        // absent. Drain it, approve, then let the approval make the same relay round trip back.
+        a.poll_once().unwrap();
+        let a_contact = a
+            .incoming_requests()
+            .first()
+            .expect("relay-only inviter receives the pairing request")
+            .id
+            .clone();
+        a.authorize(&a_contact, true).unwrap();
+        a.poll_once().unwrap();
+        b.poll_once().unwrap();
+
+        b.send_message(&b_contact, "https-first mailbox path").unwrap();
+        // Non-synchronous transports defer delivery off the UI/core-lock path. The sender tick
+        // queues the sealed frame; the receiver tick drains and decrypts it.
+        b.poll_once().unwrap();
+        a.poll_once().unwrap();
+
+        assert!(a
+            .messages(&a_contact)
+            .iter()
+            .any(|m| !m.from_me && m.text == "https-first mailbox path"));
+    }
+
+    #[test]
     fn short_code_has_slot_and_words() {
         let code = random_short_code();
         let parts: Vec<&str> = code.split('-').collect();

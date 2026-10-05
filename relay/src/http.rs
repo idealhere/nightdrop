@@ -85,8 +85,7 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
 
     let mut reader = BufReader::new(stream);
-    let mut request_line = String::new();
-    read_header_line(&mut reader, &mut request_line, MAX_HEADER_BYTES)?;
+    let request_line = read_header_line_capped(&mut reader, MAX_HEADER_BYTES)?;
     if request_line.is_empty() {
         return Ok(());
     }
@@ -112,10 +111,8 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
     let mut transfer_encoding = false;
 
     loop {
-        let mut line = String::new();
-        read_header_line(
+        let line = read_header_line_capped(
             &mut reader,
-            &mut line,
             MAX_HEADER_BYTES.saturating_sub(header_bytes),
         )?;
         header_bytes = header_bytes.saturating_add(line.len());
@@ -222,25 +219,57 @@ fn serve_one(stream: TcpStream, core: &RelayCore) -> io::Result<()> {
     }
 }
 
-fn read_header_line<R: BufRead>(
-    reader: &mut R,
-    out: &mut String,
-    remaining: usize,
-) -> io::Result<()> {
-    if remaining == 0 {
+/// Read one HTTP header/request line without ever buffering beyond `max`.
+///
+/// `BufRead::read_line` only tells us the size *after* it has appended the whole line, which
+/// lets an unauthenticated clearnet client force an arbitrarily large allocation before the
+/// 32 KiB header cap is checked. Read from `fill_buf` in bounded slices instead, exactly like
+/// the relay protocol's own capped line reader.
+fn read_header_line_capped<R: BufRead>(reader: &mut R, max: usize) -> io::Result<String> {
+    if max == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "headers too large",
         ));
     }
-    let n = reader.read_line(out)?;
-    if n > remaining {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "headers too large",
-        ));
+
+    let mut out = Vec::new();
+    loop {
+        let (consume, done) = {
+            let chunk = reader.fill_buf()?;
+            if chunk.is_empty() {
+                (0usize, true)
+            } else if let Some(i) = chunk.iter().position(|&b| b == b'\n') {
+                let take = i + 1; // keep CRLF/LF so the blank-line test stays trivial
+                if out.len().saturating_add(take) > max {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "headers too large",
+                    ));
+                }
+                out.extend_from_slice(&chunk[..take]);
+                (take, true)
+            } else {
+                if out.len().saturating_add(chunk.len()) > max {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "headers too large",
+                    ));
+                }
+                out.extend_from_slice(chunk);
+                (chunk.len(), false)
+            }
+        };
+        reader.consume(consume);
+
+        if done {
+            if out.is_empty() && consume == 0 {
+                return Ok(String::new());
+            }
+            return String::from_utf8(out)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "headers must be utf-8"));
+        }
     }
-    Ok(())
 }
 
 fn write_reader_response(
@@ -293,6 +322,15 @@ mod tests {
 
     fn body(response: &str) -> &str {
         response.split_once("\r\n\r\n").unwrap().1
+    }
+
+    #[test]
+    fn header_line_limit_is_enforced_before_unbounded_buffering() {
+        use std::io::Cursor;
+
+        let mut reader = Cursor::new(vec![b'a'; 64]);
+        let err = read_header_line_capped(&mut reader, 32).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]

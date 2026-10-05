@@ -64,6 +64,25 @@ impl Transport for RelayOnlyTransport {
         true
     }
 
+    /// Extra relays advertised by contacts may also be clearnet HTTPS relays. Build the same
+    /// direct-TLS dialer used by the primary so Night Drop's existing multi-relay fan-out works
+    /// before Tor is bootstrapped.
+    ///
+    /// A malformed https:// address returns an erroring dialer rather than `None`: `None` tells
+    /// the node to fall back to a plain TCP RelayClient, which must never receive an HTTPS URL.
+    fn relay_dialer(&self, addr: &str) -> Option<crate::relay_client::RelayDialer> {
+        if !addr.starts_with("https://") {
+            return None;
+        }
+        Some(match crate::relay_client::https::https_relay_dialer(addr) {
+            Ok(dialer) => dialer,
+            Err(error) => {
+                let message = format!("invalid HTTPS relay endpoint: {error}");
+                std::sync::Arc::new(move |_| Err(anyhow::anyhow!(message.clone())))
+            }
+        })
+    }
+
     /// There is deliberately no directly reachable peer address.
     fn published(&self) -> bool {
         false
@@ -73,6 +92,19 @@ impl Transport for RelayOnlyTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "https-relay")]
+    #[test]
+    fn https_extra_relays_get_a_tls_dialer_not_plain_tcp_fallback() {
+        let t = RelayOnlyTransport::new();
+        assert!(t.relay_dialer("https://relay.example/v1/relay").is_some());
+        assert!(t.relay_dialer("relay.example:443").is_none());
+
+        // Malformed HTTPS still returns a dialer; executing it fails locally instead of handing
+        // the URL to the system TCP resolver.
+        let bad = t.relay_dialer("https://").unwrap();
+        assert!(bad("request").is_err());
+    }
 
     #[test]
     fn direct_delivery_fails_without_touching_the_network() {

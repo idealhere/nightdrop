@@ -1037,6 +1037,69 @@ impl NightdropCore {
         })
     }
 
+    /// Reliability-first WAN core: no direct peer listener, all delivery goes through an
+    /// HTTPS relay mailbox. This starts without bootstrapping Tor, so it can become usable quickly
+    /// on networks where Tor is slow or blocked. Message/session crypto is identical to every other
+    /// transport; only network metadata changes (direct HTTPS is NOT anonymous).
+    ///
+    /// This method is intentionally added at the Rust API first. Flutter bindings are regenerated
+    /// only after the core/relay tests are green, so a half-wired mobile entry point cannot ship.
+    #[cfg(feature = "https-relay")]
+    pub fn new_https_relay(
+        relay_url: String,
+        persist_path: Option<String>,
+        persist_key: Option<String>,
+    ) -> Result<NightdropCore> {
+        let dialer = crate::relay_client::https::https_relay_dialer(&relay_url)?;
+        let relay = RelayClient::with_dialer_for(relay_url, dialer);
+        let transport = crate::transport::relay_only::RelayOnlyTransport::new();
+
+        let persist = match (persist_path, persist_key) {
+            (Some(path), Some(key)) => Some((path, decode_store_key(&key)?)),
+            _ => None,
+        };
+        let restore = persist
+            .as_ref()
+            .filter(|(path, _)| std::path::Path::new(path).exists());
+        let mut me = match restore {
+            Some((path, key)) => {
+                let state = crate::storage::load_from_file(path, key)?;
+                Node::restore(&state, Box::new(transport), key)?
+            }
+            None => Node::with_identity(LocalIdentity::generate(), Box::new(transport)),
+        };
+        me.set_require_authorization(true);
+        me.set_relay(relay);
+
+        if let Some((path, key)) = &persist {
+            let dir = std::path::Path::new(path)
+                .parent()
+                .map(|p| p.join("nightdrop-media"))
+                .unwrap_or_else(|| std::path::PathBuf::from("nightdrop-media"));
+            me.set_media_store(dir.to_string_lossy().into_owned(), *key);
+        }
+
+        // A state restored from Tor/LAN may carry a different historical direct address. In
+        // relay-only mode this announces the marker through the E2E channel; peers then fail direct
+        // immediately and use the same mailbox instead of wasting time dialing a stale onion.
+        me.announce_address_if_changed();
+
+        let inner = Arc::new(Mutex::new(Inner {
+            me,
+            demo: None,
+            pending_backup: None,
+            persist: persist.map(|(p, k)| Persist::new(p, k)),
+        }));
+        inner.lock().unwrap().save();
+
+        let poller = StopSignal::new();
+        spawn_poller(Arc::clone(&inner), Arc::clone(&poller));
+        Ok(Self {
+            inner,
+            poller: Some(poller),
+        })
+    }
+
     /// Real core over the **embedded Tor transport** (the production WAN path, §6): this
     /// device gets a reachable `.onion`, so two peers pair and converse over any network
     /// (LTE included) with no public IP or port-forwarding. Requires the crate built with

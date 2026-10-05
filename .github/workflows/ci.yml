@@ -56,6 +56,7 @@ jobs:
       - name: Core tests
         run: cargo test -p nightdrop
 
+      # Fork gate: direct HTTPS client code must compile and pass independently of Tor.
       - name: HTTPS relay tests
         run: cargo test -p nightdrop --features https-relay
 

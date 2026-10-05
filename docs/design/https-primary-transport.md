@@ -42,6 +42,19 @@ deduplication model. Each logical relay then chooses its own network path in thi
 2. The SAME relay's onion endpoint over Tor; WebTunnel is used to bootstrap Tor when direct Tor is
    blocked.
 
+On mobile, **Tor is lazy** in the reliability-first profile: a bare HTTPS endpoint starts the app
+without bootstrapping arti. If repeated message delivery proves that neither the direct peer marker
+nor the HTTPS relay can be reached, or a short-code join fails against HTTPS, the app reopens the
+same persisted identity on Tor and upgrades the primary relay to an endpoint bundle:
+
+```
+https://relay.example/v1/relay|same-relay-address.onion
+```
+
+From then on the relay still tries HTTPS first, but the onion path is available automatically.
+This avoids paying Tor startup/battery cost on healthy networks while retaining a censorship
+fallback. The onion endpoint must terminate at the **same RelayCore/store** as the HTTPS endpoint.
+
 Do NOT implement "POST to relay A, then FETCH from relay B" as transport failover. A successful empty
 FETCH from B cannot recover a message stored only on A. Cross-relay resilience comes from fan-out;
 endpoint failover is only between two paths to the same RelayCore/store.

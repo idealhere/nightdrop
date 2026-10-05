@@ -956,7 +956,6 @@ fn receipt_survives_a_dead_connection(synchronous: bool) {
     assert_eq!(delivery(&alice), "delivered");
 }
 
-
 #[test]
 fn relay_only_health_triggers_after_failed_primary_rounds() {
     let mut node = Node::new(Box::new(

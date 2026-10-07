@@ -380,11 +380,86 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       bytes = await compute(compressImage, bytes);
       mime = 'image/jpeg';
     }
-    if (burnSecs > 0) {
-      await _sendBurnMedia(bytes, mime, isVideo ? 'video' : 'image', burnSecs);
+    var burn = burnSecs;
+    if (!isVideo && burn == 0) {
+      final once = await _confirmPhoto(Uint8List.fromList(bytes));
+      if (once == null) return; // cancelled
+      if (once) burn = kViewOnceSecs;
+    }
+    if (burn > 0) {
+      await _sendBurnMedia(bytes, mime, isVideo ? 'video' : 'image', burn);
     } else {
       await _sendMedia(bytes, mime, isVideo ? 'video' : 'image', thumb);
     }
+  }
+
+  /// Show the photo about to be sent, with the one choice that belongs to this moment. Returns
+  /// null if cancelled, otherwise whether it should be viewable once.
+  Future<bool?> _confirmPhoto(Uint8List bytes) async {
+    if (!mounted) return null;
+    final l10n = AppLocalizations.of(context)!;
+    // View once rides the burn path, so it needs the same assurance that the other app will not
+    // simply keep the photo.
+    final supported =
+        _contact(NightdropScope.of(context))?.peerSupportsBurn == true;
+    var once = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          scrollable: true,
+          contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(bytes, height: 220, fit: BoxFit.cover),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(l10n.viewOnce),
+                subtitle: supported ? null : Text(l10n.burnUnsupported),
+                value: once,
+                onChanged: supported
+                    ? (v) => setState(() => once = v ?? false)
+                    : null,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, once),
+              child: Text(l10n.sendAction),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Open a view-once photo. It is marked viewed as soon as it is decrypted — before the viewer
+  /// is even on screen — so closing the app mid-view cannot buy a second look. The viewer shows
+  /// the bytes already in memory; the bubble behind it only says the photo was viewed.
+  Future<void> _openViewOnce(Message m) async {
+    final core = NightdropScope.of(context);
+    final Uint8List data;
+    try {
+      data = Uint8List.fromList(await core.mediaBytes(m.mediaId));
+    } catch (_) {
+      return;
+    }
+    await core.markBurnViewed(widget.contactId, m.burnId);
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _ImageViewer(
+          bytes: Future.value(data), title: formatBytes(m.mediaSize)),
+    ));
   }
 
   Future<void> _sendBurnMedia(
@@ -945,9 +1020,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       ? () => _showMessageMenu(m)
                                       : null,
                                   onReveal: m.isBurnHidden && !m.fromMe
-                                      ? () => NightdropScope.of(context)
-                                          .markBurnViewed(
-                                              widget.contactId, m.burnId)
+                                      ? () => m.isViewOnce && m.isImage
+                                          ? _openViewOnce(m)
+                                          : NightdropScope.of(context)
+                                              .markBurnViewed(
+                                                  widget.contactId, m.burnId)
                                       : null,
                                 );
                           // A day separator above the first message of each calendar day
@@ -1373,14 +1450,18 @@ class _Bubble extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                if (message.isDeleted || message.isBurnExpired)
+                if (message.isDeleted ||
+                    message.isBurnExpired ||
+                    message.isViewedOnce)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                          message.isBurnExpired
-                              ? Icons.local_fire_department_outlined
-                              : Icons.block,
+                          message.isViewedOnce
+                              ? Icons.visibility_off_outlined
+                              : message.isBurnExpired
+                                  ? Icons.local_fire_department_outlined
+                                  : Icons.block,
                           size: 13,
                           color: (mine ? scheme.onPrimary : scheme.onSurface)
                               .withValues(alpha: 0.6)),
@@ -1388,9 +1469,11 @@ class _Bubble extends StatelessWidget {
                       // Flexible: the burn marker is long enough to overflow a narrow bubble.
                       Flexible(
                         child: Text(
-                          message.isBurnExpired
-                              ? l10n.burnExpiredUnopened
-                              : l10n.messageDeleted,
+                          message.isViewedOnce
+                              ? l10n.photoViewed
+                              : message.isBurnExpired
+                                  ? l10n.burnExpiredUnopened
+                                  : l10n.messageDeleted,
                           style: TextStyle(
                             fontStyle: FontStyle.italic,
                             color: (mine ? scheme.onPrimary : scheme.onSurface)
@@ -2182,7 +2265,7 @@ class _BurnBodyState extends State<_BurnBody> {
           SizedBox(
             width: 220,
             child: Text(
-              l10n.burnSenderNote,
+              m.isViewOnce ? l10n.viewOnceSenderNote : l10n.burnSenderNote,
               style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.6)),
             ),
           ),

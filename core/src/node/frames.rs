@@ -924,6 +924,21 @@ impl Node {
                 let mut dead_media: Vec<String> = Vec::new();
                 let mut removed = false;
                 if let Some(chat) = self.chats.get_mut(&from) {
+                    // A view-once photo of ours keeps a "viewed" marker in place of the photo;
+                    // an ordinary burn message is dropped below, as before.
+                    for m in chat.history.iter_mut() {
+                        let named = (!m.msg_id.is_empty() && m.msg_id == target)
+                            || (!m.transfer_id.is_empty() && m.transfer_id == target);
+                        if m.from_me && m.burn_secs == VIEW_ONCE_SECS && named {
+                            for id in [m.media_id.as_str(), m.thumb_id.as_str()] {
+                                if !id.is_empty() {
+                                    dead_media.push(id.to_string());
+                                }
+                            }
+                            make_viewed_once_tombstone(m);
+                            removed = true;
+                        }
+                    }
                     let before = chat.history.len();
                     chat.history.retain(|m| {
                         let ours = m.from_me && m.burn_secs > 0;
@@ -939,7 +954,7 @@ impl Node {
                         }
                         true
                     });
-                    removed = chat.history.len() != before;
+                    removed |= chat.history.len() != before;
                 }
                 if let Some((dir, _)) = &self.media_store {
                     for id in dead_media {

@@ -539,6 +539,22 @@
     "description": "Backup menu: merge a single-chat backup."
   },
   "myIdentity": "My identity",
+  "viewOnce": "View once",
+  "@viewOnce": {
+    "description": "Checkbox on the photo preview before sending."
+  },
+  "photoViewed": "Photo viewed",
+  "@photoViewed": {
+    "description": "Shown in place of a view-once photo after it was opened, on both sides."
+  },
+  "viewOnceSenderNote": "Can be opened once. You will see when it has been viewed.",
+  "@viewOnceSenderNote": {
+    "description": "Under the sender's own copy of a view-once photo."
+  },
+  "sendAction": "Send",
+  "@sendAction": {
+    "description": "Confirm button on the photo preview."
+  },
   "privacyMenu": "Privacy",
   "@privacyMenu": {
     "description": "Menu item and title of the privacy screen."

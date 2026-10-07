@@ -1639,11 +1639,15 @@ impl Node {
         } else {
             msg.msg_id.clone()
         };
+        let view_once = msg.burn_secs == VIEW_ONCE_SECS;
         self.dirty = true;
         // Opt-in, and the recipient's call: this discloses when they read it. Nothing depends on
         // it arriving — the sender's 24h horizon stands either way — so a failure here is silent
         // by design rather than something to retry or surface.
-        if self.burn_receipts && !target.is_empty() {
+        //
+        // A view-once photo is the exception to the opt-in: telling the sender it was opened is
+        // what the sender chose when they sent it that way, so the receipt always goes.
+        if (self.burn_receipts || view_once) && !target.is_empty() {
             self.send_burn_receipt(contact_id, &target);
         }
         true
@@ -1732,6 +1736,23 @@ impl Node {
                         }
                     }
                     make_burn_tombstone(m);
+                    changed = true;
+                }
+            }
+            // A view-once photo we have opened: the file goes, a "viewed" marker stays, so the
+            // conversation still shows that a photo was here and was looked at.
+            for m in chat.history.iter_mut() {
+                if m.burn_secs == VIEW_ONCE_SECS
+                    && !m.from_me
+                    && m.viewed_at != 0
+                    && now.saturating_sub(m.viewed_at) >= VIEW_ONCE_SECS
+                {
+                    for id in [m.media_id.as_str(), m.thumb_id.as_str()] {
+                        if !id.is_empty() {
+                            dead_media.push(id.to_string());
+                        }
+                    }
+                    make_viewed_once_tombstone(m);
                     changed = true;
                 }
             }

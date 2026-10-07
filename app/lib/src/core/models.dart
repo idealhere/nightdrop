@@ -8,6 +8,9 @@ library;
 /// Default per-chat display name for both parties (ARCHITECTURE.md §4).
 const String kDefaultName = 'NightDog';
 
+/// The burn timer value that means "view once" (mirrors the core's `VIEW_ONCE_SECS`).
+const int kViewOnceSecs = 1;
+
 /// What a default-named user is called once the chat's safety number has been verified.
 const String kVerifiedName = 'CyberDog';
 
@@ -303,6 +306,13 @@ class Message {
         burnSecs: burnSecs,
         viewedAt: at,
       );
+
+  /// A photo sent to be opened a single time (the core's reserved burn timer, [kViewOnceSecs]).
+  bool get isViewOnce => burnSecs == kViewOnceSecs;
+
+  /// A view-once photo that has been opened: only a marker is shown from then on. True as soon
+  /// as the recipient opens it, without waiting for the core to delete the file.
+  bool get isViewedOnce => kind == 'viewed_once' || (isViewOnce && !fromMe && viewedAt != null);
 
   /// A burn message that is still hidden: shown blurred, with no countdown running yet.
   bool get isBurnHidden => burnSecs > 0 && viewedAt == null;

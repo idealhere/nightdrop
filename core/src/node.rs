@@ -1931,6 +1931,24 @@ fn make_tombstone(msg: &mut ChatMessage) {
     msg.delivery = String::new();
 }
 
+/// The burn timer that means **view once**: a photo the recipient may open a single time.
+///
+/// No new frame and no new field — it rides the existing burn path as a reserved timer value, so
+/// the content, the sealing and the capability check are exactly the burn message's. What the
+/// value changes is what happens around the view: the recipient always tells the sender it was
+/// opened (see `Node::mark_burn_viewed`), and both sides keep a "viewed" marker in place of the
+/// photo instead of dropping the row. A build that predates this treats it as a one-second burn,
+/// which is still ephemeral: it degrades towards deleting, never towards keeping.
+pub(crate) const VIEW_ONCE_SECS: u64 = 1;
+
+/// Turn a view-once photo that has been opened into a "viewed" marker, in place. Same clearing
+/// as [`make_burn_tombstone`]: only its position and time survive, and the caller deletes the
+/// sealed files.
+fn make_viewed_once_tombstone(msg: &mut ChatMessage) {
+    make_burn_tombstone(msg);
+    msg.kind = "viewed_once".to_string();
+}
+
 /// Turn an unopened burn message that expired into a "burn message expired" marker, in place.
 /// Keeps only its position and arrival time: the content, the sealed-file ids (the caller deletes
 /// the files) and every id that could reveal or match it are cleared, and so is `burn_secs`, so it

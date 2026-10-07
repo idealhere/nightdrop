@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
 import '../../core/app_config.dart';
+import '../../core/app_locale.dart';
 import '../../core/app_version.dart';
 import '../../core/background_delivery.dart';
 import '../../core/nightdrop_core.dart';
@@ -66,6 +67,7 @@ class HomeScreen extends StatelessWidget {
               if (value == 'relays') _editRelays(context, core);
               if (value == 'resettor') _confirmResetTor(context, core);
               if (value == 'update') _updateApp(context, core);
+              if (value == 'language') AppLocale.toggle();
               if (value == 'about') _showAbout(context);
               if (value == 'exit') _confirmExit(context, core);
               if (value == 'logout') _confirmLogout(context, core);
@@ -87,6 +89,7 @@ class HomeScreen extends StatelessWidget {
               PopupMenuItem(value: 'relays', child: Text(l10n.myRelaysMenu)),
               PopupMenuItem(value: 'resettor', child: Text(l10n.resetTorMenu)),
               PopupMenuItem(value: 'update', child: Text(l10n.updateApp)),
+              PopupMenuItem(value: 'language', child: Text(l10n.switchLanguage)),
               PopupMenuItem(value: 'about', child: Text(l10n.aboutMenu)),
               // Issue #15: leave the network and close, keeping the identity. Next to "Log out"
               // on purpose, so the harmless way out is found before the destructive one.
@@ -139,7 +142,7 @@ class HomeScreen extends StatelessWidget {
                   onSecondaryTapDown: (_) => _confirmDeleteChat(context, core, c),
                   child: ListTile(
                     leading: const ExcludeSemantics(
-                      child: CircleAvatar(child: Text('👻')),
+                      child: CircleAvatar(child: Text('🌙')),
                     ),
                     title: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1040,7 +1043,7 @@ void _showAbout(BuildContext context) {
                 Text('Version $version',
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
-                const Text('© 2026 Night Drop'),
+                const Text('© 2026 Night Dog'),
                 const Text('AGPL-3.0-or-later'),
                 const SizedBox(height: 12),
                 // The one connection the app makes on its own behalf, stated where it stays

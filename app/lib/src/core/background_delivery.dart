@@ -116,7 +116,7 @@ class BackgroundDelivery {
           channelId: 'nightdrop_background',
           channelName: 'Background delivery status',
           channelDescription:
-              'Shows that Night Drop is checking for messages in the background. Turning this off '
+              'Shows that Night Dog is checking for messages in the background. Turning this off '
               'only hides the notification — messages keep arriving.',
           channelImportance: NotificationChannelImportance.LOW,
           priority: NotificationPriority.LOW,
@@ -274,14 +274,14 @@ class BackgroundDelivery {
         // "Watching for messages" through a ten-minute download tells the user nothing about why
         // their phone is busy.
         await FlutterForegroundTask.updateService(
-          notificationTitle: 'Night Drop',
+          notificationTitle: 'Night Dog',
           notificationText: text,
         );
         return;
       }
       await FlutterForegroundTask.startService(
         serviceId: 424242,
-        notificationTitle: 'Night Drop',
+        notificationTitle: 'Night Dog',
         notificationText: text,
         callback: nightdropBackgroundCallback,
       );

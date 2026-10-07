@@ -4,12 +4,14 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'core/app_locale.dart';
 import 'core/background_delivery.dart';
 import 'core/nightdrop_core.dart';
 import 'core/notifications.dart';
 import 'features/home/home_screen.dart';
 import 'features/lock/lock_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'theme/night_forest.dart';
 import 'theme/theme.dart';
 
 /// Exposes the [NightdropCore] to the widget tree. Read it with `NightdropScope.of(context)`;
@@ -34,13 +36,19 @@ class NightdropApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return NightdropScope(
       core: core,
-      child: MaterialApp(
-        onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
-        debugShowCheckedModeBanner: false,
-        theme: nightdropTheme(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: const _Root(),
+      child: ValueListenableBuilder<Locale>(
+        valueListenable: AppLocale.current,
+        builder: (context, locale, _) => MaterialApp(
+          onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+          debugShowCheckedModeBanner: false,
+          theme: nightdropTheme(),
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          builder: (context, child) =>
+              NightForestBackground(child: child ?? const SizedBox.shrink()),
+          home: const _Root(),
+        ),
       ),
     );
   }
@@ -175,7 +183,7 @@ class _SplashState extends State<_Splash> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('👻', style: TextStyle(fontSize: 64)),
+            const Text('🌕', style: TextStyle(fontSize: 64)),
             const SizedBox(height: 16),
             const SizedBox(
               height: 22,

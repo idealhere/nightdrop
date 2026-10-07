@@ -24,7 +24,7 @@
          and no ability to read any screen content. -->
     <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
 
-    <!-- Strip permissions that transitive plugins merge in but Night Drop never uses. Keeping the
+    <!-- Strip permissions that transitive plugins merge in but Night Dog never uses. Keeping the
          permission set minimal matters for a privacy-first app (and for the F-Droid listing). Each
          is injected by a dependency, not by us; tools:node="remove" deletes it from the merged
          manifest. Verified against app/lib usage:
@@ -102,7 +102,7 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Maintains the user's own anonymous Tor onion service so that
                     end-to-end encrypted peer-to-peer messages can be received while the app is not
-                    on screen. Night Drop has no push service and no account server: there is
+                    on screen. Night Dog has no push service and no account server: there is
                     nothing that could wake the app on a message's behalf, so the connection must
                     be held by the device itself." />
         </service>

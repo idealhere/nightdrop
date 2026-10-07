@@ -12,7 +12,7 @@ import '../../../l10n/app_localizations.dart';
 /// camera that never fires a scan. Callers use this to offer paste-the-link pairing instead.
 bool get canScanQr => Platform.isAndroid || Platform.isIOS;
 
-/// Returns true if [raw] is a pre-authorized Night Drop pairing payload (§5a):
+/// Returns true if [raw] is a pre-authorized Night Dog pairing payload (§5a):
 /// `nightdrop://pair?addr=...&ik=...&otk=...`.
 bool isNightdropInvite(String raw) {
   final uri = Uri.tryParse(raw);
@@ -32,7 +32,7 @@ bool isScannablePairing(String raw) =>
     isNightdropInvite(raw) || looksLikeShortCode(raw);
 
 /// Camera QR scanner. Pops with the scanned payload string. By default it only accepts a valid
-/// Night Drop invite (pairing); pass [raw] to accept **any** QR text (used by verify-by-QR, whose
+/// Night Dog invite (pairing); pass [raw] to accept **any** QR text (used by verify-by-QR, whose
 /// payload is a safety fingerprint, not a pairing URI).
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key, this.raw = false, this.title});

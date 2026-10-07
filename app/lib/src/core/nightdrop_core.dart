@@ -18,7 +18,7 @@ String cleanCoreError(Object error) {
 String identitySetupError(Object error) {
   final msg = cleanCoreError(error);
   if (msg.toLowerCase().contains('launch onion service')) {
-    return 'Night Drop may already be running, or another copy is using its data. '
+    return 'Night Dog may already be running, or another copy is using its data. '
         'Close the other window, then try again.';
   }
   return 'Could not set up your identity: $msg';

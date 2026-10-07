@@ -88,7 +88,7 @@ class _InviteTabState extends State<_InviteTab> {
             child: QrImageView(
               data: qrData,
               size: 280,
-              semanticsLabel: 'Night Drop pairing QR code',
+              semanticsLabel: 'Night Dog pairing QR code',
             ),
           ),
           // Can't scan (e.g. the other device is a desktop with no camera)? The same payload can be

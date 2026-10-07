@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Resolve Dart dependencies
-        run: cd app && flutter pub get
+        run: cd app && flutter pub get && flutter gen-l10n
 
       - name: Build HTTPS-first APK with lazy Tor/WebTunnel fallback
         env:

@@ -199,7 +199,7 @@ void main() {
   });
 
   testWidgets('a check that could not reach the site is never reported as up to date', (tester) async {
-    // The bug this pins was live on hardware: the fetch timed out and the menu said "Night Drop is
+    // The bug this pins was live on hardware: the fetch timed out and the menu said "Night Dog is
     // up to date." That is a confident lie on the one screen where the user deliberately asked,
     // and it hides exactly the security fix the feature exists to surface.
     final core = await pumpHome(tester);

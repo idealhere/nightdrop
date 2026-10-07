@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
-/// Night Drop's dark, low-key theme.
+/// Night Dog's dark, low-key theme.
 ThemeData nightdropTheme() {
   final scheme = ColorScheme.fromSeed(
     seedColor: const Color(0xFF7C83FD),
@@ -10,7 +10,9 @@ ThemeData nightdropTheme() {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: const Color(0xFF0E0F14),
+    // Screens are see-through: the night forest painted behind the whole app shows under them
+    // (see NightForestBackground, installed by the MaterialApp builder).
+    scaffoldBackgroundColor: Colors.transparent,
     appBarTheme: const AppBarTheme(centerTitle: true),
     // Render color emoji on Linux, which may have no emoji font, so emoji would otherwise appear
     // as missing-glyph boxes. Not on Windows: the bundled font is COLRv1, which Flutter's

@@ -22,7 +22,7 @@ void main() {
 
   test('a download keeps the service up even when the user returns to the app', () {
     // The regression this exists for. Returning to the foreground stops the service — so someone
-    // who reopened Night Drop to watch the progress bar would have killed the thing protecting
+    // who reopened Night Dog to watch the progress bar would have killed the thing protecting
     // their download.
     expect(run(foreground: true, holds: 1), isTrue);
     expect(run(foreground: false, holds: 1), isTrue);

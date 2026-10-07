@@ -439,7 +439,7 @@ class RustNightdropCore extends NightdropCore {
   /// positive failure evidence. The same encrypted state file/identity is reopened, and the
   /// primary relay is expressed as two endpoints of ONE logical RelayCore/store:
   /// HTTPS first, then its onion endpoint. Independent relay stores must never be put in this
-  /// bundle; those use Night Drop's existing fan-out/deduplication instead.
+  /// bundle; those use Night Dog's existing fan-out/deduplication instead.
   ///
   /// Two independent triggers reach this (the liveness watcher and a pairing attempt), so the
   /// switch is single-flight: a second caller awaits the one already running instead of tearing
@@ -674,7 +674,7 @@ class RustNightdropCore extends NightdropCore {
     return v == '1' || v == 'true' || v == 'yes';
   }
 
-  /// Apply the operator-baked independent backup relay through Night Drop's existing multi-relay
+  /// Apply the operator-baked independent backup relay through Night Dog's existing multi-relay
   /// fan-out. This is a DIFFERENT store from the primary, so it must never be placed in the
   /// primary's HTTPS|onion endpoint bundle. The core advertises it to contacts and drains it
   /// separately; identical sealed frames are deduplicated on receipt.
@@ -1285,7 +1285,7 @@ class RustNightdropCore extends NightdropCore {
     // working install silently loses its identity.
     if (!_abandonExistingStateApproved && await _savedStateExists()) {
       throw StateError(
-        'There is already a saved identity on this device. Restart Night Drop and try again; '
+        'There is already a saved identity on this device. Restart Night Dog and try again; '
         'if it still cannot be opened, the recovery screen will offer to replace it.',
       );
     }
@@ -2007,10 +2007,10 @@ class RustNightdropCore extends NightdropCore {
     if (!_foreground) {
       if (received > _knownReceived) {
         final n = received - _knownReceived;
-        NotificationService.show('Night Drop', n == 1 ? 'New message' : '$n new messages');
+        NotificationService.show('Night Dog', n == 1 ? 'New message' : '$n new messages');
       }
       if (requests > _knownRequests) {
-        NotificationService.show('Night Drop', 'New chat request');
+        NotificationService.show('Night Dog', 'New chat request');
       }
     }
     _knownReceived = received;

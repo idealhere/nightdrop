@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Night Drop';
+  String get appTitle => 'Night Dog';
 
   @override
   String get newChat => 'New chat';
@@ -64,7 +64,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'The first number is just a meeting slot. The words are your shared secret — say them in person or over a trusted channel. They are never sent to any server, and they’re what stops an imposter.';
 
   @override
-  String get supportNightDrop => 'Support Night Drop';
+  String get supportNightDrop => 'Support Night Dog';
 
   @override
   String get copyAddress => 'Copy address';
@@ -143,11 +143,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cameraPermissionPermanent =>
-      'Night Drop needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for Night Drop in Settings.';
+      'Night Dog needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for Night Dog in Settings.';
 
   @override
   String get cameraPermissionNeeded =>
-      'Night Drop needs camera access to scan an invite QR.';
+      'Night Dog needs camera access to scan an invite QR.';
 
   @override
   String get openSettings => 'Open settings';
@@ -167,7 +167,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get qrNotRecognised =>
-      'That QR isn’t a Night Drop invite. Ask them to open New chat → Invite.';
+      'That QR isn’t a Night Dog invite. Ask them to open New chat → Invite.';
 
   @override
   String get qrNoneFound =>
@@ -263,11 +263,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get loadErrorBody =>
-      'Night Drop found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.';
+      'Night Dog found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.';
 
   @override
   String get loadErrorBodyMobile =>
-      'Night Drop found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.';
+      'Night Dog found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.';
 
   @override
   String get tryAgain => 'Try again';
@@ -432,20 +432,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutUpdateChecks =>
-      'Update checks: this build asks the Night Drop onion site, over Tor, at most once a day whether a newer version exists, and only ever tells you — it never installs anything. Copies installed from F-Droid don’t do this at all, because F-Droid updates them.';
+      'Update checks: this build asks the Night Dog onion site, over Tor, at most once a day whether a newer version exists, and only ever tells you — it never installs anything. Copies installed from F-Droid don’t do this at all, because F-Droid updates them.';
 
   @override
-  String get aboutMenu => 'About Night Drop';
+  String get aboutMenu => 'About Night Dog';
 
   @override
   String get exitMenu => 'Exit';
 
   @override
-  String get exitTitle => 'Exit Night Drop?';
+  String get exitTitle => 'Exit Night Dog?';
 
   @override
   String get exitBody =>
-      'Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Drop within that time to receive them — after that they expire, and the sender sees them as not delivered.';
+      'Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Dog within that time to receive them — after that they expire, and the sender sees them as not delivered.';
 
   @override
   String get exitConfirm => 'Exit';
@@ -494,7 +494,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get protocolBreakNotice =>
-      'Night Drop 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.';
+      'Night Dog 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.';
 
   @override
   String get gotIt => 'Got it';
@@ -512,7 +512,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not reach the update site. Try again later.';
 
   @override
-  String get updateUpToDate => 'Night Drop is up to date.';
+  String get updateUpToDate => 'Night Dog is up to date.';
 
   @override
   String get updateDownload => 'Download';
@@ -522,7 +522,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backgroundStoppedBySystem =>
-      'Android stopped background delivery, so messages may not have arrived. Reopen Night Drop to start it again.';
+      'Android stopped background delivery, so messages may not have arrived. Reopen Night Dog to start it again.';
 
   @override
   String get peerCapturesSilentSummary =>
@@ -538,7 +538,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get peerOnOldVersionBanner =>
-      'This person is using an older version of Night Drop, so messages that wait on a relay for either of you are addressed less privately. Their app can\'t tell them — ask them to update. Support for their version will end in a future release.';
+      'This person is using an older version of Night Dog, so messages that wait on a relay for either of you are addressed less privately. Their app can\'t tell them — ask them to update. Support for their version will end in a future release.';
 
   @override
   String get updateDownloading => 'Downloading over Tor…';
@@ -576,14 +576,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backgroundDeliveryBody =>
-      'Keep receiving messages while Night Drop is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.';
+      'Keep receiving messages while Night Dog is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.';
 
   @override
   String get onboardingBackgroundTitle => 'Receive messages in the background?';
 
   @override
   String get onboardingBackgroundBody =>
-      'Android suspends Night Drop whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps Night Drop running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.';
+      'Android suspends Night Dog whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps Night Dog running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.';
 
   @override
   String get onboardingBackgroundEnable => 'Turn on';
@@ -903,7 +903,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appLockMenu => 'App lock';
 
   @override
-  String get lockedTitle => 'Night Drop is locked';
+  String get lockedTitle => 'Night Dog is locked';
 
   @override
   String get lockedBody =>
@@ -1076,7 +1076,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bridgesLimit =>
-      'Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — Night Drop will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.';
+      'Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — Night Dog will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.';
 
   @override
   String get bridgesHint => '203.0.113.5:9001 A1B2C3…';
@@ -1113,7 +1113,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bridgesRestartBody =>
-      'Bridges are used when Night Drop connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.';
+      'Bridges are used when Night Dog connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.';
 
   @override
   String get bridgesRestartNow => 'Reconnect';

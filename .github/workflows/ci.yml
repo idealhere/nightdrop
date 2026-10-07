@@ -109,7 +109,7 @@ jobs:
         run: make core-build
 
       - name: Resolve Dart deps
-        run: cd app && flutter pub get
+        run: cd app && flutter pub get && flutter gen-l10n
 
       # Vendored cargokit under app/rust_builder ships analyzer noise — scope analysis to
       # our own sources (MAINTENANCE.md §3).

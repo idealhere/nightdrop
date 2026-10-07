@@ -7,6 +7,7 @@ import '../bridges/bridges_screen.dart';
 import '../../app.dart';
 import '../../core/background_delivery.dart';
 import '../../core/backup_errors.dart';
+import '../../core/app_locale.dart';
 import '../../core/backup_files.dart';
 import '../../core/nightdrop_core.dart';
 
@@ -256,13 +257,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        actions: [
+          TextButton(
+            onPressed: AppLocale.toggle,
+            child: Text(l10n.switchLanguage),
+          ),
+        ],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('👻', style: TextStyle(fontSize: 72)),
+              const Text('🌕', style: TextStyle(fontSize: 72)),
               const SizedBox(height: 16),
               Text(l10n.appTitle, style: theme.textTheme.headlineMedium),
               const SizedBox(height: 8),

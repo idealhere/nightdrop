@@ -307,6 +307,9 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('send-button')));
+    // The mock core answers with an echo 600 ms after a send; let that timer fire before settling,
+    // so nothing is left pending when the test ends.
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pumpAndSettle();
 
     expect(core.sent, isEmpty, reason: 'tap must not route through the burn path');

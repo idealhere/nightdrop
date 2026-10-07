@@ -10,6 +10,7 @@ import '../../core/app_version.dart';
 import '../../core/background_delivery.dart';
 import '../../core/nightdrop_core.dart';
 import '../../core/models.dart';
+import '../../core/profile_name.dart';
 import '../backup/backup_actions.dart';
 import '../bridges/bridges_screen.dart';
 import '../chat/chat_screen.dart';
@@ -47,6 +48,7 @@ class HomeScreen extends StatelessWidget {
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'identity') _showMyIdentity(context, core);
+              if (value == 'myname') _editMyName(context, core);
               if (value == 'background') _backgroundDeliverySettings(context);
               if (value == 'applock') showAppLockSettings(context, core);
               if (value == 'duress') showDuressSettings(context, core);
@@ -65,6 +67,7 @@ class HomeScreen extends StatelessWidget {
             },
             itemBuilder: (context) => [
               PopupMenuItem(value: 'identity', child: Text(l10n.myIdentity)),
+              PopupMenuItem(value: 'myname', child: Text(l10n.myNameMenu)),
               if (BackgroundDelivery.supported)
                 PopupMenuItem(
                     value: 'background', child: Text(l10n.backgroundDeliveryMenu)),
@@ -767,6 +770,52 @@ Future<void> _createServerBackup(BuildContext context, NightdropCore core) async
 }
 
 /// Show this device's own anonymous identity (the id others key you by).
+/// "My name" — the name new chats start with. Existing chats that still use the previous
+/// preferred name (or the default) follow the change; a chat renamed by hand keeps its own name.
+Future<void> _editMyName(BuildContext context, NightdropCore core) async {
+  final l10n = AppLocalizations.of(context)!;
+  final previous = ProfileName.current.value;
+  final controller = TextEditingController(text: previous.isEmpty ? kDefaultName : previous);
+  final entered = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: Text(l10n.myNameMenu),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l10n.myNameBody),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 32,
+            decoration: const InputDecoration(hintText: kDefaultName),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: Text(l10n.save),
+        ),
+      ],
+    ),
+  );
+  if (entered == null) return;
+  final name = entered.trim().isEmpty ? kDefaultName : entered.trim();
+  await ProfileName.set(name);
+  for (final c in core.contacts) {
+    final followsSetting = c.myName == kDefaultName || (previous.isNotEmpty && c.myName == previous);
+    if (followsSetting && c.myName != name) core.setMyNameInChat(c.id, name);
+  }
+}
+
 Future<void> _showMyIdentity(BuildContext context, NightdropCore core) async {
   final l10n = AppLocalizations.of(context)!;
   final id = core.identity?.id ?? '(none)';

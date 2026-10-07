@@ -276,7 +276,7 @@ pub struct ServerBackupInfo {
     pub expires_at_secs: u64,
 }
 
-/// A 1:1 conversation partner. Names default to "Anon" and are per-chat (§4).
+/// A 1:1 conversation partner. Names default to "Dog" and are per-chat (§4).
 #[derive(Clone, Debug)]
 pub struct Contact {
     pub id: String,
@@ -2141,7 +2141,7 @@ impl NightdropCore {
 
     /// Give a contact a nickname that only you see (`contact-naming.md`). Never sent, so a peer
     /// can neither read it nor set it; empty clears it. This is the answer to a contact list of
-    /// identical "Anon"s — the peer's own name is their choice, and may be missing or duplicated.
+    /// identical "Dog"s — the peer's own name is their choice, and may be missing or duplicated.
     pub fn set_local_name(&self, contact_id: &str, name: &str) -> Result<()> {
         let mut g = self.lock();
         g.me.set_local_name(contact_id, name)?;
@@ -3648,7 +3648,7 @@ mod tests {
         assert!(core.contacts().is_empty());
 
         let contact = core.open_chat(None).unwrap();
-        assert_eq!(contact.their_name, "Anon");
+        assert_eq!(contact.their_name, "Dog");
         assert_eq!(core.contacts().len(), 1);
 
         let history = core.send_message(&contact.id, "hello").unwrap();
@@ -3702,7 +3702,7 @@ mod tests {
 
         core.set_my_name(&contact.id, "   ").unwrap();
         let c = core.contacts().into_iter().next().unwrap();
-        assert_eq!(c.my_name, "Anon");
+        assert_eq!(c.my_name, "Dog");
     }
 
     #[test]

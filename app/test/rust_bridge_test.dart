@@ -41,7 +41,7 @@ void main() {
 
     final contact = await core.joinWithShortCode('4-cedar-lantern-river');
     expect(core.contacts, hasLength(1));
-    expect(contact.theirName, 'Anon');
+    expect(contact.theirName, 'Dog');
 
     await core.sendMessage(contact.id, 'hello');
     final messages = core.messagesFor(contact.id);

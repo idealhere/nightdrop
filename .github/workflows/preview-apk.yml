@@ -4,7 +4,7 @@ name: Preview Android APK (HTTPS-first)
 # relay deployment is finished. It runs only when this file changes (or manually), so it does
 # not add a second Android build to every push. The APK is debug-signed with the runner's
 # throwaway key: installing a later build over it requires uninstalling first.
-# Edit the line below to request a fresh build: preview 11
+# Edit the line below to request a fresh build: preview 12
 on:
   push:
     branches: [feature/https-primary-transport]

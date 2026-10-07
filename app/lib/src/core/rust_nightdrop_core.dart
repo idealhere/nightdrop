@@ -13,6 +13,7 @@ import 'nightdrop_core.dart';
 import 'media_cache.dart';
 import 'models.dart';
 import 'notifications.dart';
+import 'profile_name.dart';
 import 'install_source.dart';
 import 'public_downloads.dart';
 import 'screenshot_detector.dart';
@@ -40,6 +41,10 @@ class RustNightdropCore extends NightdropCore {
   List<Contact> _contacts = const [];
   List<Contact> _requests = const [];
   final Map<String, List<Message>> _messages = {};
+
+  /// Chats already given the user's preferred name this run, so a failed attempt is not
+  /// repeated on every refresh.
+  final Set<String> _preferredNameApplied = {};
 
   /// Optimistic outgoing messages awaiting core confirmation, kept SEPARATE from [_messages]
   /// (the core history) so overlapping sends to an offline peer don't wipe each other when one
@@ -1958,10 +1963,22 @@ class RustNightdropCore extends NightdropCore {
     unawaited(_refresh(e));
   }
 
+  /// Give chats that still carry the default name the one the user chose in settings.
+  void _applyPreferredName() {
+    final preferred = ProfileName.current.value;
+    if (preferred.isEmpty || preferred == kDefaultName) return;
+    for (final c in _contacts) {
+      if (c.myName == kDefaultName && _preferredNameApplied.add(c.id)) {
+        setMyNameInChat(c.id, preferred);
+      }
+    }
+  }
+
   Future<void> _refresh([rust.AppEvent? event]) async {
     // Contact/request lists are small — always re-read them (a roster change is cheap).
     _contacts = (await _core!.contacts()).map(_map).toList();
     _requests = (await _core!.incomingRequests()).map(_map).toList();
+    _applyPreferredName();
     final known = {..._contacts, ..._requests}.map((c) => c.id).toSet();
 
     // Pull message history only for the chats that actually changed (§1.5.5). The event names them;

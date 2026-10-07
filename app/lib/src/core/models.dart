@@ -6,7 +6,7 @@
 library;
 
 /// Default per-chat display name for both parties (ARCHITECTURE.md §4).
-const String kDefaultName = 'Anon';
+const String kDefaultName = 'Dog';
 
 /// A compact, readable form of a long base64 identity id for display (e.g. in chat headers
 /// and request tiles). Full ids remain available via "view identity" surfaces.
@@ -78,7 +78,7 @@ class Contact {
 
   final String id;
 
-  /// The other party's display name in this chat (default "Anon").
+  /// The other party's display name in this chat (default "Dog").
   String theirName;
 
   /// Your own display name in this chat — you can rename yourself per-chat (§4).
@@ -152,7 +152,7 @@ class Contact {
   bool peerOnOldVersion;
 
   /// A nickname **you** gave this contact. Local only — never sent, never announced. Takes
-  /// precedence over [theirName], which is whatever the peer chose (or "Anon" forever).
+  /// precedence over [theirName], which is whatever the peer chose (or "Dog" forever).
   String localName;
 
   /// Six characters derived from the contact's identity key, so two unnamed contacts are still
@@ -166,7 +166,7 @@ class Contact {
 
   /// Whether the identity tag should be shown alongside [displayName]. Suppressed once you have
   /// named them yourself — that is the point at which you have vouched for who this is; until
-  /// then, two contacts can both call themselves "Anon", or both call themselves "Alex".
+  /// then, two contacts can both call themselves "Dog", or both call themselves "Alex".
   bool get showIdentityTag => localName.isEmpty && identityTag.isNotEmpty;
 }
 

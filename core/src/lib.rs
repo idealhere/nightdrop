@@ -29,4 +29,4 @@ pub mod wire;
 pub type Result<T> = anyhow::Result<T>;
 
 /// Default per-chat display name for both parties (`ARCHITECTURE.md` §4).
-pub const DEFAULT_NAME: &str = "Anon";
+pub const DEFAULT_NAME: &str = "Dog";

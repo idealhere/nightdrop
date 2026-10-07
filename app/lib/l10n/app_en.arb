@@ -796,7 +796,7 @@
   "@onboardingBackgroundTitle": {
     "description": "Title of the background-delivery offer shown during onboarding."
   },
-  "onboardingBackgroundBody": "CyberDog will check for new messages even when it is closed, and show a permanent notification while it does. You can change this any time in the menu.",
+  "onboardingBackgroundBody": "CyberDog will receive messages even when it is closed. A permanent notification will show while it does.",
   "@onboardingBackgroundBody": {
     "description": "Explanation of what background delivery does, its privacy properties and its costs, shown during onboarding."
   },

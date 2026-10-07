@@ -148,8 +148,8 @@ fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
             let message = "HTTPS relay support is not compiled into this build".to_string();
             let dialer: crate::relay_client::RelayDialer =
                 std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {
-                        Err(anyhow::anyhow!(message.clone()))
-                    });
+                    Err(anyhow::anyhow!(message.clone()))
+                });
             return RelayClient::with_dialer_for(addr, dialer);
         }
     }

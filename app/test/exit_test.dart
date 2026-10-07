@@ -43,6 +43,9 @@ void main() {
   Future<void> openExit(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
+    // The menu has grown past the 600 px test screen; it scrolls, so bring the item into view.
+    await tester.ensureVisible(find.text('Exit'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Exit'));
     await tester.pumpAndSettle();
   }

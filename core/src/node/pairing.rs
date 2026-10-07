@@ -183,6 +183,7 @@ impl Node {
         // otherwise never learn it, and be left reading our silence as "they'd be told".
         self.announce_captures_to(&contact_id);
         self.announce_burns_to(&contact_id);
+        self.announce_groups_to(&contact_id);
         self.announce_version_to(&contact_id);
         // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
         // Refused for a chat still awaiting approval; the relay tick picks it up once approved.

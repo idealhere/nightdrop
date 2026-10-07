@@ -54,6 +54,8 @@ const MARK_UNVERIFIED: &[u8] = b"nightdrop/ctl/unverified/v1";
 /// Two markers for the screenshot-capability signal (#1), same shape as the verification pair: the
 /// state is *which* marker the receiver's ratchet decrypts, so there is no plaintext flag to flip.
 const MARK_BURNS_V1: &[u8] = b"nightdrop/ctl/burns/v1";
+/// Marker for the group capability signal (`Frame::Groups`).
+const MARK_GROUPS_V1: &[u8] = b"nightdrop/ctl/groups/v1";
 /// Prefix of a [`Frame::Version`] plaintext; the app version follows it (`"...:0.1.27"`).
 const MARK_VERSION_PREFIX: &[u8] = b"nightdrop/ctl/version/v1:";
 const MARK_CAPTURES_VISIBLE: &[u8] = b"nightdrop/ctl/captures-visible/v1";
@@ -463,7 +465,8 @@ fn user_frame_sender(frame: &Frame) -> Option<String> {
         | Frame::Media { from, .. }
         | Frame::MediaIncoming { from, .. }
         | Frame::Edit { from, .. }
-        | Frame::Unsend { from, .. } => Some(from.clone()),
+        | Frame::Unsend { from, .. }
+        | Frame::Group { from, .. } => Some(from.clone()),
         _ => None,
     }
 }
@@ -577,6 +580,14 @@ pub struct Node {
     /// for that chat until the app is restarted. Not persisted — re-announcing on a fresh launch
     /// is cheap and self-heals.
     burns_announced: std::collections::HashSet<String>,
+    /// Contacts this run has successfully told that we understand group frames. Per run and
+    /// success-gated, like [`burns_announced`](Self::burns_announced).
+    groups_announced: std::collections::HashSet<String>,
+    /// Contacts whose build has announced that it understands group frames (`Frame::Groups`).
+    /// Persisted: it is a fact about the peer, learned once.
+    groups_peers: std::collections::HashSet<String>,
+    /// Group chats, by group id (`node/groups.rs`).
+    groups: HashMap<String, groups::Group>,
     /// This build's app version (`"0.1.27"`), set by the app via [`set_app_version`]
     /// (Self::set_app_version) — the core crate does not know it. `None` until set, and nothing is
     /// announced until then: a guessed version would be worse than none.
@@ -917,6 +928,7 @@ struct PendingInvite {
 
 mod backup;
 mod frames;
+mod groups;
 mod mailbox;
 mod messaging;
 mod pairing;
@@ -944,6 +956,9 @@ impl Node {
             last_invite_code: None,
             captures_visible: None,
             burns_announced: std::collections::HashSet::new(),
+            groups_announced: std::collections::HashSet::new(),
+            groups_peers: std::collections::HashSet::new(),
+            groups: HashMap::new(),
             app_version: None,
             version_announced: std::collections::HashSet::new(),
             mailbox_announced: std::collections::HashSet::new(),
@@ -1901,6 +1916,27 @@ fn render_safety_number(digest: &[u8; 32]) -> String {
     groups.join(" ")
 }
 
+/// The persisted form of a UI [`ChatMessage`]; inverse of [`persisted_to_message`].
+fn message_to_persisted(m: &ChatMessage) -> PersistedMessage {
+    PersistedMessage {
+        from_me: m.from_me,
+        text: m.text.clone(),
+        system: m.system,
+        msg_id: m.msg_id.clone(),
+        edited: m.edited,
+        at: m.at,
+        delivery: m.delivery.clone(),
+        kind: m.kind.clone(),
+        mime: m.mime.clone(),
+        media_id: m.media_id.clone(),
+        media_size: m.media_size,
+        transfer_id: m.transfer_id.clone(),
+        thumb_id: m.thumb_id.clone(),
+        burn_secs: m.burn_secs,
+        viewed_at: m.viewed_at,
+    }
+}
+
 /// Rebuild a UI [`ChatMessage`] from its persisted form (restore + scoped-backup merge).
 fn persisted_to_message(m: &crate::storage::PersistedMessage) -> ChatMessage {
     ChatMessage {
@@ -2295,5 +2331,7 @@ fn base64_handle(bytes: &[u8]) -> String {
 mod tests_a;
 #[cfg(test)]
 mod tests_b;
+#[cfg(test)]
+mod tests_groups;
 #[cfg(test)]
 mod tests_mailbox;

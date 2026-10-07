@@ -716,6 +716,8 @@ impl Inner {
             // a chat paired before the feature shipped would otherwise never hear it, leaving
             // burn unavailable for precisely the contacts someone already talks to.
             self.me.announce_burns();
+            // Group support (`Frame::Groups`), same cadence and the same once-per-run guard.
+            self.me.announce_groups();
             // Our app version (`Frame::Version`), same cadence and the same once-per-run guard.
             self.me.announce_version();
             // v2 mailbox handles (`mailbox-handles.md`): offer our contribution to every chat not

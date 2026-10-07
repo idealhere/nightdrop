@@ -92,10 +92,34 @@ impl Node {
                 authorized: chat.authorized,
             })
             .collect();
+        let mut groups: Vec<crate::storage::PersistedGroup> = self
+            .groups
+            .values()
+            .map(|g| crate::storage::PersistedGroup {
+                id: g.id.clone(),
+                name: g.name.clone(),
+                creator: g.creator.clone(),
+                members: g.members.clone(),
+                left: g.left,
+                history: g
+                    .history
+                    .iter()
+                    .map(|gm| crate::storage::PersistedGroupMessage {
+                        sender: gm.sender.clone(),
+                        message: message_to_persisted(&gm.message),
+                    })
+                    .collect(),
+            })
+            .collect();
+        groups.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut groups_peers: Vec<String> = self.groups_peers.iter().cloned().collect();
+        groups_peers.sort();
         PersistedState {
             account_pickle,
             address: self.address(),
             chats,
+            groups,
+            groups_peers,
             media: Vec::new(),      // populated only for backups (see `backup`)
             onion_keys: Vec::new(), // populated only for backups (see `backup`)
             my_relays: self.my_relays.clone(),
@@ -359,6 +383,27 @@ impl Node {
         node.pending_sends = Self::import_pending_sends(&state.pending_sends);
         node.pending_control = Self::import_pending_control(&state.pending_control);
         node.pending_invites = Self::import_pending_invites(&state.pending_invites);
+        node.groups_peers = state.groups_peers.iter().cloned().collect();
+        for g in &state.groups {
+            node.groups.insert(
+                g.id.clone(),
+                groups::Group {
+                    id: g.id.clone(),
+                    name: g.name.clone(),
+                    creator: g.creator.clone(),
+                    members: g.members.clone(),
+                    history: g
+                        .history
+                        .iter()
+                        .map(|gm| groups::GroupMessage {
+                            sender: gm.sender.clone(),
+                            message: persisted_to_message(&gm.message),
+                        })
+                        .collect(),
+                    left: g.left,
+                },
+            );
+        }
         for chat in &state.chats {
             let session = Session::from_pickle(
                 SessionPickle::from_encrypted(&chat.session_pickle, key)
@@ -587,6 +632,9 @@ impl Node {
             for chat in &mut state.chats {
                 chat.history.clear();
             }
+            for group in &mut state.groups {
+                group.history.clear();
+            }
         }
         state.onion_keys = self.collect_onion_keys();
         let sealed = crate::storage::seal(&key, &serde_json::to_vec(&state)?)?;
@@ -610,6 +658,8 @@ impl Node {
         let mut key = crate::storage::derive_key(password, &salt)?;
         let mut state = self.export(&key);
         state.chats.retain(|c| c.contact_id == contact_id);
+        // One chat only: groups are not part of a scoped backup.
+        state.groups.clear();
         if full {
             state.media = self.collect_media_for(contact_id);
         } else {

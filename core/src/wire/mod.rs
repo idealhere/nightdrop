@@ -192,6 +192,24 @@ pub enum Frame {
     /// the negative, so an older build — which sends nothing — reads as unsupported without
     /// having to say so. Unknown therefore means *do not offer burn*, which is the safe direction.
     Burns { from: String, message: WireOlm },
+    /// "This build understands [`Group`](Frame::Group) frames." A standing property of the
+    /// peer's build, announced at the same points as [`Burns`](Frame::Burns), and the gate for
+    /// adding someone to a group: a build that predates groups drops a `Group` frame, so a member
+    /// on one would silently miss the whole conversation.
+    ///
+    /// **E2E-authenticated** by the marker that decrypts (`node::MARK_GROUPS_V1`). There is no
+    /// "I do not support groups" marker: absence is the negative.
+    Groups { from: String, message: WireOlm },
+    /// A **small group chat** frame (`node/groups.rs`). The encrypted payload is a group
+    /// envelope — group id, an operation name, and that operation's body — sealed separately on
+    /// the pairwise session with each member, so the relay sees ordinary unrelated messages and
+    /// there is no group key. One variant carries every group operation: a new operation is a
+    /// new name inside the envelope, which an older build ignores, not a new variant, which it
+    /// could not decode.
+    ///
+    /// The sender is the owner of the session the frame decrypted on (`from`), never a name
+    /// inside the payload.
+    Group { from: String, message: WireOlm },
     /// Our contribution to this chat's **v2 mailbox secret**, and — once we hold the peer's — a
     /// confirmation that we computed the same secret (`docs/design/mailbox-handles.md`,
     /// `node::mailbox`). A peer posts v2 only after receiving a valid confirmation, so a message is

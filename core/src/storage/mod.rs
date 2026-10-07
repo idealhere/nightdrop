@@ -274,11 +274,38 @@ pub struct PersistedInvite {
 }
 
 /// The full device state written to disk.
+/// One entry of a group's history: who sent it (identity key; empty for our own) and the message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedGroupMessage {
+    #[serde(default)]
+    pub sender: String,
+    pub message: PersistedMessage,
+}
+
+/// A group chat as saved: its members by identity key and its history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedGroup {
+    pub id: String,
+    pub name: String,
+    pub creator: String,
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub left: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<PersistedGroupMessage>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedState {
     pub account_pickle: String,
     pub address: String,
     pub chats: Vec<PersistedChat>,
+    /// Group chats. `#[serde(default)]` so state saved before groups existed still loads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<PersistedGroup>,
+    /// Contacts whose build announced group support. `#[serde(default)]` for forward-compat.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups_peers: Vec<String>,
     /// Attachment bytes bundled into a backup so it's self-contained. Empty in the at-rest
     /// state file (media lives in sealed sibling files there). `#[serde(default)]` +
     /// skip-empty keeps older blobs loadable and the state file small.
@@ -441,6 +468,8 @@ mod tests {
             account_pickle: "pk".into(),
             address: addr.into(),
             chats: Vec::new(),
+            groups: Vec::new(),
+            groups_peers: Vec::new(),
             media: Vec::new(),
             onion_keys: Vec::new(),
             my_relays: Vec::new(),

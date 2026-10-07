@@ -160,6 +160,7 @@ impl Node {
                     // exist when the launch-time broadcast ran.
                     self.announce_captures_to(&contact_id);
                     self.announce_burns_to(&contact_id);
+                    self.announce_groups_to(&contact_id);
                     self.announce_version_to(&contact_id);
                     // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
                     // Refused for a chat still awaiting approval; the relay tick picks it up once approved.
@@ -294,6 +295,32 @@ impl Node {
                 }
                 chat.contact.peer_supports_burn = Some(true);
                 Ok(Some((from, String::new())))
+            }
+            Frame::Groups { from, message } => {
+                // "My build understands group frames." Standing property, no history entry.
+                if !self.verify_control(&from, &message, MARK_GROUPS_V1) {
+                    return Ok(None);
+                }
+                if !self.groups_peers.insert(from.clone()) {
+                    return Ok(None);
+                }
+                self.dirty = true;
+                Ok(Some((from, String::new())))
+            }
+            Frame::Group { from, message } => {
+                // Decrypted on the session with `from`, which is therefore the sender — whatever
+                // the envelope says. The group rules live in `groups.rs`.
+                let olm = message.to_olm()?;
+                let plaintext = {
+                    let Some(chat) = self.chats.get_mut(&from) else {
+                        return Ok(None);
+                    };
+                    if !chat.authorized {
+                        return Ok(None);
+                    }
+                    crypto::decrypt(&mut chat.session, &olm)?
+                };
+                self.on_group_frame(&from, &plaintext)
             }
             Frame::Version { from, message } => {
                 // "This is the Night Drop version I run." Standing property, no history entry.

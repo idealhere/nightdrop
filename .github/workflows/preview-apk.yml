@@ -1,10 +1,11 @@
 name: Preview Android APK (HTTPS-first)
 
-# Builds an installable arm64 debug APK for looking at the app on a real phone before the
-# relay deployment is finished. It runs only when this file changes (or manually), so it does
-# not add a second Android build to every push. The APK is debug-signed with the runner's
-# throwaway key: installing a later build over it requires uninstalling first.
-# Edit the line below to request a fresh build: preview 28
+# Builds installable release-mode APKs, one per CPU type, for use on real phones. Release mode
+# is what makes them small: a debug APK carries an unoptimised core and the Dart JIT runtime.
+# It runs only when this file changes (or manually), so it does not add a second Android build
+# to every push. No keystore is configured, so the APKs are signed with the runner's throwaway
+# key: installing a later build over an earlier one requires uninstalling first.
+# Edit the line below to request a fresh build: preview 29
 on:
   push:
     branches: [feature/https-primary-transport]
@@ -22,10 +23,19 @@ env:
   # The planned primary relay. The app starts and shows its UI without it; pairing and
   # messaging need the relay to be live.
   HTTPS_RELAY: https://relay.dforadar.ru/v1/relay
+  NIGHTDROP_WEBTUNNEL: "0"
+  # Build-time app identity (MAINTENANCE.md §7). A distinct id installs alongside an upstream
+  # Night Drop instead of colliding with it.
+  ORG_GRADLE_PROJECT_appId: app.nightdog
+  ORG_GRADLE_PROJECT_appName: "CyberDog"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
+  CARGO_PROFILE_RELEASE_LTO: "thin"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+  CARGO_PROFILE_RELEASE_STRIP: "symbols"
 
 jobs:
   android:
-    name: arm64 debug APK
+    name: release APKs
     runs-on: ubuntu-latest
     # The preview release below is the only thing in this repository's workflows that publishes.
     permissions:
@@ -53,27 +63,33 @@ jobs:
       # Same shape as the CI Android step (WebTunnel off): no onion endpoint is baked yet, so
       # there is no Tor fallback to compile in. The run number is the build number, so every
       # published APK is distinguishable both by file name and inside the app.
-      - name: Build APK
-        env:
-          NIGHTDROP_WEBTUNNEL: "0"
-          # Build-time app identity (MAINTENANCE.md §7). A distinct id installs alongside an
-          # upstream Night Drop instead of colliding with it.
-          ORG_GRADLE_PROJECT_appId: app.nightdog
-          ORG_GRADLE_PROJECT_appName: "CyberDog"
+      # The CARGO_PROFILE_* settings shrink the Rust core for this build only; the workspace
+      # profile, and so the relay and desktop builds, are left alone.
+      - name: Build arm64 APK
         run: |
           set -euo pipefail
           cd app
-          flutter build apk --debug --split-per-abi --target-platform android-arm64 "--build-number=$GITHUB_RUN_NUMBER" "--dart-define=CYBERDOG_BUILD=$GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
+          flutter build apk --release --split-per-abi --target-platform android-arm64 "--build-number=$GITHUB_RUN_NUMBER" "--dart-define=CYBERDOG_BUILD=$GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libnightdrop.so'
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp "$APK" "$GITHUB_WORKSPACE/out/arm64.apk"
+          ls -l "$APK"
 
-      - name: Verify Rust core is bundled
+      # Older 32-bit phones. Kept apart so that a failure here cannot hold back the main APK.
+      - name: Build 32-bit APK
+        continue-on-error: true
         run: |
           set -euo pipefail
-          APK=app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
-          test -f "$APK"
-          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libnightdrop.so'
+          cd app
+          flutter build apk --release --split-per-abi --target-platform android-arm "--build-number=$GITHUB_RUN_NUMBER" "--dart-define=CYBERDOG_BUILD=$GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
+          APK=build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+          unzip -l "$APK" | grep -q 'lib/armeabi-v7a/libnightdrop.so'
+          cp "$APK" "$GITHUB_WORKSPACE/out/armv7.apk"
+          ls -l "$APK"
 
       # One prerelease tag, but the file name carries the version and build number so builds are
-      # never confused with each other: nightdog-<version>-b<build>.apk.
+      # never confused with each other: cyberdog-<version>-b<build>.apk, plus -armv7 for 32-bit.
       - name: Publish preview release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,11 +97,16 @@ jobs:
           set -euo pipefail
           version="$(sed -n 's/^version: *//p' app/pubspec.yaml | cut -d+ -f1)"
           name="cyberdog-${version}-b${GITHUB_RUN_NUMBER}.apk"
-          cp app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk "$name"
+          cp out/arm64.apk "$name"
+          files=("$name")
+          if [ -f out/armv7.apk ]; then
+            cp out/armv7.apk "cyberdog-${version}-b${GITHUB_RUN_NUMBER}-armv7.apk"
+            files+=("cyberdog-${version}-b${GITHUB_RUN_NUMBER}-armv7.apk")
+          fi
           gh release delete preview-apk --yes --cleanup-tag || true
           # The tag is removed asynchronously; creating the release again can race with that.
           for attempt in 1 2 3 4; do
-            if gh release create preview-apk "$name" --prerelease --target "$GITHUB_SHA" --title "CyberDog ${version} build ${GITHUB_RUN_NUMBER} (preview, debug)" --notes "Debug-signed test build. Not a production release."; then
+            if gh release create preview-apk "${files[@]}" --prerelease --target "$GITHUB_SHA" --title "CyberDog ${version} build ${GITHUB_RUN_NUMBER} (preview)" --notes "Test build signed with a throwaway key. Not a production release."; then
               exit 0
             fi
             echo "publish attempt $attempt failed"

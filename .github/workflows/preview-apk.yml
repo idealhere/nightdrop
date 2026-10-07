@@ -3,9 +3,10 @@ name: Preview Android APK (HTTPS-first)
 # Builds installable release-mode APKs, one per CPU type, for use on real phones. Release mode
 # is what makes them small: a debug APK carries an unoptimised core and the Dart JIT runtime.
 # It runs only when this file changes (or manually), so it does not add a second Android build
-# to every push. No keystore is configured, so the APKs are signed with the runner's throwaway
-# key: installing a later build over an earlier one requires uninstalling first.
-# Edit the line below to request a fresh build: preview 30
+# to every push. The APKs are signed with the project's permanent key (repository secrets
+# ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD), so a later build installs over an earlier
+# one. Builds up to 30 were signed with a throwaway key and must be uninstalled once.
+# Edit the line below to request a fresh build: preview 31
 on:
   push:
     branches: [feature/https-primary-transport]
@@ -60,6 +61,24 @@ jobs:
       - name: Resolve Dart dependencies
         run: cd app && flutter pub get && flutter gen-l10n
 
+      # The keystore is written outside the checkout and named by an absolute path, so it can
+      # never be picked up by a later `git add`. A missing secret fails the build: silently
+      # falling back to a throwaway key would publish an APK that cannot update the last one.
+      - name: Install signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" && test -n "$KEYSTORE_PASSWORD"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.p12"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=cyberdog"
+            echo "keyPassword=$KEYSTORE_PASSWORD"
+          } > app/android/key.properties
+
       # Same shape as the CI Android step (WebTunnel off): no onion endpoint is baked yet, so
       # there is no Tor fallback to compile in. The run number is the build number, so every
       # published APK is distinguishable both by file name and inside the app.
@@ -88,6 +107,19 @@ jobs:
           cp "$APK" "$GITHUB_WORKSPACE/out/armv7.apk"
           ls -l "$APK"
 
+      # Every published APK must carry the permanent certificate, not a debug one.
+      - name: Verify signature
+        env:
+          EXPECTED_CERT_SHA256: ddd9123601a9b2a8b5e9308b3564c382ff4e79c9e329f975a258a2a26e7aa76e
+        run: |
+          set -euo pipefail
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          for apk in out/*.apk; do
+            "$apksigner" verify --print-certs "$apk" | tee certs.txt
+            grep -qi "SHA-256 digest: $EXPECTED_CERT_SHA256" certs.txt
+          done
+          rm -f "$RUNNER_TEMP/release.p12" app/android/key.properties
+
       # One prerelease tag, but the file name carries the version and build number so builds are
       # never confused with each other: cyberdog-<version>-b<build>.apk, plus -armv7 for 32-bit.
       - name: Publish preview release
@@ -106,7 +138,7 @@ jobs:
           gh release delete preview-apk --yes --cleanup-tag || true
           # The tag is removed asynchronously; creating the release again can race with that.
           for attempt in 1 2 3 4; do
-            if gh release create preview-apk "${files[@]}" --prerelease --target "$GITHUB_SHA" --title "CyberDog ${version} build ${GITHUB_RUN_NUMBER} (preview)" --notes "Test build signed with a throwaway key. Not a production release."; then
+            if gh release create preview-apk "${files[@]}" --prerelease --target "$GITHUB_SHA" --title "CyberDog ${version} build ${GITHUB_RUN_NUMBER} (preview)" --notes "Preview build."; then
               exit 0
             fi
             echo "publish attempt $attempt failed"

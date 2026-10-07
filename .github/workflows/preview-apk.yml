@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: preview-apk
+  cancel-in-progress: true
+
 env:
   # The planned primary relay. The app starts and shows its UI without it; pairing and
   # messaging need the relay to be live.
@@ -22,6 +26,9 @@ jobs:
   android:
     name: arm64 debug APK
     runs-on: ubuntu-latest
+    # The preview release below is the only thing in this repository's workflows that publishes.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -47,6 +54,10 @@ jobs:
       - name: Build APK
         env:
           NIGHTDROP_WEBTUNNEL: "0"
+          # Build-time app identity (MAINTENANCE.md §7). A distinct id installs alongside an
+          # upstream Night Drop instead of colliding with it.
+          ORG_GRADLE_PROJECT_appId: app.nightdog
+          ORG_GRADLE_PROJECT_appName: "Ночная Собака"
         run: |
           set -euo pipefail
           cd app
@@ -67,3 +78,13 @@ jobs:
           path: app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      # A fixed prerelease tag gives the APK one stable public download URL.
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk nochnaya-sobaka.apk
+          gh release delete preview-apk --yes --cleanup-tag || true
+          gh release create preview-apk nochnaya-sobaka.apk             --prerelease --target "$GITHUB_SHA"             --title "Preview APK (HTTPS-first, debug build)"             --notes "Debug-signed test build. Not a production release."

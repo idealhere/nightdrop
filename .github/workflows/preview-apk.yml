@@ -50,7 +50,8 @@ jobs:
         run: cd app && flutter pub get && flutter gen-l10n
 
       # Same shape as the CI Android step (WebTunnel off): no onion endpoint is baked yet, so
-      # there is no Tor fallback to compile in.
+      # there is no Tor fallback to compile in. The run number is the build number, so every
+      # published APK is distinguishable both by file name and inside the app.
       - name: Build APK
         env:
           NIGHTDROP_WEBTUNNEL: "0"
@@ -61,8 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           cd app
-          flutter build apk --debug --split-per-abi --target-platform android-arm64 \
-            "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
+          flutter build apk --debug --split-per-abi --target-platform android-arm64 "--build-number=$GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
 
       - name: Verify Rust core is bundled
         run: |
@@ -71,20 +71,15 @@ jobs:
           test -f "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libnightdrop.so'
 
-      - name: Upload APK
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: nightdrop-preview-arm64-debug
-          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
-          if-no-files-found: error
-          retention-days: 7
-
-      # A fixed prerelease tag gives the APK one stable public download URL.
+      # One prerelease tag, but the file name carries the version and build number so builds are
+      # never confused with each other: nightdog-<version>-b<build>.apk.
       - name: Publish preview release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cp app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk nochnaya-sobaka.apk
+          version="$(sed -n 's/^version: *//p' app/pubspec.yaml | cut -d+ -f1)"
+          name="nightdog-${version}-b${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk "$name"
           gh release delete preview-apk --yes --cleanup-tag || true
-          gh release create preview-apk nochnaya-sobaka.apk             --prerelease --target "$GITHUB_SHA"             --title "Preview APK (HTTPS-first, debug build)"             --notes "Debug-signed test build. Not a production release."
+          gh release create preview-apk "$name" --prerelease --target "$GITHUB_SHA" --title "Night Dog ${version} build ${GITHUB_RUN_NUMBER} (preview, debug)" --notes "Debug-signed test build. Not a production release."

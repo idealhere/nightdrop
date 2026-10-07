@@ -571,11 +571,11 @@
   "@tapToShowPhoto": {
     "description": "Caption under a concealed received photo."
   },
-  "myNameMenu": "My name",
+  "myNameMenu": "Nickname",
   "@myNameMenu": {
     "description": "Menu item and dialog title: the name new chats start with."
   },
-  "myNameBody": "Your name is shown in front of your rank, for example “Max NightDog”. Leave it empty to be shown by rank alone. New chats use it automatically; you can still set a different name inside any chat.",
+  "myNameBody": "Your nickname is shown in front of your rank, for example “Max NightDog”. Leave it empty to be shown by rank alone. New chats use it automatically; you can still set a different one inside any chat.",
   "@myNameBody": {
     "description": "Explains the global name setting and that per-chat names still exist."
   },
@@ -1036,7 +1036,7 @@
       }
     }
   },
-  "yourNameInChat": "Your name in this chat",
+  "yourNameInChat": "Your nickname in this chat",
   "@yourNameInChat": {
     "description": "Title of the rename-self dialog."
   },

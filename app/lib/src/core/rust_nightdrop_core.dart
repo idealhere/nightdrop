@@ -440,22 +440,45 @@ class RustNightdropCore extends NightdropCore {
   /// primary relay is expressed as two endpoints of ONE logical RelayCore/store:
   /// HTTPS first, then its onion endpoint. Independent relay stores must never be put in this
   /// bundle; those use Night Drop's existing fan-out/deduplication instead.
-  Future<void> _switchHttpsToTorFallback(String statePath, String key) async {
+  ///
+  /// Two independent triggers reach this (the liveness watcher and a pairing attempt), so the
+  /// switch is single-flight: a second caller awaits the one already running instead of tearing
+  /// down and rebuilding the core concurrently over the same state file and Tor state dir.
+  Future<void> _switchHttpsToTorFallback(String statePath, String key) =>
+      _httpsFallbackSwitch ??= _runHttpsToTorFallback(statePath, key);
+
+  Future<void> _runHttpsToTorFallback(String statePath, String key) async {
     final https = _httpsRelayAddr;
     final onion = _relayAddr;
     final stateDir = await _torStateDir();
-    if (https == null || onion == null || stateDir == null) return;
+    // The bundle below declares both endpoints to be ONE store, so only this relay's own onion
+    // endpoint may go in it — never an arbitrary NIGHTDROP_RELAY address.
+    if (https == null ||
+        onion == null ||
+        stateDir == null ||
+        !onion.contains('.onion')) {
+      _httpsFallbackSwitch = null;
+      return;
+    }
 
     _httpsFallbackDone = true;
     await rust.diagNote(
         line: 'transport: HTTPS path failed — switching to Tor/WebTunnel fallback');
     await _closeCore();
-    _core = await rust.NightdropCore.newTor(
-      stateDir: stateDir,
-      relayAddr: '$https|$onion',
-      persistPath: statePath,
-      persistKey: key,
-    );
+    try {
+      _core = await rust.NightdropCore.newTor(
+        stateDir: stateDir,
+        relayAddr: '$https|$onion',
+        persistPath: statePath,
+        persistKey: key,
+      );
+    } catch (_) {
+      // Tor/WebTunnel would not come up (for example the device is simply offline). Never leave
+      // the app without a core: reopen the same identity on the HTTPS-only path and keep
+      // watching, so a later failure round can try the fallback again.
+      await _restoreHttpsOnlyCore(stateDir, https, statePath, key);
+      return;
+    }
     _httpsRelay = true; // relay still prefers HTTPS when it recovers
     _tor = true; // peer path + onion fallback are now available
     _networked = false;
@@ -465,6 +488,39 @@ class RustNightdropCore extends NightdropCore {
     await _refresh();
     await _applyBuiltInRelayFanout();
     unawaited(_scheduleGuardHeal(statePath, key));
+    notifyListeners();
+  }
+
+  Future<void> _restoreHttpsOnlyCore(
+      String stateDir, String https, String statePath, String key) async {
+    await rust.diagNote(
+        line: 'transport: Tor/WebTunnel fallback failed — staying on HTTPS');
+    await _closeCore();
+    try {
+      _core = await rust.NightdropCore.newTor(
+        stateDir: stateDir,
+        relayAddr: https,
+        persistPath: statePath,
+        persistKey: key,
+      );
+    } catch (_) {
+      await _closeCore();
+      _identity = null;
+      _loadError = true;
+      notifyListeners();
+      return;
+    }
+    _httpsRelay = true;
+    _tor = false;
+    _networked = false;
+    _events = rust.subscribe().listen(_onEvent);
+    final id = await _core!.identity();
+    _identity = Identity(id: id.id);
+    await _refresh();
+    await _applyBuiltInRelayFanout();
+    _httpsFallbackDone = false;
+    _httpsFallbackSwitch = null;
+    unawaited(_scheduleHttpsFallback(statePath, key));
     notifyListeners();
   }
 
@@ -979,6 +1035,7 @@ class RustNightdropCore extends NightdropCore {
   // onion endpoint for the same logical relay was baked into the app, switch to Tor once.
   static const _httpsFallbackRecheck = Duration(seconds: 10);
   bool _httpsFallbackDone = false;
+  Future<void>? _httpsFallbackSwitch;
 
   /// In-flight [start] call, so concurrent launches coalesce instead of interleaving.
   ///
@@ -1013,6 +1070,7 @@ class RustNightdropCore extends NightdropCore {
       }
       _guardHealDone = false;
       _httpsFallbackDone = false;
+      _httpsFallbackSwitch = null;
       // Close anything already running first: this runs again via `retryStart` after a failure,
       // and a second bootstrap over the same (still-locked) Tor state dir would fail no matter
       // how many times the user pressed "Try again".
@@ -1219,6 +1277,7 @@ class RustNightdropCore extends NightdropCore {
     await _closeCore();
     _guardHealDone = false;
     _httpsFallbackDone = false;
+    _httpsFallbackSwitch = null;
     // Refuse to displace a state file nobody agreed to abandon. Onboarding is only ever correct
     // on a genuinely fresh install, or after the recovery screen said the state is unreadable and
     // the user chose to move on (dismissLoadError). Reaching it any other way means a failed or
@@ -1327,8 +1386,16 @@ class RustNightdropCore extends NightdropCore {
       // relay's onion endpoint, bootstrap Tor/WebTunnel once and retry the exact pairing flow.
       try {
         created = await _core!.joinViaShortCode(code: code);
-      } catch (_) {
-        if (!_httpsRelay || _tor || _relayAddr == null) rethrow;
+      } catch (e) {
+        // Only a relay that could not be reached is evidence against the HTTPS path. A wrong
+        // code or an inviter who never answered says nothing about the transport and must not
+        // bootstrap Tor.
+        if (!_httpsRelay ||
+            _tor ||
+            _relayAddr == null ||
+            !e.toString().contains('could not reach any relay')) {
+          rethrow;
+        }
         final key = await _readStoreKey();
         if (key == null) rethrow;
         await _switchHttpsToTorFallback(await _stateFilePath(), key);

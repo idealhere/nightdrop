@@ -1302,7 +1302,7 @@
   "@groupCreate": {
     "description": "Button that creates the group."
   },
-  "groupEveryoneConnected": "Pick people you already chat with — up to 9. For now everyone in the group also needs a chat with each other, otherwise they will not see each other’s messages.",
+  "groupEveryoneConnected": "Pick people you already chat with — up to 9. Members who have not met are connected to each other automatically: each of them gets a new chat with the others.",
   "@groupEveryoneConnected": {
     "description": "Explains who can be added to a group and the current limitation."
   },

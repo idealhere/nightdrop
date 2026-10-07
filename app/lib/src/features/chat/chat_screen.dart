@@ -21,6 +21,7 @@ import '../../core/screenshot_detector.dart';
 import '../../core/system_notices.dart';
 import '../../theme/cyberdog.dart';
 import '../backup/backup_actions.dart';
+import 'contact_profile_screen.dart';
 import 'verify_screen.dart';
 
 /// Downscale + recompress an image to JPEG so it's small enough to move over Tor quickly.
@@ -845,7 +846,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
         return Scaffold(
           appBar: AppBar(
-            title: Row(mainAxisSize: MainAxisSize.min, children: [
+            // Tapping the name opens the contact's profile, where the verify button lives.
+            title: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ContactProfileScreen(contactId: contact.id),
+                      ),
+                    ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
               const CyberDogMark(size: 26),
               const SizedBox(width: 10),
               Flexible(
@@ -887,7 +896,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 ),
               ],
             )),
-            ]),
+            ])),
             // Only the two icons that show a setting's state stay in the bar; everything else is
             // in the overflow menu. Seven icons filled a phone's app bar edge to edge, and the
             // verify shield sat right beside Back, so reaching for Back opened the verify screen.

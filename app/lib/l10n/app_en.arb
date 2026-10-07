@@ -591,6 +591,26 @@
   "@activityBody": {
     "description": "Explains the activity row."
   },
+  "profileTitle": "Profile",
+  "@profileTitle": {
+    "description": "Title of the contact profile screen."
+  },
+  "encryptionOn": "End-to-end encryption is on",
+  "@encryptionOn": {
+    "description": "Fact row on the contact profile."
+  },
+  "contactVerified": "Verified",
+  "@contactVerified": {
+    "description": "Fact row: the safety number has been checked."
+  },
+  "contactNotVerified": "Not verified yet",
+  "@contactNotVerified": {
+    "description": "Fact row: the safety number has not been checked."
+  },
+  "verifyContact": "Verify this person",
+  "@verifyContact": {
+    "description": "Button on the contact profile that opens the safety-number screen."
+  },
   "privacyMenu": "Privacy",
   "@privacyMenu": {
     "description": "Menu item and title of the privacy screen."

@@ -770,6 +770,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final l10n = AppLocalizations.of(context)!;
     final options = <String, int>{
       l10n.disappearingOff: 0,
+      l10n.disappearing5Minutes: 300,
       l10n.disappearing1Hour: 3600,
       l10n.disappearing1Day: 86400,
       l10n.disappearing1Week: 604800,

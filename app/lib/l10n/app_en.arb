@@ -1041,6 +1041,10 @@
     "description": "Title of the rename-self dialog."
   },
   "disappearingOff": "Off",
+  "disappearing5Minutes": "5 minutes",
+  "@disappearing5Minutes": {
+    "description": "Disappearing-messages timer option."
+  },
   "@disappearingOff": {
     "description": "Disappearing-messages option: off."
   },
@@ -1048,7 +1052,7 @@
   "@disappearing1Hour": {
     "description": "Disappearing-messages option: 1 hour."
   },
-  "disappearing1Day": "1 day",
+  "disappearing1Day": "24 hours",
   "@disappearing1Day": {
     "description": "Disappearing-messages option: 1 day."
   },

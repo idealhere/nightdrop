@@ -395,7 +395,7 @@ impl Node {
                     history: g
                         .history
                         .iter()
-                        .map(|gm| groups::GroupMessage {
+                        .map(|gm| GroupMessage {
                             sender: gm.sender.clone(),
                             message: persisted_to_message(&gm.message),
                         })

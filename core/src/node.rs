@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use vodozemac::olm::{Account, AccountPickle, Session, SessionPickle};
 use zeroize::Zeroize as _;
 
-use crate::api::{ChatMessage, Contact};
+use crate::api::{ChatMessage, Contact, GroupMessage};
 use crate::crypto;
 use crate::identity::{LocalIdentity, PreKeyBundle};
 use crate::relay_client::RelayClient;

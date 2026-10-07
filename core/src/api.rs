@@ -369,6 +369,27 @@ pub struct AppUpdate {
     pub update_available: bool,
 }
 
+/// A group chat (UI-facing). Members are named by identity key — the same string as a
+/// [`Contact::id`] — and include the local user.
+#[derive(Clone, Debug)]
+pub struct GroupInfo {
+    pub id: String,
+    pub name: String,
+    pub members: Vec<String>,
+    /// Identity key of the member who created the group.
+    pub creator: String,
+    /// We left this group: it is read-only.
+    pub left: bool,
+}
+
+/// One entry in a group's history (UI-facing).
+#[derive(Clone, Debug)]
+pub struct GroupMessage {
+    /// Identity key of the member who sent it; empty for our own messages and local notices.
+    pub sender: String,
+    pub message: ChatMessage,
+}
+
 /// One message in a conversation (UI-facing).
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
@@ -2118,6 +2139,76 @@ impl NightdropCore {
         g.me.edit_message(contact_id, msg_id, text)?;
         g.save();
         emit_chats("message", vec![contact_id.to_string()]);
+        Ok(())
+    }
+
+    /// Our own identity key — how we appear in a group's member list.
+    pub fn my_identity_key(&self) -> String {
+        self.lock().me.identity_key()
+    }
+
+    /// Every group chat, sorted by name.
+    pub fn groups(&self) -> Vec<GroupInfo> {
+        self.lock()
+            .me
+            .groups()
+            .into_iter()
+            .map(|(id, name, members, creator, left)| GroupInfo {
+                id,
+                name,
+                members,
+                creator,
+                left,
+            })
+            .collect()
+    }
+
+    /// One group's history, oldest first.
+    pub fn group_messages(&self, group_id: &str) -> Vec<GroupMessage> {
+        self.lock().me.group_messages(group_id)
+    }
+
+    /// The contacts that can be added to a group: their build has announced group support.
+    pub fn group_capable_contacts(&self) -> Vec<String> {
+        let g = self.lock();
+        g.me.contacts()
+            .into_iter()
+            .map(|c| c.id)
+            .filter(|id| g.me.peer_supports_groups(id))
+            .collect()
+    }
+
+    /// Create a group of us plus `member_ids` (contact ids) and tell each member. Returns the
+    /// new group's id. Errors if a member is not an open chat or their build predates groups.
+    pub fn create_group(&self, name: &str, member_ids: Vec<String>) -> Result<String> {
+        let mut g = self.lock();
+        let id = g.me.create_group(name, &member_ids)?;
+        g.save();
+        Ok(id)
+    }
+
+    /// Send a text message to a group: one separately encrypted copy per member.
+    pub fn send_group_message(&self, group_id: &str, text: &str) -> Result<()> {
+        let mut g = self.lock();
+        let sent = g.me.send_group(group_id, text);
+        // Saved even when no copy went out: the message is already in the local history.
+        g.save();
+        sent
+    }
+
+    /// Leave a group. It stays on this device, read-only, until deleted.
+    pub fn leave_group(&self, group_id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.leave_group(group_id)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Remove a group from this device, leaving it first if we had not already.
+    pub fn delete_group(&self, group_id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.delete_group(group_id);
+        g.save();
         Ok(())
     }
 

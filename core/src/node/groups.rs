@@ -10,14 +10,6 @@ use super::*;
 /// The most members a group may have, the local user included.
 pub(crate) const MAX_GROUP_MEMBERS: usize = 10;
 
-/// One entry in a group's history.
-#[derive(Clone, Debug)]
-pub struct GroupMessage {
-    /// Identity key of the member who sent it; empty for our own messages and local notices.
-    pub sender: String,
-    pub message: ChatMessage,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct Group {
     pub id: String,
@@ -49,8 +41,6 @@ pub(super) fn unpack_group(buf: &[u8]) -> Result<(String, String, Vec<u8>)> {
     Ok((group_id, op, buf[p..].to_vec()))
 }
 
-// The app-facing API that calls most of these lands with the bridge change in the next step.
-#[allow(dead_code)]
 impl Node {
     /// Tell every open chat that this build understands group frames. Same shape as
     /// [`announce_burns`](Self::announce_burns): once per run per chat, retried until delivered.

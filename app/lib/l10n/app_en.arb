@@ -960,7 +960,7 @@
   "@more": {
     "description": "Tooltip for the chat overflow menu."
   },
-  "cantSendUntilAccepted": "They haven’t accepted the chat yet. Your message hasn’t been sent — it’s still in the box, so you can send it once they accept.",
+  "cantSendUntilAccepted": "The chat is still being set up: the other person hasn't been online yet. Your message is still in the box — send it again in a moment.",
   "@cantSendUntilAccepted": {
     "description": "Send refused while short-code pairing is still waiting on the other person to accept."
   },

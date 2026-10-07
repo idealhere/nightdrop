@@ -61,21 +61,21 @@ void main() {
     expect(invite.qrPayload, contains('&ik='));
   });
 
-  test('an invite surfaces a request that must be authorized before chatting', () async {
+  test('someone who uses our invite is accepted without a second prompt', () async {
     final core = RustNightdropCore();
     await core.createIdentity();
     await core.createInvite();
 
-    expect(core.incomingRequests, hasLength(1));
-    expect(core.contacts, isEmpty);
-
-    final requestId = core.incomingRequests.first.id;
-    await core.authorize(requestId, true);
+    // The request is accepted in the background as soon as it surfaces.
+    for (var i = 0; i < 100 && core.contacts.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     expect(core.incomingRequests, isEmpty);
     expect(core.contacts, hasLength(1));
 
-    await core.sendMessage(requestId, 'hi');
-    expect(core.messagesFor(requestId).last.text, '(echo) hi');
+    final contactId = core.contacts.first.id;
+    await core.sendMessage(contactId, 'hi');
+    expect(core.messagesFor(contactId).last.text, '(echo) hi');
   });
 
   // Found on a device, 2026-08-02. The wipe was one `try` around every deletion, with a silent

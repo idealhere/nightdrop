@@ -963,7 +963,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           body: Column(
             children: [
-              if (awaitingApproval) const _AwaitingApprovalBanner(),
               // Nudge toward safety-number verification once the chat is live and still unverified.
               // Tapping opens the same VerifyScreen as the app-bar shield. Suppressed while awaiting
               // approval (nothing to verify yet).
@@ -1000,7 +999,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               _SilenceBanner(lastSeenSecs: contact.lastSeenSecs),
               Expanded(
                 child: visibleMessages.isEmpty
-                    ? Center(child: Text(l10n.sayHi))
+                    ? const SizedBox.shrink()
                     : ListView.builder(
                         controller: _scroll,
                         padding: const EdgeInsets.all(12),
@@ -1298,44 +1297,6 @@ class _PeerBackupBanner extends StatelessWidget {
               AppLocalizations.of(context)!.peerBackupBanner,
               style:
                   TextStyle(color: scheme.onSecondaryContainer, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Persistent status shown to the **joiner** after short-code pairing, until the code provider
-/// accepts the chat (§5). Driven by the core's `await_approval` notice, which it clears on the
-/// approval signal or the first received message — so this banner disappears exactly when the
-/// chat goes live. Messages typed meanwhile still send (queued) but aren't delivered until then.
-class _AwaitingApprovalBanner extends StatelessWidget {
-  const _AwaitingApprovalBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: scheme.tertiaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: scheme.onTertiaryContainer,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              AppLocalizations.of(context)!.awaitingApprovalBanner,
-              style:
-                  TextStyle(color: scheme.onTertiaryContainer, fontSize: 12.5),
             ),
           ),
         ],

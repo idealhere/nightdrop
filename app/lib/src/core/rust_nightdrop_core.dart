@@ -46,6 +46,9 @@ class RustNightdropCore extends NightdropCore {
   /// repeated on every refresh.
   final Set<String> _preferredNameApplied = {};
 
+  /// Requests already accepted automatically this run (see [_acceptInvited]).
+  final Set<String> _autoAccepted = {};
+
   /// Optimistic outgoing messages awaiting core confirmation, kept SEPARATE from [_messages]
   /// (the core history) so overlapping sends to an offline peer don't wipe each other when one
   /// reconciles. Displayed after the core history; each send removes only its own on completion.
@@ -1963,6 +1966,17 @@ class RustNightdropCore extends NightdropCore {
     unawaited(_refresh(e));
   }
 
+  /// A request only ever comes from someone holding an invite we created and handed over, so it
+  /// is accepted straight away: giving out the code was the consent. Who is really on the other
+  /// end is still a question for the safety-number check, exactly as it was with a manual tap.
+  void _acceptInvited() {
+    for (final r in _requests) {
+      if (_autoAccepted.add(r.id)) {
+        unawaited(authorize(r.id, true).catchError((Object _) {}));
+      }
+    }
+  }
+
   /// Give chats that still carry the default name the one the user chose in settings.
   void _applyPreferredName() {
     final preferred = ProfileName.current.value;
@@ -1979,6 +1993,7 @@ class RustNightdropCore extends NightdropCore {
     _contacts = (await _core!.contacts()).map(_map).toList();
     _requests = (await _core!.incomingRequests()).map(_map).toList();
     _applyPreferredName();
+    _acceptInvited();
     final known = {..._contacts, ..._requests}.map((c) => c.id).toSet();
 
     // Pull message history only for the chats that actually changed (§1.5.5). The event names them;

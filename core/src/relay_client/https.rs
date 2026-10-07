@@ -22,6 +22,7 @@ use crate::Result;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_HEADER_BYTES: usize = 64 * 1024;
+const MAX_CHUNK_LINE_BYTES: usize = 1024;
 // A mailbox can hold 256 MiB of raw blobs; base64 + JSON can be roughly 4/3 larger.
 const MAX_RESPONSE_BYTES: usize = 384 * 1024 * 1024;
 
@@ -135,9 +136,20 @@ fn round_trip(endpoint: &Endpoint, config: Arc<ClientConfig>, line: &str) -> Res
     read_http_response(&mut reader)
 }
 
+/// Read one line, buffering at most `max + 1` bytes. `BufRead::read_line` only reports the size
+/// after it has appended the whole line, so an endpoint that never sends a newline could make the
+/// client allocate without bound; the caller's own size check turns the overrun into an error.
+fn read_line_capped<R: BufRead>(reader: &mut R, max: usize) -> Result<String> {
+    let mut line = String::new();
+    reader
+        .by_ref()
+        .take((max as u64).saturating_add(1))
+        .read_line(&mut line)?;
+    Ok(line)
+}
+
 fn read_http_response<R: BufRead>(reader: &mut R) -> Result<String> {
-    let mut status_line = String::new();
-    reader.read_line(&mut status_line)?;
+    let status_line = read_line_capped(reader, MAX_HEADER_BYTES)?;
     if status_line.is_empty() {
         anyhow::bail!("HTTPS relay returned an empty response");
     }
@@ -156,8 +168,7 @@ fn read_http_response<R: BufRead>(reader: &mut R) -> Result<String> {
     let mut content_length = None;
     let mut chunked = false;
     loop {
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
+        let line = read_line_capped(reader, MAX_HEADER_BYTES.saturating_sub(header_bytes))?;
         header_bytes = header_bytes.saturating_add(line.len());
         if header_bytes > MAX_HEADER_BYTES {
             anyhow::bail!("HTTPS relay response headers too large");
@@ -211,9 +222,8 @@ fn read_http_response<R: BufRead>(reader: &mut R) -> Result<String> {
 fn read_chunked<R: BufRead>(reader: &mut R) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     loop {
-        let mut size_line = String::new();
-        reader.read_line(&mut size_line)?;
-        if size_line.len() > 1024 {
+        let size_line = read_line_capped(reader, MAX_CHUNK_LINE_BYTES)?;
+        if size_line.len() > MAX_CHUNK_LINE_BYTES {
             anyhow::bail!("invalid chunk header");
         }
         let hex = size_line
@@ -224,9 +234,14 @@ fn read_chunked<R: BufRead>(reader: &mut R) -> Result<Vec<u8>> {
         let size = usize::from_str_radix(hex, 16)?;
         if size == 0 {
             // Consume optional trailers.
+            let mut trailer_bytes = 0usize;
             loop {
-                let mut trailer = String::new();
-                reader.read_line(&mut trailer)?;
+                let trailer =
+                    read_line_capped(reader, MAX_HEADER_BYTES.saturating_sub(trailer_bytes))?;
+                trailer_bytes = trailer_bytes.saturating_add(trailer.len());
+                if trailer_bytes > MAX_HEADER_BYTES {
+                    anyhow::bail!("HTTPS relay response trailers too large");
+                }
                 if trailer == "\r\n" || trailer == "\n" || trailer.is_empty() {
                     break;
                 }
@@ -275,6 +290,21 @@ mod tests {
             b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\nok\n\n";
         let mut reader = Cursor::new(raw.as_slice());
         assert_eq!(read_http_response(&mut reader).unwrap(), "ok\n\n");
+    }
+
+    #[test]
+    fn line_reads_are_capped_before_unbounded_buffering() {
+        let raw = vec![b'a'; 4096];
+        let mut reader = Cursor::new(raw.as_slice());
+        assert_eq!(read_line_capped(&mut reader, 16).unwrap().len(), 17);
+
+        let mut oversized = b"HTTP/1.1 200 OK\r\nX-Pad: ".to_vec();
+        oversized.resize(MAX_HEADER_BYTES * 2, b'a');
+        let mut reader = Cursor::new(oversized.as_slice());
+        assert!(read_http_response(&mut reader)
+            .unwrap_err()
+            .to_string()
+            .contains("headers too large"));
     }
 
     #[test]

@@ -25,11 +25,11 @@ class NightForestBackground extends StatelessWidget {
 class _NightForestPainter extends CustomPainter {
   const _NightForestPainter();
 
-  static const _sky = Color(0xFF10172B);
-  static const _ground = Color(0xFF070A12);
-  static const _farRidge = Color(0xFF0B1122);
-  static const _nearRidge = Color(0xFF090E1B);
-  static const _pines = Color(0xFF060A13);
+  static const _sky = Color(0xFF0B1230);
+  static const _ground = Color(0xFF050816);
+  static const _farRidge = Color(0xFF0D1535);
+  static const _nearRidge = Color(0xFF0A102A);
+  static const _pines = Color(0xFF060919);
 
   // Fractions of the screen (stars) and of the forest band (ridges: x across, y down the band).
   static const _stars = <Offset>[

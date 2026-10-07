@@ -13,7 +13,6 @@ void main() {
     await tester.pumpAndSettle();
 
     // After creating an identity we land on the (empty) chat list.
-    expect(find.text('Chats'), findsOneWidget);
     expect(find.text('New chat'), findsOneWidget);
   });
 }

@@ -882,6 +882,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+              if (!awaitingApproval && contact.verified) const _EncryptedBanner(),
               if (contact.remoteStorage)
                 _RemoteStorageBanner(healthy: contact.remoteStorageHealthy),
               if (contact.peerBackedUp) const _PeerBackupBanner(),
@@ -1299,7 +1300,10 @@ class _Bubble extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 320),
             decoration: BoxDecoration(
               color: mine ? scheme.primary : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: mine
+                  ? const [BoxShadow(color: Color(0x339B7CFF), blurRadius: 14)]
+                  : null,
             ),
             child: Column(
               crossAxisAlignment:
@@ -1919,9 +1923,20 @@ class _Composer extends StatelessWidget {
                 onSubmitted: (_) => onSend(),
                 decoration: InputDecoration(
                   hintText: l10n.messageHint,
-                  border: const OutlineInputBorder(),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant),
+                  ),
                   contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 ),
               ),
             ),
@@ -2205,4 +2220,36 @@ String _shortDuration(Duration d) {
   if (d.inHours > 0) return '${d.inHours}h';
   if (d.inMinutes > 0) return '${d.inMinutes}m';
   return '${d.inSeconds}s';
+}
+
+/// Calm reassurance at the top of a verified chat, in the slot the unverified nudge used.
+class _EncryptedBanner extends StatelessWidget {
+  const _EncryptedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.lock_outline, size: 18, color: scheme.secondary),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              AppLocalizations.of(context)!.encryptedBanner,
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

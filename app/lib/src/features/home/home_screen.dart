@@ -13,9 +13,9 @@ import '../../core/models.dart';
 import '../backup/backup_actions.dart';
 import '../bridges/bridges_screen.dart';
 import '../chat/chat_screen.dart';
-import '../donations/donations_screen.dart';
 import '../lock/app_lock_settings.dart';
 import '../pairing/pairing_screen.dart';
+import '../../theme/brand.dart';
 
 /// The conversation list. Empty until the user pairs with someone.
 class HomeScreen extends StatelessWidget {
@@ -27,15 +27,8 @@ class HomeScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.chats),
+        title: const BrandTitle(),
         actions: [
-          IconButton(
-            tooltip: l10n.supportNightDrop,
-            icon: const Icon(Icons.volunteer_activism_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const DonationsScreen()),
-            ),
-          ),
           PopupMenuButton<String>(
             tooltip: l10n.backUp,
             icon: const Icon(Icons.backup_outlined),

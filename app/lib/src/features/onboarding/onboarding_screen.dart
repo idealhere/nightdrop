@@ -10,6 +10,7 @@ import '../../core/backup_errors.dart';
 import '../../core/app_locale.dart';
 import '../../core/backup_files.dart';
 import '../../core/nightdrop_core.dart';
+import '../../theme/brand.dart';
 
 /// First-run screen. No sign-up — just generate an anonymous, device-held identity.
 class OnboardingScreen extends StatefulWidget {
@@ -272,9 +273,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('🌕', style: TextStyle(fontSize: 72)),
-              const SizedBox(height: 16),
-              Text(l10n.appTitle, style: theme.textTheme.headlineMedium),
+              const MoonMark(size: 84),
+              const SizedBox(height: 24),
+              const BrandTitle(fontSize: 32, showMoon: false),
               const SizedBox(height: 8),
               Text(
                 l10n.onboardingTagline,

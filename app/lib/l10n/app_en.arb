@@ -4,6 +4,10 @@
   "@appTitle": {
     "description": "The application name, shown as the window/app title."
   },
+  "encryptedBanner": "Messages are protected by end-to-end encryption.",
+  "@encryptedBanner": {
+    "description": "Calm reassurance at the top of a verified chat."
+  },
   "switchLanguage": "Русский",
   "@switchLanguage": {
     "description": "Language switch. Shows the name of the OTHER language, in that language, so someone who cannot read the current one can still find it."

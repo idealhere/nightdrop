@@ -11,6 +11,7 @@ import 'core/notifications.dart';
 import 'features/home/home_screen.dart';
 import 'features/lock/lock_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'theme/brand.dart';
 import 'theme/night_forest.dart';
 import 'theme/theme.dart';
 
@@ -183,7 +184,7 @@ class _SplashState extends State<_Splash> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('🌕', style: TextStyle(fontSize: 64)),
+            const MoonMark(size: 72),
             const SizedBox(height: 16),
             const SizedBox(
               height: 22,

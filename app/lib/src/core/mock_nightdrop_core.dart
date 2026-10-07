@@ -43,6 +43,67 @@ class MockNightdropCore extends NightdropCore {
   List<Message> messagesFor(String contactId) =>
       List.unmodifiable(_messages[contactId] ?? const []);
 
+  final List<Group> _groups = [];
+  final Map<String, List<Message>> _groupMessages = {};
+
+  @override
+  List<Group> get groups => List.unmodifiable(_groups);
+
+  @override
+  List<Message> groupMessagesFor(String groupId) =>
+      List.unmodifiable(_groupMessages[groupId] ?? const <Message>[]);
+
+  @override
+  String get myIdentityKey => 'me';
+
+  @override
+  Set<String> get groupCapableContacts => _contacts.map((c) => c.id).toSet();
+
+  @override
+  Future<String> createGroup(String name, List<String> memberIds) async {
+    final id = 'group-${_groups.length + 1}';
+    _groups.add(Group(id: id, name: name, members: [...memberIds, 'me'], creator: 'me'));
+    _groupMessages[id] = [];
+    notifyListeners();
+    return id;
+  }
+
+  @override
+  Future<void> sendGroupMessage(String groupId, String text) async {
+    final list = _groupMessages[groupId] ??= [];
+    list.add(Message(
+      id: '$groupId-${list.length}',
+      contactId: groupId,
+      text: text,
+      fromMe: true,
+      at: DateTime.now(),
+      delivery: 'sent',
+    ));
+    notifyListeners();
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i < 0) return;
+    final g = _groups[i];
+    _groups[i] = Group(
+      id: g.id,
+      name: g.name,
+      members: g.members.where((m) => m != 'me').toList(),
+      creator: g.creator,
+      left: true,
+    );
+    notifyListeners();
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    _groups.removeWhere((g) => g.id == groupId);
+    _groupMessages.remove(groupId);
+    notifyListeners();
+  }
+
   @override
   int unreadCount(String contactId) => 0;
 

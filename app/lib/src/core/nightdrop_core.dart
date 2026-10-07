@@ -160,6 +160,41 @@ abstract class NightdropCore extends ChangeNotifier {
   /// Messages for a given contact, oldest first.
   List<Message> messagesFor(String contactId);
 
+  // --- Groups --------------------------------------------------------------------------------
+  //
+  // A group message goes to each member separately over the 1:1 chat we already have with them,
+  // so every member has to be a contact. The defaults describe a core without groups.
+
+  /// Every group chat.
+  List<Group> get groups => const [];
+
+  /// A group's messages, oldest first. [Message.senderId] names who sent each one.
+  List<Message> groupMessagesFor(String groupId) => const [];
+
+  /// How we appear in [Group.members].
+  String get myIdentityKey => '';
+
+  /// The contacts that can be added to a group: their app is new enough to understand groups.
+  Set<String> get groupCapableContacts => const {};
+
+  /// Received group messages the user has not seen yet (for the list badge).
+  int groupUnreadCount(String groupId) => 0;
+
+  /// The group is on screen: everything in it counts as seen.
+  void markGroupRead(String groupId) {}
+
+  /// Create a group of us plus [memberIds] (contact ids). Returns the new group's id.
+  Future<String> createGroup(String name, List<String> memberIds) =>
+      throw UnsupportedError('groups are not available');
+
+  Future<void> sendGroupMessage(String groupId, String text) async {}
+
+  /// Leave a group. It stays on this device, read-only, until deleted.
+  Future<void> leaveGroup(String groupId) async {}
+
+  /// Remove a group from this device, leaving it first if we had not already.
+  Future<void> deleteGroup(String groupId) async {}
+
   /// How many received messages in this chat the user hasn't seen yet (for the list badge).
   int unreadCount(String contactId);
 

@@ -72,6 +72,29 @@ class PairingInvite {
   final String qrPayload;
 }
 
+/// A group chat: a named set of members who each also have a 1:1 chat with one another.
+class Group {
+  const Group({
+    required this.id,
+    required this.name,
+    required this.members,
+    required this.creator,
+    this.left = false,
+  });
+
+  final String id;
+  final String name;
+
+  /// Every member by identity key — the same string as a [Contact.id] — us included.
+  final List<String> members;
+
+  /// The member who created the group.
+  final String creator;
+
+  /// We left: the group is read-only.
+  final bool left;
+}
+
 /// A 1:1 conversation partner.
 class Contact {
   Contact({
@@ -232,10 +255,17 @@ class Message {
     this.localBytes,
     this.burnSecs = 0,
     this.viewedAt,
+    this.senderId = '',
   });
 
   final String id;
+
+  /// The chat this message belongs to: a contact id, or a group id for a group message.
   final String contactId;
+
+  /// In a group, the member who sent it (their contact id). Empty in a 1:1 chat, and for our
+  /// own messages and local notices.
+  final String senderId;
   final String text;
   final bool fromMe;
   final DateTime at;
@@ -292,6 +322,7 @@ class Message {
         localBytes: localBytes,
         burnSecs: burnSecs,
         viewedAt: at,
+        senderId: senderId,
       );
 
   /// A photo sent to be opened a single time (the core's reserved burn timer, [kViewOnceSecs]).

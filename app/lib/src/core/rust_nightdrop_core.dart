@@ -42,6 +42,14 @@ class RustNightdropCore extends NightdropCore {
   List<Contact> _contacts = const [];
   List<Contact> _requests = const [];
   final Map<String, List<Message>> _messages = {};
+  List<Group> _groups = const [];
+  final Map<String, List<Message>> _groupMessages = {};
+  Set<String> _groupCapable = const {};
+  String _myIdentityKey = '';
+
+  /// Received-message counts per group, and how many of them the user has seen.
+  final Map<String, int> _groupReceived = {};
+  final Map<String, int> _groupRead = {};
 
   /// Chats already given the user's preferred name this run, so a failed attempt is not
   /// repeated on every refresh.
@@ -626,6 +634,105 @@ class RustNightdropCore extends NightdropCore {
 
   @override
   List<Contact> get incomingRequests => List.unmodifiable(_requests);
+
+  @override
+  List<Group> get groups => List.unmodifiable(_groups);
+
+  @override
+  List<Message> groupMessagesFor(String groupId) =>
+      List.unmodifiable(_groupMessages[groupId] ?? const <Message>[]);
+
+  @override
+  String get myIdentityKey => _myIdentityKey;
+
+  @override
+  Set<String> get groupCapableContacts => _groupCapable;
+
+  @override
+  int groupUnreadCount(String groupId) {
+    final n = (_groupReceived[groupId] ?? 0) - (_groupRead[groupId] ?? 0);
+    return n < 0 ? 0 : n;
+  }
+
+  @override
+  void markGroupRead(String groupId) {
+    final n = _groupReceived[groupId] ?? 0;
+    if ((_groupRead[groupId] ?? 0) != n) {
+      _groupRead[groupId] = n;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<String> createGroup(String name, List<String> memberIds) async {
+    final id = await _core!.createGroup(name: name, memberIds: memberIds);
+    await _refresh();
+    return id;
+  }
+
+  @override
+  Future<void> sendGroupMessage(String groupId, String text) async {
+    try {
+      await _core!.sendGroupMessage(groupId: groupId, text: text);
+    } finally {
+      // The message is in the local history even when no copy could be sent.
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    await _core!.leaveGroup(groupId: groupId);
+    await _refresh();
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    await _core!.deleteGroup(groupId: groupId);
+    await _refresh();
+  }
+
+  /// Re-read the groups and their histories. Groups are few and small, so all of them, always.
+  Future<void> _refreshGroups() async {
+    _myIdentityKey = await _core!.myIdentityKey();
+    _groupCapable = (await _core!.groupCapableContacts()).toSet();
+    _groups = [
+      for (final g in await _core!.groups())
+        Group(id: g.id, name: g.name, members: g.members, creator: g.creator, left: g.left),
+    ];
+    final live = _groups.map((g) => g.id).toSet();
+    for (final id in live) {
+      var i = 0;
+      _groupMessages[id] = [
+        for (final gm in await _core!.groupMessages(groupId: id))
+          Message(
+            id: 'g-$id-${i++}',
+            contactId: id,
+            senderId: gm.sender,
+            text: gm.message.text,
+            fromMe: gm.message.fromMe,
+            at: gm.message.at == BigInt.zero
+                ? DateTime.now()
+                : DateTime.fromMillisecondsSinceEpoch(gm.message.at.toInt() * 1000),
+            msgId: gm.message.msgId,
+            system: gm.message.system,
+            kind: gm.message.kind,
+            delivery: gm.message.delivery,
+          ),
+      ];
+      _groupReceived[id] =
+          _groupMessages[id]!.where((m) => !m.fromMe && !m.system).length;
+    }
+    _groupMessages.removeWhere((id, _) => !live.contains(id));
+    _groupReceived.removeWhere((id, _) => !live.contains(id));
+    _groupRead.removeWhere((id, _) => !live.contains(id));
+    if (!_unreadReady) {
+      // Baseline existing history as read, as for 1:1 chats.
+      for (final id in live) {
+        _groupRead[id] = _groupReceived[id] ?? 0;
+      }
+    }
+  }
 
   @override
   List<Message> messagesFor(String contactId) => List.unmodifiable([
@@ -1587,6 +1694,12 @@ class RustNightdropCore extends NightdropCore {
     _contacts = const [];
     _requests = const [];
     _messages.clear();
+    _groups = const [];
+    _groupMessages.clear();
+    _groupReceived.clear();
+    _groupRead.clear();
+    _groupCapable = const {};
+    _myIdentityKey = '';
     _pending.clear();
     _networked = false;
     _httpsRelay = false;
@@ -2043,6 +2156,7 @@ class RustNightdropCore extends NightdropCore {
     _messages.removeWhere((id, _) => !known.contains(id));
     _receivedCache.removeWhere((id, _) => !known.contains(id));
     _applyPreferredName();
+    await _refreshGroups();
 
     if (!_unreadReady) {
       // Baseline existing history as "read" so a restart doesn't mark old messages unread.
@@ -2059,7 +2173,8 @@ class RustNightdropCore extends NightdropCore {
   /// pending requests grows. What it shows is the user's choice ([NotificationDetail]); by
   /// default it says a message arrived and nothing more.
   void _maybeNotify() {
-    final received = _receivedCache.values.fold<int>(0, (a, b) => a + b);
+    final received = _receivedCache.values.fold<int>(0, (a, b) => a + b) +
+        _groupReceived.values.fold<int>(0, (a, b) => a + b);
     final requests = _requests.length;
     if (!_countsReady) {
       _knownReceived = received;

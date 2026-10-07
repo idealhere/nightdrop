@@ -47,20 +47,23 @@ class _MarkPainter extends CustomPainter {
 
   final Color color;
 
-  // The same shapes as logo-mark.svg, on a 24-unit grid: the profile, the front ear, the nose
-  // and the eye. Traced from the brand artwork.
+  // The same shapes as logo-mark.svg, on a 24-unit grid: the profile, the front ear, the nose,
+  // the throat and the eye. Traced from the brand artwork.
   static const _strokes = <List<Offset>>[
     [
-      Offset(1.65, 19.48), Offset(3.26, 14.88), Offset(4.75, 11.08), Offset(6.71, 9.24), Offset(10.16, 2.46), Offset(10.73, 7.63), Offset(13.95, 8.21), Offset(15.68, 8.9), Offset(16.37, 10.62), Offset(20.51, 12.35), Offset(22.35, 13.15), Offset(20.74, 14.3), Offset(19.36, 16.02), Offset(14.3, 16.83), Offset(12.92, 17.29), Offset(12.12, 19.13), Offset(11.54, 21.55),
+      Offset(1.96, 18.25), Offset(2.32, 16.09), Offset(6.65, 8.53), Offset(7.19, 9.16), Offset(7.55, 6.73), Offset(10.43, 2.23), Offset(10.79, 7.36), Offset(13.04, 7.54), Offset(14.66, 8.08), Offset(15.56, 8.71), Offset(16.01, 10.15), Offset(19.7, 11.68), Offset(22.04, 12.22), Offset(20.69, 13.39), Offset(18.89, 15.38), Offset(12.77, 16.63), Offset(12.5, 17.0),
     ],
     [
-      Offset(12.8, 6.37), Offset(14.18, 2.92), Offset(14.53, 7.98),
+      Offset(11.69, 7.27), Offset(13.85, 2.95), Offset(14.66, 8.08),
     ],
     [
-      Offset(20.51, 12.46), Offset(20.62, 14.19),
+      Offset(19.7, 11.68), Offset(19.79, 12.49), Offset(20.69, 13.39),
+    ],
+    [
+      Offset(12.13, 17.54), Offset(11.23, 20.86), Offset(11.69, 21.77),
     ],
   ];
-  static const _eye = <Offset>[Offset(12.69, 11.2), Offset(13.84, 10.62), Offset(14.64, 11.2), Offset(13.72, 11.77)];
+  static const _eye = <Offset>[Offset(12.22, 10.33), Offset(13.31, 10.02), Offset(14.38, 10.43), Offset(13.31, 10.83)];
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -78,7 +81,7 @@ class _MarkPainter extends CustomPainter {
         ..color = color
         ..style = PaintingStyle.stroke
         // A little heavier at small sizes, so the mark still reads at 16-24 px.
-        ..strokeWidth = (size.shortestSide < 20 ? 1.7 : 1.25) * k
+        ..strokeWidth = (size.shortestSide < 20 ? 1.6 : 1.1) * k
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );

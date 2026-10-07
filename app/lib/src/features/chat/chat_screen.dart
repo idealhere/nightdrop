@@ -14,6 +14,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
 import '../../core/app_locale.dart';
 import '../../core/nightdrop_core.dart';
+import '../../core/privacy_prefs.dart';
 import '../../core/media_cache.dart';
 import '../../core/models.dart';
 import '../../core/screenshot_detector.dart';
@@ -1679,11 +1680,36 @@ class _MediaContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuilds when a photo is revealed or the "hide received photos" setting changes.
+    return ListenableBuilder(
+      listenable: PrivacyPrefs.changes,
+      builder: (context, _) => _content(context),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final onColor = mine ? scheme.onPrimary : scheme.onSurface;
     final sizeLabel = formatBytes(message.mediaSize);
     final faint = onColor.withValues(alpha: 0.7);
+
+    // A received photo stays concealed until tapped. The tile below is a placeholder, not the
+    // picture blurred: the image is not decrypted or decoded at all until the user asks for it.
+    if (message.isImage && !mine && PrivacyPrefs.conceals(message.mediaId)) {
+      return GestureDetector(
+        onTap: () => PrivacyPrefs.reveal(message.mediaId),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _hiddenMediaTile(message, onColor),
+            const SizedBox(height: 6),
+            Text(l10n.tapToShowPhoto, style: TextStyle(fontSize: 12, color: faint)),
+          ],
+        ),
+      );
+    }
 
     if (message.isImage) {
       return Column(

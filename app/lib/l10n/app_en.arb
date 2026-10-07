@@ -539,6 +539,22 @@
     "description": "Backup menu: merge a single-chat backup."
   },
   "myIdentity": "My identity",
+  "privacyMenu": "Privacy",
+  "@privacyMenu": {
+    "description": "Menu item and title of the privacy screen."
+  },
+  "hidePhotosTitle": "Hide received photos",
+  "@hidePhotosTitle": {
+    "description": "Switch: received images stay concealed until tapped."
+  },
+  "hidePhotosBody": "Pictures you receive stay hidden until you tap them.",
+  "@hidePhotosBody": {
+    "description": "Explains the switch above."
+  },
+  "tapToShowPhoto": "Tap to show",
+  "@tapToShowPhoto": {
+    "description": "Caption under a concealed received photo."
+  },
   "myNameMenu": "My name",
   "@myNameMenu": {
     "description": "Menu item and dialog title: the name new chats start with."

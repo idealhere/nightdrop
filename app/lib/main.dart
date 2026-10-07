@@ -4,6 +4,7 @@ import 'src/app.dart';
 import 'src/core/app_config.dart';
 import 'src/core/app_locale.dart';
 import 'src/core/background_delivery.dart';
+import 'src/core/privacy_prefs.dart';
 import 'src/core/profile_name.dart';
 import 'src/core/rust_nightdrop_core.dart';
 import 'src/rust/frb_generated.dart';
@@ -18,6 +19,7 @@ Future<void> main() async {
   await AppConfig.load();
   await AppLocale.load();
   await ProfileName.load();
+  await PrivacyPrefs.load();
   // Load the Rust security core (flutter_rust_bridge). The native lib is built and
   // bundled by the platform build (see README "Wiring the Rust core").
   await RustLib.init();

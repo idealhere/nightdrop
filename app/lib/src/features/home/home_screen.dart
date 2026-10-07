@@ -16,6 +16,7 @@ import '../bridges/bridges_screen.dart';
 import '../chat/chat_screen.dart';
 import '../lock/app_lock_settings.dart';
 import '../pairing/pairing_screen.dart';
+import '../privacy/privacy_screen.dart';
 
 /// The conversation list. Empty until the user pairs with someone.
 class HomeScreen extends StatelessWidget {
@@ -49,6 +50,10 @@ class HomeScreen extends StatelessWidget {
             onSelected: (value) {
               if (value == 'identity') _showMyIdentity(context, core);
               if (value == 'myname') _editMyName(context, core);
+              if (value == 'privacy') {
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const PrivacyScreen()));
+              }
               if (value == 'background') _backgroundDeliverySettings(context);
               if (value == 'applock') showAppLockSettings(context, core);
               if (value == 'duress') showDuressSettings(context, core);
@@ -68,6 +73,7 @@ class HomeScreen extends StatelessWidget {
             itemBuilder: (context) => [
               PopupMenuItem(value: 'identity', child: Text(l10n.myIdentity)),
               PopupMenuItem(value: 'myname', child: Text(l10n.myNameMenu)),
+              PopupMenuItem(value: 'privacy', child: Text(l10n.privacyMenu)),
               if (BackgroundDelivery.supported)
                 PopupMenuItem(
                     value: 'background', child: Text(l10n.backgroundDeliveryMenu)),

@@ -47,37 +47,46 @@ class _MarkPainter extends CustomPainter {
 
   final Color color;
 
-  // The same polylines as logo-mark.svg, on a 24-unit grid: the profile, an ear fold, the eye.
+  // The same shapes as logo-mark.svg, on a 24-unit grid: the profile, the front ear, the nose
+  // and the eye. Traced from the brand artwork.
   static const _strokes = <List<Offset>>[
     [
-      Offset(4.5, 21.5), Offset(8.3, 11.2), Offset(7.6, 2.8), Offset(11.2, 7.6),
-      Offset(13.6, 2.2), Offset(15.2, 8.8), Offset(21.6, 12.4), Offset(20.6, 14.6),
-      Offset(16.2, 15.2), Offset(14.4, 18), Offset(12.2, 21.5), //
+      Offset(1.65, 19.48), Offset(3.26, 14.88), Offset(4.75, 11.08), Offset(6.71, 9.24), Offset(10.16, 2.46), Offset(10.73, 7.63), Offset(13.95, 8.21), Offset(15.68, 8.9), Offset(16.37, 10.62), Offset(20.51, 12.35), Offset(22.35, 13.15), Offset(20.74, 14.3), Offset(19.36, 16.02), Offset(14.3, 16.83), Offset(12.92, 17.29), Offset(12.12, 19.13), Offset(11.54, 21.55),
     ],
-    [Offset(11.2, 7.6), Offset(12.3, 10.8)],
-    [Offset(15.6, 11.3), Offset(17.2, 11.9)],
+    [
+      Offset(12.8, 6.37), Offset(14.18, 2.92), Offset(14.53, 7.98),
+    ],
+    [
+      Offset(20.51, 12.46), Offset(20.62, 14.19),
+    ],
   ];
+  static const _eye = <Offset>[Offset(12.69, 11.2), Offset(13.84, 10.62), Offset(14.64, 11.2), Offset(13.72, 11.77)];
 
   @override
   void paint(Canvas canvas, Size size) {
     final k = size.shortestSide / 24;
-    final path = Path();
+    final lines = Path();
     for (final stroke in _strokes) {
-      path.moveTo(stroke.first.dx * k, stroke.first.dy * k);
+      lines.moveTo(stroke.first.dx * k, stroke.first.dy * k);
       for (final p in stroke.skip(1)) {
-        path.lineTo(p.dx * k, p.dy * k);
+        lines.lineTo(p.dx * k, p.dy * k);
       }
     }
     canvas.drawPath(
-      path,
+      lines,
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
         // A little heavier at small sizes, so the mark still reads at 16-24 px.
-        ..strokeWidth = (size.shortestSide < 20 ? 1.9 : 1.5) * k
+        ..strokeWidth = (size.shortestSide < 20 ? 1.7 : 1.25) * k
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
+    final eye = Path()..moveTo(_eye.first.dx * k, _eye.first.dy * k);
+    for (final p in _eye.skip(1)) {
+      eye.lineTo(p.dx * k, p.dy * k);
+    }
+    canvas.drawPath(eye..close(), Paint()..color = color);
   }
 
   @override

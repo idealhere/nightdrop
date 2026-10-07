@@ -954,8 +954,14 @@ class RustNightdropCore extends NightdropCore {
     await _check();
   }
 
+  /// Night Dog does not ask the upstream Night Drop site about updates: that site only ever
+  /// describes upstream builds, signed with upstream's key. The check stays compiled out unless a
+  /// build opts in, until Night Dog has an update channel of its own.
+  static const _updateChecks = bool.fromEnvironment('NIGHTDOG_UPDATE_CHECKS');
+
   /// The check itself. Returns whether the onion site answered.
   Future<bool> _check() async {
+    if (!_updateChecks) return false;
     // Never let this fail a launch. Every branch below is best-effort: no answer is the normal
     // outcome on a slow or offline network, and it must look exactly like "nothing to report".
     try {

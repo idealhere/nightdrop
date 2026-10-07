@@ -570,10 +570,6 @@
   "@resetTorRunning": {
     "description": "Snackbar shown while the Tor connection is being reset."
   },
-  "aboutUpdateChecks": "Update checks: this build asks the Night Dog onion site, over Tor, at most once a day whether a newer version exists, and only ever tells you — it never installs anything. Copies installed from F-Droid don’t do this at all, because F-Droid updates them.",
-  "@aboutUpdateChecks": {
-    "description": "Shown in the About dialog. Discloses the one outbound connection the app makes on its own behalf, so it is stated somewhere durable rather than only in a banner nobody is looking at."
-  },
   "aboutMenu": "About Night Dog",
   "@aboutMenu": {
     "description": "Menu item opening the about dialog (app name, version, license)."

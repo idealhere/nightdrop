@@ -4,7 +4,7 @@ name: Preview Android APK (HTTPS-first)
 # relay deployment is finished. It runs only when this file changes (or manually), so it does
 # not add a second Android build to every push. The APK is debug-signed with the runner's
 # throwaway key: installing a later build over it requires uninstalling first.
-# Edit the line below to request a fresh build: preview 19
+# Edit the line below to request a fresh build: preview 20
 on:
   push:
     branches: [feature/https-primary-transport]
@@ -83,4 +83,12 @@ jobs:
           name="cyberdog-${version}-b${GITHUB_RUN_NUMBER}.apk"
           cp app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk "$name"
           gh release delete preview-apk --yes --cleanup-tag || true
-          gh release create preview-apk "$name" --prerelease --target "$GITHUB_SHA" --title "CyberDog ${version} build ${GITHUB_RUN_NUMBER} (preview, debug)" --notes "Debug-signed test build. Not a production release."
+          # The tag is removed asynchronously; creating the release again can race with that.
+          for attempt in 1 2 3 4; do
+            if gh release create preview-apk "$name" --prerelease --target "$GITHUB_SHA" --title "CyberDog ${version} build ${GITHUB_RUN_NUMBER} (preview, debug)" --notes "Debug-signed test build. Not a production release."; then
+              exit 0
+            fi
+            echo "publish attempt $attempt failed"
+            sleep 8
+          done
+          exit 1

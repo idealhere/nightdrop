@@ -181,27 +181,14 @@ class Contact {
 
   /// What to call this contact in a list or title: your nickname if you set one, else the name
   /// they chose. Never empty.
-  String get displayName =>
-      localName.isNotEmpty ? localName : rankedName(theirName, verified: verified);
+  String get displayName => localName.isNotEmpty ? localName : shownTheirName;
 
-  /// Their name inside the chat: the name they chose, or the rank word if they chose none. The
-  /// chat header shows the rank as a badge next to it, so it is not repeated in the text.
-  String get shownTheirName => _nameOrRank(theirName);
+  /// Their name as shown in this chat: the name they chose followed by the rank (see
+  /// [rankedName]).
+  String get shownTheirName => rankedName(theirName, verified: verified);
 
-  /// Our own name inside the chat, by the same rule.
-  String get shownMyName => _nameOrRank(myName);
-
-  /// The name for the chat header: your nickname for them if you set one, else [shownTheirName].
-  String get headerName => localName.isNotEmpty ? localName : shownTheirName;
-
-  /// Whether the header needs the rank badge: only when the name beside it is not the rank itself.
-  bool get showRankBadge => headerName != kDefaultName && headerName != kVerifiedName;
-
-  String _nameOrRank(String name) {
-    final full = rankedName(name, verified: verified);
-    final rankWord = verified ? kVerifiedName : kDefaultName;
-    return full == rankWord ? full : full.substring(0, full.length - rankWord.length - 1);
-  }
+  /// Our own name as shown in this chat, by the same rule.
+  String get shownMyName => rankedName(myName, verified: verified);
 
   /// The rank this chat currently gives its two users.
   String get rank => verified ? 'cyberdog' : 'nightdog';

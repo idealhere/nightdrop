@@ -1977,12 +1977,20 @@ class RustNightdropCore extends NightdropCore {
     }
   }
 
-  /// Give chats that still carry the default name the one the user chose in settings.
+  /// Give chats the name the user chose in settings, and make sure the other side hears it.
+  ///
+  /// The core only tells the peer about a name while the chat is live; a name set earlier (which
+  /// is the normal case — the setting exists before the chat does) is stored but never sent. So
+  /// each chat gets the name announced once per run, as soon as it is live. A chat the user
+  /// renamed by hand to something else is left alone.
   void _applyPreferredName() {
     final preferred = ProfileName.current.value;
     if (preferred.isEmpty || preferred == kDefaultName) return;
     for (final c in _contacts) {
-      if (c.myName == kDefaultName && _preferredNameApplied.add(c.id)) {
+      final follows = c.myName == kDefaultName || c.myName == preferred;
+      final live = !(_messages[c.id] ?? const <Message>[])
+          .any((m) => m.system && m.kind == 'await_approval');
+      if (follows && live && _preferredNameApplied.add(c.id)) {
         setMyNameInChat(c.id, preferred);
       }
     }
@@ -1992,7 +2000,6 @@ class RustNightdropCore extends NightdropCore {
     // Contact/request lists are small — always re-read them (a roster change is cheap).
     _contacts = (await _core!.contacts()).map(_map).toList();
     _requests = (await _core!.incomingRequests()).map(_map).toList();
-    _applyPreferredName();
     _acceptInvited();
     final known = {..._contacts, ..._requests}.map((c) => c.id).toSet();
 
@@ -2011,6 +2018,7 @@ class RustNightdropCore extends NightdropCore {
     // Forget chats that disappeared (deleted/declined) so their history/counts don't linger.
     _messages.removeWhere((id, _) => !known.contains(id));
     _receivedCache.removeWhere((id, _) => !known.contains(id));
+    _applyPreferredName();
 
     if (!_unreadReady) {
       // Baseline existing history as "read" so a restart doesn't mark old messages unread.

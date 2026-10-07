@@ -854,7 +854,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(child: Text(contact.headerName)),
+                    Flexible(child: Text(contact.displayName)),
                     if (contact.showIdentityTag) ...[
                       const SizedBox(width: 6),
                       IdentityTag(tag: contact.identityTag),
@@ -871,10 +871,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (contact.showRankBadge) ...[
-                      UserRankBadge(rank: contact.rank),
-                      const SizedBox(width: 6),
-                    ],
                     Flexible(
                       child: Text(
                         shortId(contact.id),

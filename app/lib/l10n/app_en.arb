@@ -555,6 +555,42 @@
   "@sendAction": {
     "description": "Confirm button on the photo preview."
   },
+  "notifyTitle": "Text in notifications",
+  "@notifyTitle": {
+    "description": "Privacy row: how much a notification shows."
+  },
+  "notifyQuestion": "What should notifications show?",
+  "@notifyQuestion": {
+    "description": "Title of the notification-detail chooser."
+  },
+  "notifyFull": "The message text",
+  "@notifyFull": {
+    "description": "Notification detail: sender and text."
+  },
+  "notifyPrivate": "Only “New message”",
+  "@notifyPrivate": {
+    "description": "Notification detail: a generic line. The default."
+  },
+  "notifyHidden": "Nothing",
+  "@notifyHidden": {
+    "description": "Notification detail: only the app name."
+  },
+  "privacyDisappearingHint": "Set for each chat separately — the timer icon at the top of the chat.",
+  "@privacyDisappearingHint": {
+    "description": "Explains where the per-chat timer lives."
+  },
+  "activityTitle": "Activity",
+  "@activityTitle": {
+    "description": "Privacy row: activity signals."
+  },
+  "activityNotSent": "Not shared",
+  "@activityNotSent": {
+    "description": "Value of the activity row."
+  },
+  "activityBody": "CyberDog never shows the other person when you are online, when you were last here, that you are typing, or that you have read a message.",
+  "@activityBody": {
+    "description": "Explains the activity row."
+  },
   "privacyMenu": "Privacy",
   "@privacyMenu": {
     "description": "Menu item and title of the privacy screen."

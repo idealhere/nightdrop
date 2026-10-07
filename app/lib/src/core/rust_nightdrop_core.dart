@@ -13,6 +13,7 @@ import 'nightdrop_core.dart';
 import 'media_cache.dart';
 import 'models.dart';
 import 'notifications.dart';
+import 'privacy_prefs.dart';
 import 'profile_name.dart';
 import 'install_source.dart';
 import 'public_downloads.dart';
@@ -1977,6 +1978,29 @@ class RustNightdropCore extends NightdropCore {
     }
   }
 
+  /// The newest received message as (sender, text) for a full-detail notification, or null when
+  /// its content must not be shown: burn and view-once messages never surface in a preview, and
+  /// a photo or video is named by kind rather than shown.
+  (String, String)? _latestIncoming() {
+    Message? newest;
+    for (final history in _messages.values) {
+      for (final m in history) {
+        if (m.fromMe || m.system) continue;
+        if (newest == null || m.at.isAfter(newest.at)) newest = m;
+      }
+    }
+    if (newest == null || newest.burnSecs > 0) return null;
+    final from = newest.contactId;
+    final sender = _contacts.where((c) => c.id == from).map((c) => c.displayName).firstOrNull;
+    if (sender == null) return null;
+    final body = newest.isImage
+        ? AppLocale.pick('Photo', 'Фото')
+        : newest.isVideo
+            ? AppLocale.pick('Video', 'Видео')
+            : newest.text;
+    return body.isEmpty ? null : (sender, body);
+  }
+
   /// Give chats the name the user chose in settings, and make sure the other side hears it.
   ///
   /// The core only tells the peer about a name while the chat is live; a name set earlier (which
@@ -2032,7 +2056,8 @@ class RustNightdropCore extends NightdropCore {
   }
 
   /// Raise a local notification when, while backgrounded, the number of received messages or
-  /// pending requests grows. Generic text only — no message content in the notification.
+  /// pending requests grows. What it shows is the user's choice ([NotificationDetail]); by
+  /// default it says a message arrived and nothing more.
   void _maybeNotify() {
     final received = _receivedCache.values.fold<int>(0, (a, b) => a + b);
     final requests = _requests.length;
@@ -2045,15 +2070,25 @@ class RustNightdropCore extends NightdropCore {
     if (!_foreground) {
       if (received > _knownReceived) {
         final n = received - _knownReceived;
-        NotificationService.show(
-            'CyberDog',
-            n == 1
-                ? AppLocale.pick('New message', 'Новое сообщение')
-                : AppLocale.pick('$n new messages', 'Новых сообщений: $n'));
+        final detail = PrivacyPrefs.notificationDetail.value;
+        final count = n == 1
+            ? AppLocale.pick('New message', 'Новое сообщение')
+            : AppLocale.pick('$n new messages', 'Новых сообщений: $n');
+        final latest = detail == NotificationDetail.full && n == 1 ? _latestIncoming() : null;
+        if (detail == NotificationDetail.hidden) {
+          NotificationService.show('CyberDog', '');
+        } else if (latest != null) {
+          NotificationService.show(latest.$1, latest.$2);
+        } else {
+          NotificationService.show('CyberDog', count);
+        }
       }
       if (requests > _knownRequests) {
         NotificationService.show(
-            'CyberDog', AppLocale.pick('New chat request', 'Новый запрос на чат'));
+            'CyberDog',
+            PrivacyPrefs.notificationDetail.value == NotificationDetail.hidden
+                ? ''
+                : AppLocale.pick('New chat request', 'Новый запрос на чат'));
       }
     }
     _knownReceived = received;

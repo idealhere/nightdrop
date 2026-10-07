@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
-import '../bridges/bridges_screen.dart';
 import '../../app.dart';
 import '../../core/background_delivery.dart';
 import '../../core/backup_errors.dart';
@@ -104,6 +103,38 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     // believing they are covered.
     if (!await BackgroundDelivery.ensurePermission()) return;
     await BackgroundDelivery.setEnabled(true);
+  }
+
+  /// The first screen offers one way in for people who already have a backup; which kind is
+  /// asked here, not there.
+  Future<void> _chooseRestore() async {
+    final l10n = AppLocalizations.of(context)!;
+    final fromServer = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(l10n.restoreFromBackupFile),
+              onTap: () => Navigator.pop(context, false),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: Text(l10n.restoreFromServerBackup),
+              onTap: () => Navigator.pop(context, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (fromServer == null) return;
+    if (fromServer) {
+      await _restoreFromServer();
+    } else {
+      await _restore();
+    }
   }
 
   Future<void> _create() async {
@@ -320,25 +351,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ],
               const SizedBox(height: 8),
               TextButton(
-                onPressed: _busy ? null : _restore,
-                child: Text(l10n.restoreFromBackupFile),
-              ),
-              TextButton(
-                onPressed: _busy ? null : _restoreFromServer,
-                child: Text(l10n.restoreFromServerBackup),
-              ),
-              // The bridge editor must be reachable BEFORE an identity exists. Creating one
-              // bootstraps Tor (`create_bootstrapped`, 120s timeout), so where Tor is blocked
-              // identity creation cannot succeed — and every other route to this screen is behind
-              // HomeScreen, which only renders once an identity exists. Without this link the
-              // censorship feature is locked behind the censorship it exists to defeat.
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => Navigator.of(context).push(MaterialPageRoute<void>(
-                          builder: (_) => const BridgesScreen(),
-                        )),
-                child: Text(l10n.onboardingTorBlocked),
+                onPressed: _busy ? null : _chooseRestore,
+                child: Text(l10n.restoreFromBackup),
               ),
             ],
           ),

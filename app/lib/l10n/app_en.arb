@@ -317,15 +317,15 @@
   "@stageGeneratingIdentity": {
     "description": "Bootstrap progress line."
   },
-  "stageConnectingTor": "Connecting to the Tor network…",
+  "stageConnectingTor": "Connecting…",
   "@stageConnectingTor": {
     "description": "Bootstrap progress line."
   },
-  "stageBuildingCircuit": "Building a private circuit…",
+  "stageBuildingCircuit": "Setting up a secure connection…",
   "@stageBuildingCircuit": {
     "description": "Bootstrap progress line."
   },
-  "stagePublishingOnion": "Publishing your onion address…",
+  "stagePublishingOnion": "Preparing your address…",
   "@stagePublishingOnion": {
     "description": "Bootstrap progress line."
   },
@@ -337,11 +337,11 @@
   "@splashRestoringSession": {
     "description": "Launch splash progress line."
   },
-  "splashReconnectingTor": "Reconnecting to the Tor network…",
+  "splashReconnectingTor": "Connecting…",
   "@splashReconnectingTor": {
     "description": "Launch splash progress line."
   },
-  "splashRebuildingCircuit": "Rebuilding your private circuit…",
+  "splashRebuildingCircuit": "Setting up a secure connection…",
   "@splashRebuildingCircuit": {
     "description": "Launch splash progress line."
   },
@@ -796,7 +796,7 @@
   "@onboardingBackgroundTitle": {
     "description": "Title of the background-delivery offer shown during onboarding."
   },
-  "onboardingBackgroundBody": "Android suspends CyberDog whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps CyberDog running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.",
+  "onboardingBackgroundBody": "CyberDog will check for new messages even when it is closed, and show a permanent notification while it does. You can change this any time in the menu.",
   "@onboardingBackgroundBody": {
     "description": "Explanation of what background delivery does, its privacy properties and its costs, shown during onboarding."
   },

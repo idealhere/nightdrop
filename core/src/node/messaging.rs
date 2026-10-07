@@ -1639,15 +1639,14 @@ impl Node {
         } else {
             msg.msg_id.clone()
         };
-        let view_once = msg.burn_secs == VIEW_ONCE_SECS;
         self.dirty = true;
         // Opt-in, and the recipient's call: this discloses when they read it. Nothing depends on
         // it arriving — the sender's 24h horizon stands either way — so a failure here is silent
         // by design rather than something to retry or surface.
         //
-        // A view-once photo is the exception to the opt-in: telling the sender it was opened is
-        // what the sender chose when they sent it that way, so the receipt always goes.
-        if (self.burn_receipts || view_once) && !target.is_empty() {
+        // A view-once photo is no exception: opening it tells the sender nothing unless the
+        // recipient has opted in to burn receipts, like any other burn message.
+        if self.burn_receipts && !target.is_empty() {
             self.send_burn_receipt(contact_id, &target);
         }
         true

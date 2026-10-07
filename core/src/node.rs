@@ -1935,10 +1935,11 @@ fn make_tombstone(msg: &mut ChatMessage) {
 ///
 /// No new frame and no new field — it rides the existing burn path as a reserved timer value, so
 /// the content, the sealing and the capability check are exactly the burn message's. What the
-/// value changes is what happens around the view: the recipient always tells the sender it was
-/// opened (see `Node::mark_burn_viewed`), and both sides keep a "viewed" marker in place of the
-/// photo instead of dropping the row. A build that predates this treats it as a one-second burn,
-/// which is still ephemeral: it degrades towards deleting, never towards keeping.
+/// value changes is what the recipient keeps: a "viewed" marker in place of the photo instead of
+/// an empty gap. Nothing extra is sent — whether the sender hears that it was opened is still the
+/// recipient's opt-in burn receipt, exactly as for any burn message; otherwise the sender's copy
+/// simply goes at the 24h horizon. A build that predates this treats the value as a one-second
+/// burn, which is still ephemeral: it degrades towards deleting, never towards keeping.
 pub(crate) const VIEW_ONCE_SECS: u64 = 1;
 
 /// Turn a view-once photo that has been opened into a "viewed" marker, in place. Same clearing

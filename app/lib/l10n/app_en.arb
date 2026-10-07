@@ -547,7 +547,7 @@
   "@photoViewed": {
     "description": "Shown in place of a view-once photo after it was opened, on both sides."
   },
-  "viewOnceSenderNote": "Can be opened once. You will see when it has been viewed.",
+  "viewOnceSenderNote": "Sent to be viewed once. Removed from your device after 24 hours.",
   "@viewOnceSenderNote": {
     "description": "Under the sender's own copy of a view-once photo."
   },

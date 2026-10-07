@@ -778,7 +778,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(child: Text(contact.displayName)),
+                    Flexible(child: Text(contact.headerName)),
                     if (contact.showIdentityTag) ...[
                       const SizedBox(width: 6),
                       IdentityTag(tag: contact.identityTag),
@@ -795,6 +795,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (contact.showRankBadge) ...[
+                      UserRankBadge(rank: contact.rank),
+                      const SizedBox(width: 6),
+                    ],
                     Flexible(
                       child: Text(
                         shortId(contact.id),
@@ -898,7 +902,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
-              if (!awaitingApproval && contact.verified) const _EncryptedBanner(),
+              if (!awaitingApproval && contact.verified)
+                _EncryptedBanner(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => VerifyScreen(
+                        contactId: contact.id,
+                        name: contact.theirName,
+                      ),
+                    ),
+                  ),
+                ),
               if (contact.remoteStorage)
                 _RemoteStorageBanner(healthy: contact.remoteStorageHealthy),
               if (contact.peerBackedUp) const _PeerBackupBanner(),
@@ -1344,7 +1358,6 @@ class _Bubble extends StatelessWidget {
               gradient: mine ? CyberDog.outgoing : null,
               border: mine ? null : Border.all(color: CyberDog.hairline),
               borderRadius: BorderRadius.circular(18),
-              boxShadow: mine ? CyberDog.glow : null,
             ),
             child: Column(
               crossAxisAlignment:
@@ -2292,33 +2305,52 @@ String _shortDuration(Duration d) {
   return '${d.inSeconds}s';
 }
 
-/// Calm reassurance at the top of a verified chat, in the slot the unverified nudge used.
+/// Calm reassurance at the top of a verified chat, in the slot the unverified nudge used. Tapping
+/// it opens the safety-number screen, which is where "encrypted" can actually be checked.
 class _EncryptedBanner extends StatelessWidget {
-  const _EncryptedBanner();
+  const _EncryptedBanner({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.lock_outline, size: 18, color: scheme.secondary),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              AppLocalizations.of(context)!.encryptedBanner,
-              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      child: Material(
+        color: CyberDog.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: CyberDog.hairline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(Icons.lock_outline, size: 16, color: scheme.secondary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    AppLocalizations.of(context)!.encryptedBanner,
+                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 18, color: scheme.secondary),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

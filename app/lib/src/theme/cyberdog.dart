@@ -3,24 +3,27 @@ import 'package:flutter/material.dart';
 /// CyberDog design tokens used by the chat screen. One place for the colours, radii and glows so
 /// the rest of the app can adopt them screen by screen.
 abstract final class CyberDog {
-  static const violet = Color(0xFF8A6CF5);
-  static const violetDeep = Color(0xFF5E45D4);
+  static const accent = Color(0xFF7657FF);
+  static const accentLight = Color(0xFF9B7BFF);
+  static const accentDark = Color(0xFF5638D7);
   static const violetSoft = Color(0xFFCFC2FF);
-  static const hairline = Color(0x339B7CFF);
-  static const hairlineBright = Color(0x809B7CFF);
-  static const panel = Color(0xCC0C1126);
-  static const rankInk = Color(0xFF8E97BD);
+  static const hairline = Color(0x2E8278FF);
+  static const hairlineBright = Color(0x80825AFF);
+  static const panel = Color(0xFF0D1225);
+  static const rankInk = Color(0xFF7F86A6);
 
   static const outgoing = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [violet, violetDeep],
+    colors: [Color(0xFF7556FF), Color(0xFF5D37EE)],
   );
-  static const glow = [BoxShadow(color: Color(0x4D8A6CF5), blurRadius: 16)];
-  static const glowPressed = [BoxShadow(color: Color(0x998A6CF5), blurRadius: 22)];
+
+  /// The only glow in the chat: a faint one under the send button, slightly stronger on press.
+  static const glow = [BoxShadow(color: Color(0x337657FF), blurRadius: 12)];
+  static const glowPressed = [BoxShadow(color: Color(0x667657FF), blurRadius: 16)];
 }
 
-/// The CyberDog mark: an angular dog's head facing right, drawn as one vector shape so it stays
+/// The CyberDog mark: an angular dog's head facing right, drawn as a few vector strokes so it stays
 /// sharp from 16 px up and costs no image asset. The muzzle doubles as a "send" arrow.
 class CyberDogMark extends StatelessWidget {
   const CyberDogMark({super.key, this.size = 24, this.color});
@@ -44,26 +47,37 @@ class _MarkPainter extends CustomPainter {
 
   final Color color;
 
-  // Outline on a 24-unit grid, then the eye as a cut-out (even-odd fill).
-  static const _head = <Offset>[
-    Offset(3.5, 21.5), Offset(6.8, 12.3), Offset(5.6, 2.5), Offset(10.2, 8), Offset(12.8, 2.2),
-    Offset(15.3, 9.2), Offset(21.8, 12.6), Offset(19.9, 15.3), Offset(15.2, 15.9),
-    Offset(11.3, 21.5),
+  // The same polylines as logo-mark.svg, on a 24-unit grid: the profile, an ear fold, the eye.
+  static const _strokes = <List<Offset>>[
+    [
+      Offset(4.5, 21.5), Offset(8.3, 11.2), Offset(7.6, 2.8), Offset(11.2, 7.6),
+      Offset(13.6, 2.2), Offset(15.2, 8.8), Offset(21.6, 12.4), Offset(20.6, 14.6),
+      Offset(16.2, 15.2), Offset(14.4, 18), Offset(12.2, 21.5), //
+    ],
+    [Offset(11.2, 7.6), Offset(12.3, 10.8)],
+    [Offset(15.6, 11.3), Offset(17.2, 11.9)],
   ];
-  static const _eye = <Offset>[Offset(13.3, 10.7), Offset(16.1, 11.6), Offset(13.6, 12.5)];
 
   @override
   void paint(Canvas canvas, Size size) {
     final k = size.shortestSide / 24;
-    final path = Path()..fillType = PathFillType.evenOdd;
-    for (final shape in [_head, _eye]) {
-      path.moveTo(shape.first.dx * k, shape.first.dy * k);
-      for (final p in shape.skip(1)) {
+    final path = Path();
+    for (final stroke in _strokes) {
+      path.moveTo(stroke.first.dx * k, stroke.first.dy * k);
+      for (final p in stroke.skip(1)) {
         path.lineTo(p.dx * k, p.dy * k);
       }
-      path.close();
     }
-    canvas.drawPath(path, Paint()..color = color);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        // A little heavier at small sizes, so the mark still reads at 16-24 px.
+        ..strokeWidth = (size.shortestSide < 20 ? 1.9 : 1.5) * k
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
   }
 
   @override
@@ -117,7 +131,7 @@ class UserRankBadge extends StatelessWidget {
 }
 
 /// The send button: a violet rounded square carrying the mark. On press the mark nudges right
-/// and the glow tightens for a moment.
+/// and the glow strengthens slightly.
 class CyberDogSendButton extends StatefulWidget {
   const CyberDogSendButton({super.key, required this.onPressed, this.semanticLabel});
 

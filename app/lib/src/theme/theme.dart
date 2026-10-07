@@ -3,38 +3,37 @@ import 'package:flutter/foundation.dart';
 
 /// CyberDog's dark, low-key theme.
 ThemeData nightdropTheme() {
-  // CyberDog palette: deep night blue surfaces, a restrained violet accent, moonlight cream
-  // for the main call to action.
+  // CyberDog palette: deep night blue surfaces, a restrained violet accent, nothing warm.
   final scheme = ColorScheme.fromSeed(
     seedColor: const Color(0xFF9B7CFF),
     brightness: Brightness.dark,
   ).copyWith(
-    primary: const Color(0xFF7A62E6),
+    primary: const Color(0xFF7657FF),
     onPrimary: const Color(0xFFF5F7FF),
     primaryContainer: const Color(0xFF2A2364),
     onPrimaryContainer: const Color(0xFFE6DEFF),
-    secondary: const Color(0xFFB18CFF),
+    secondary: const Color(0xFF9B7BFF),
     onSecondary: const Color(0xFF14102B),
-    secondaryContainer: const Color(0xFF1C2448),
+    secondaryContainer: const Color(0xFF171A40),
     onSecondaryContainer: const Color(0xFFF5F7FF),
-    tertiary: const Color(0xFFF0E2B6),
-    onTertiary: const Color(0xFF17130A),
+    tertiary: const Color(0xFF9B7BFF),
+    onTertiary: const Color(0xFF0B0820),
     surface: const Color(0xFF090D1F),
-    onSurface: const Color(0xFFF5F7FF),
-    onSurfaceVariant: const Color(0xFFA8B0D0),
+    onSurface: const Color(0xFFF4F5FA),
+    onSurfaceVariant: const Color(0xFFA8AEC5),
     surfaceContainerLowest: const Color(0xFF050816),
-    surfaceContainerLow: const Color(0xFF0B1230),
-    surfaceContainer: const Color(0xFF10182E),
-    surfaceContainerHigh: const Color(0xFF131C36),
-    surfaceContainerHighest: const Color(0xFF151F3A),
-    outline: const Color(0xFF7C85A3),
+    surfaceContainerLow: const Color(0xFF090D1F),
+    surfaceContainer: const Color(0xFF0D1225),
+    surfaceContainerHigh: const Color(0xFF0F1529),
+    surfaceContainerHighest: const Color(0xFF11172C),
+    outline: const Color(0xFF707892),
     outlineVariant: const Color(0xFF222C50),
   );
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
     // Screens are see-through: the night forest painted behind the whole app shows under them
-    // (see NightForestBackground, installed by the MaterialApp builder).
+    // (see AppBackdrop, installed by the MaterialApp builder).
     scaffoldBackgroundColor: Colors.transparent,
     appBarTheme: const AppBarTheme(
       centerTitle: true,
@@ -43,9 +42,9 @@ ThemeData nightdropTheme() {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: scheme.tertiary,
-        foregroundColor: scheme.onTertiary,
-        shape: const StadiumBorder(),
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
         textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
       ),

@@ -11,7 +11,7 @@ import 'core/notifications.dart';
 import 'features/home/home_screen.dart';
 import 'features/lock/lock_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
-import 'theme/night_forest.dart';
+import 'theme/app_backdrop.dart';
 import 'theme/theme.dart';
 
 /// Exposes the [NightdropCore] to the widget tree. Read it with `NightdropScope.of(context)`;
@@ -46,7 +46,7 @@ class NightdropApp extends StatelessWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) =>
-              NightForestBackground(child: child ?? const SizedBox.shrink()),
+              AppBackdrop(child: child ?? const SizedBox.shrink()),
           home: const _Root(),
         ),
       ),

@@ -11,14 +11,15 @@ class BrandTitle extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Text.rich(
       TextSpan(
-        text: 'Cyber',
+        text: 'CYBER',
         children: [
-          TextSpan(text: 'Dog', style: TextStyle(color: scheme.secondary)),
+          TextSpan(text: 'DOG', style: TextStyle(color: scheme.secondary)),
         ],
       ),
       style: TextStyle(
         fontSize: fontSize,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 2,
         color: scheme.onSurface,
       ),
     );

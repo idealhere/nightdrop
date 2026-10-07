@@ -218,13 +218,7 @@ impl Node {
         if self.rendezvous_relays().is_empty() {
             anyhow::bail!("no relay configured");
         }
-        let bundle = self.publish_bundle();
-        let payload = format!(
-            "nightdrop://pair?addr={}&ik={}&otk={}",
-            self.address(),
-            bundle.identity_key,
-            bundle.one_time_key
-        );
+        let payload = self.build_pair_payload();
         // Replace any stale invite for the same slot (e.g. the code was regenerated).
         self.pending_invites.retain(|p| p.slot != slot);
         self.pending_invites.push(PendingInvite {
@@ -337,6 +331,18 @@ impl Node {
 
     /// Joiner side: open a session toward the inviter from a payload recovered by
     /// [`run_join_handshake`], and return the new contact.
+    /// A `nightdrop://pair?…` payload for connecting to this node: a fresh pre-key bundle plus our
+    /// current address. What a QR invite carries; also what a group introduction passes along.
+    pub(super) fn build_pair_payload(&mut self) -> String {
+        let bundle = self.publish_bundle();
+        format!(
+            "nightdrop://pair?addr={}&ik={}&otk={}",
+            self.address(),
+            bundle.identity_key,
+            bundle.one_time_key
+        )
+    }
+
     pub fn connect_from_invite_payload(&mut self, payload: &str) -> Result<Contact> {
         let (addr, bundle) = crate::api::parse_invite(payload)?;
         let contact_id = self.connect_with_bundle(&addr, &bundle)?;

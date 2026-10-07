@@ -5,6 +5,13 @@
 //! [`Frame::Group`]; the relay sees ordinary, unrelated messages. There is no group key and no new
 //! cryptography. The sender of a group frame is always the owner of the session it decrypted on —
 //! a sender named inside the payload would be that member's claim about someone else.
+//!
+//! Members need a chat with each other, and at first each may only have one with the creator. So
+//! the creator **introduces** them: of two members without a chat, the one whose identity key
+//! sorts first hands the creator a fresh invite for the other (`intro`), the creator passes it on
+//! unopened, and the other connects with it as if they had scanned a code. The creator could pass
+//! on a different invite; the receiver checks that the invite's identity is the member named in
+//! the group, and comparing safety numbers remains the way to be sure of who that member is.
 use super::*;
 
 /// The most members a group may have, the local user included.
@@ -23,8 +30,11 @@ pub(crate) struct Group {
     pub left: bool,
 }
 
+/// An invite payload longer than this is not an invite.
+const MAX_INTRO_PAYLOAD: usize = 4096;
+
 /// Pack a group envelope: `[group_id][op][body…]`. `op` names what the frame does (`create`,
-/// `msg`, `leave`); a build that does not know an `op` ignores the frame.
+/// `msg`, `leave`, `intro`); a build that does not know an `op` ignores the frame.
 pub(super) fn pack_group(group_id: &str, op: &str, body: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     put_field(&mut out, group_id.as_bytes());
@@ -264,7 +274,7 @@ impl Node {
                 self.groups.insert(
                     group_id.clone(),
                     Group {
-                        id: group_id,
+                        id: group_id.clone(),
                         name,
                         creator: from.to_string(),
                         members,
@@ -278,7 +288,59 @@ impl Node {
                     },
                 );
                 self.dirty = true;
+                self.offer_introductions(&group_id);
                 Ok(Some((from.to_string(), String::new())))
+            }
+            "intro" => {
+                let mut p = 0;
+                let named = String::from_utf8(take_field(&body, &mut p)?)?;
+                if body.len() - p > MAX_INTRO_PAYLOAD {
+                    return Ok(None);
+                }
+                let payload = String::from_utf8(body[p..].to_vec())?;
+                let me = self.identity_key();
+                let (we_created, creator) = {
+                    let Some(group) = self.groups.get(&group_id) else {
+                        return Ok(None);
+                    };
+                    let is_member = |id: &str| group.members.iter().any(|m| m.as_str() == id);
+                    if group.left
+                        || !is_member(from)
+                        || !is_member(&named)
+                        || named.as_str() == from
+                        || named.as_str() == me.as_str()
+                    {
+                        return Ok(None);
+                    }
+                    (group.creator.as_str() == me.as_str(), group.creator.clone())
+                };
+                if we_created {
+                    // A member's invite for `named`: pass it on unopened, saying whose it is.
+                    let mut forward = Vec::new();
+                    put_field(&mut forward, from.as_bytes());
+                    forward.extend_from_slice(payload.as_bytes());
+                    let envelope = pack_group(&group_id, "intro", &forward);
+                    let _ = self.send_group_frame(&named, &envelope);
+                    return Ok(None);
+                }
+                // An invite from `named`, passed on to us. Only the creator may pass one on, and
+                // it must be an invite to the member it claims to come from.
+                if from != creator.as_str() || self.chats.contains_key(&named) {
+                    return Ok(None);
+                }
+                let Ok((_, bundle)) = crate::api::parse_invite(&payload) else {
+                    return Ok(None);
+                };
+                if bundle.identity_key != named {
+                    return Ok(None);
+                }
+                // A failed connection must not fail the frame: the group works without it, only
+                // these two members will not see each other's messages.
+                if self.connect_from_invite_payload(&payload).is_ok() {
+                    self.dirty = true;
+                    return Ok(Some((named, String::new())));
+                }
+                Ok(None)
             }
             "msg" => {
                 let mut p = 0;
@@ -322,6 +384,42 @@ impl Node {
                 Ok(Some((from.to_string(), String::new())))
             }
             _ => Ok(None),
+        }
+    }
+
+    /// Offer an introduction to every member of `group_id` we have no chat with. Of each such
+    /// pair only the member whose identity key sorts first offers, so the two never invite each
+    /// other at once. The offer goes to the creator, who has a chat with everyone.
+    fn offer_introductions(&mut self, group_id: &str) {
+        let me = self.identity_key();
+        let (creator, targets): (String, Vec<String>) = {
+            let Some(group) = self.groups.get(group_id) else {
+                return;
+            };
+            if group.left || group.creator.as_str() == me.as_str() {
+                return;
+            }
+            let targets = group
+                .members
+                .iter()
+                .filter(|m| {
+                    m.as_str() != group.creator.as_str()
+                        && me.as_str() < m.as_str()
+                        && !self.chats.contains_key(m.as_str())
+                })
+                .cloned()
+                .collect();
+            (group.creator.clone(), targets)
+        };
+        for target in targets {
+            let payload = self.build_pair_payload();
+            let mut body = Vec::new();
+            put_field(&mut body, target.as_bytes());
+            body.extend_from_slice(payload.as_bytes());
+            let envelope = pack_group(group_id, "intro", &body);
+            if self.send_group_frame(&creator, &envelope).is_ok() {
+                self.intro_expected.insert(target);
+            }
         }
     }
 

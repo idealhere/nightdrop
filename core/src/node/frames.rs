@@ -34,6 +34,9 @@ impl Node {
                 // prior chat's state *before* the overwrite so we can warn on a re-pair (§1.2): a
                 // chat that existed and was closed is a known contact re-establishing a brand-new
                 // secure session, after which any earlier safety-number verification no longer holds.
+                // A group member we offered an introduction to is not a stranger (`groups.rs`).
+                let introduced = self.intro_expected.remove(&contact_id);
+                let auto_authorized = introduced || !self.require_authorization;
                 let prior = self.chats.get(&contact_id);
                 let was_verified = prior.map(|c| c.contact.verified).unwrap_or(false);
                 // A Hello lands in one of three states: a brand-new contact, a re-pair of a chat we
@@ -86,8 +89,10 @@ impl Node {
                     // in this log means the invariant was bypassed.
                     crate::diag!(
                         "pair: new chat from an unknown identity — {}",
-                        if self.require_authorization {
+                        if !auto_authorized {
                             "held as a request pending approval"
+                        } else if introduced {
+                            "AUTO-APPROVED (introduced through a group)"
                         } else {
                             "AUTO-APPROVED (require_authorization is off)"
                         }
@@ -119,7 +124,7 @@ impl Node {
                             session: accepted.session,
                             history: Vec::new(),
                             // Inbound request: needs approval unless we auto-authorize.
-                            authorized: !self.require_authorization,
+                            authorized: auto_authorized,
                             // Associate the most recent invite code so approval can echo it.
                             code: self.last_invite_code.clone(),
                             closed: false,

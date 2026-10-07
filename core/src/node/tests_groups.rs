@@ -230,3 +230,147 @@ fn groups_survive_a_restart() {
     assert_eq!(last.sender, alice.identity_key());
     assert!(bob2.peer_supports_groups(&alice.identity_key()));
 }
+
+/// Alice knows Bob and Carol; Bob and Carol have never met.
+fn creator_and_two_strangers() -> (Node, Node, Node) {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    let mut carol = Node::new(Box::new(net.endpoint("carol")));
+    pair(&mut alice, "alice", &mut bob);
+    pair(&mut alice, "alice", &mut carol);
+    (alice, bob, carol)
+}
+
+fn settle(nodes: &mut [&mut Node]) {
+    for _ in 0..4 {
+        pump_all(nodes);
+    }
+}
+
+/// A group that exists only on `node`, as if `creator` had made it.
+fn plant_group(node: &mut Node, id: &str, creator: &str, members: &[String]) {
+    let mut members = members.to_vec();
+    members.sort();
+    node.groups.insert(
+        id.to_string(),
+        super::groups::Group {
+            id: id.to_string(),
+            name: id.to_string(),
+            creator: creator.to_string(),
+            members,
+            history: Vec::new(),
+            left: false,
+        },
+    );
+}
+
+fn intro_envelope(group_id: &str, named: &str, payload: &str) -> Vec<u8> {
+    let mut body = Vec::new();
+    put_field(&mut body, named.as_bytes());
+    body.extend_from_slice(payload.as_bytes());
+    pack_group(group_id, "intro", &body)
+}
+
+#[test]
+fn members_who_only_know_the_creator_are_introduced() {
+    let (mut alice, mut bob, mut carol) = creator_and_two_strangers();
+    let gid = alice
+        .create_group("intro", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+
+    assert!(bob.contacts().iter().any(|c| c.id == carol.identity_key()));
+    assert!(carol.contacts().iter().any(|c| c.id == bob.identity_key()));
+
+    bob.send_group(&gid, "hi from bob").unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+    let last = carol.group_messages(&gid).into_iter().last().unwrap();
+    assert_eq!(last.sender, bob.identity_key());
+    assert_eq!(last.message.text, "hi from bob");
+
+    carol.send_group(&gid, "hi from carol").unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+    let last = bob.group_messages(&gid).into_iter().last().unwrap();
+    assert_eq!(last.sender, carol.identity_key());
+    assert_eq!(last.message.text, "hi from carol");
+}
+
+#[test]
+fn introduced_members_do_not_need_approval() {
+    let (mut alice, mut bob, mut carol) = creator_and_two_strangers();
+    bob.set_require_authorization(true);
+    carol.set_require_authorization(true);
+    let gid = alice
+        .create_group("no-ask", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+
+    assert!(bob.chats.get(&carol.identity_key()).unwrap().authorized);
+    assert!(carol.chats.get(&bob.identity_key()).unwrap().authorized);
+
+    bob.send_group(&gid, "no approval needed").unwrap();
+    carol.send_group(&gid, "none here either").unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+    assert!(carol
+        .group_messages(&gid)
+        .iter()
+        .any(|m| m.message.text == "no approval needed"));
+    assert!(bob
+        .group_messages(&gid)
+        .iter()
+        .any(|m| m.message.text == "none here either"));
+}
+
+#[test]
+fn an_introduction_to_a_different_identity_is_refused() {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    let carol = Node::new(Box::new(net.endpoint("carol")));
+    let mut dave = Node::new(Box::new(net.endpoint("dave")));
+    pair(&mut alice, "alice", &mut bob);
+    let members = [
+        alice.identity_key(),
+        bob.identity_key(),
+        carol.identity_key(),
+    ];
+    plant_group(&mut bob, "g", &alice.identity_key(), &members);
+
+    // The creator names Carol but passes on an invite that leads to Dave.
+    let envelope = intro_envelope("g", &carol.identity_key(), &dave.build_pair_payload());
+    assert_eq!(
+        bob.on_group_frame(&alice.identity_key(), &envelope)
+            .unwrap(),
+        None
+    );
+    assert!(!bob.chats.contains_key(&carol.identity_key()));
+    assert!(!bob.chats.contains_key(&dave.identity_key()));
+}
+
+#[test]
+fn only_the_creator_can_pass_an_introduction_on() {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    let mut carol = Node::new(Box::new(net.endpoint("carol")));
+    let mut dave = Node::new(Box::new(net.endpoint("dave")));
+    pair(&mut alice, "alice", &mut bob);
+    pair(&mut bob, "bob", &mut carol);
+    let members = [
+        alice.identity_key(),
+        bob.identity_key(),
+        carol.identity_key(),
+        dave.identity_key(),
+    ];
+    plant_group(&mut bob, "g", &alice.identity_key(), &members);
+
+    // Carol is a member, but not the creator: her passing on Dave's invite counts for nothing.
+    let envelope = intro_envelope("g", &dave.identity_key(), &dave.build_pair_payload());
+    assert_eq!(
+        bob.on_group_frame(&carol.identity_key(), &envelope)
+            .unwrap(),
+        None
+    );
+    assert!(!bob.chats.contains_key(&dave.identity_key()));
+}

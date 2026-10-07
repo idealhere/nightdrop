@@ -586,6 +586,10 @@ pub struct Node {
     /// Contacts whose build has announced that it understands group frames (`Frame::Groups`).
     /// Persisted: it is a fact about the peer, learned once.
     groups_peers: std::collections::HashSet<String>,
+    /// Group members we offered an introduction to (by identity key): their `Hello` is accepted
+    /// without asking, because joining the group was the consent. In memory only — if it is lost,
+    /// that `Hello` simply becomes an ordinary request.
+    intro_expected: std::collections::HashSet<String>,
     /// Group chats, by group id (`node/groups.rs`).
     groups: HashMap<String, groups::Group>,
     /// This build's app version (`"0.1.27"`), set by the app via [`set_app_version`]
@@ -958,6 +962,7 @@ impl Node {
             burns_announced: std::collections::HashSet::new(),
             groups_announced: std::collections::HashSet::new(),
             groups_peers: std::collections::HashSet::new(),
+            intro_expected: std::collections::HashSet::new(),
             groups: HashMap::new(),
             app_version: None,
             version_announced: std::collections::HashSet::new(),

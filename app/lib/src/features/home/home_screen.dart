@@ -14,6 +14,7 @@ import '../../core/profile_name.dart';
 import '../backup/backup_actions.dart';
 import '../bridges/bridges_screen.dart';
 import '../chat/chat_screen.dart';
+import '../groups/group_screens.dart';
 import '../lock/app_lock_settings.dart';
 import '../pairing/pairing_screen.dart';
 import '../privacy/privacy_screen.dart';
@@ -48,6 +49,10 @@ class HomeScreen extends StatelessWidget {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
+              if (value == 'newgroup') {
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const CreateGroupScreen()));
+              }
               if (value == 'identity') _showMyIdentity(context, core);
               if (value == 'myname') _editMyName(context, core);
               if (value == 'privacy') {
@@ -71,6 +76,7 @@ class HomeScreen extends StatelessWidget {
               if (value == 'logout') _confirmLogout(context, core);
             },
             itemBuilder: (context) => [
+              PopupMenuItem(value: 'newgroup', child: Text(l10n.newGroup)),
               PopupMenuItem(value: 'identity', child: Text(l10n.myIdentity)),
               PopupMenuItem(value: 'myname', child: Text(l10n.myNameMenu)),
               PopupMenuItem(value: 'privacy', child: Text(l10n.privacyMenu)),
@@ -118,7 +124,8 @@ class HomeScreen extends StatelessWidget {
         builder: (context, _) {
           final requests = core.incomingRequests;
           final contacts = core.contacts;
-          if (requests.isEmpty && contacts.isEmpty) {
+          final groups = core.groups;
+          if (requests.isEmpty && contacts.isEmpty && groups.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -132,6 +139,23 @@ class HomeScreen extends StatelessWidget {
           return ListView(
             children: [
               for (final r in requests) _RequestTile(request: r, core: core),
+              for (final g in groups)
+                ListTile(
+                  leading: const ExcludeSemantics(
+                    child: CircleAvatar(child: Icon(Icons.group_outlined)),
+                  ),
+                  title: Text(g.name),
+                  subtitle: Text(l10n.groupMembersCount(g.members.length)),
+                  trailing: switch (core.groupUnreadCount(g.id)) {
+                    0 => null,
+                    final n => Badge(label: Text('$n')),
+                  },
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => GroupChatScreen(groupId: g.id),
+                    ),
+                  ),
+                ),
               for (final c in contacts)
                 // Long-press (touch) or right-click (desktop) a chat to delete it.
                 GestureDetector(

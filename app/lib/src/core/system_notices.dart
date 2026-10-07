@@ -60,6 +60,10 @@ const _notices = <(String, String)>[
     'connection address changed',
     'Адрес подключения собеседника изменился; сообщения будут доходить, как и раньше.',
   ),
+  ('You created the group', 'Вы создали группу.'),
+  ('You were added to the group', 'Вас добавили в группу.'),
+  ('You left the group', 'Вы вышли из группы.'),
+  ('A member left the group', 'Участник вышел из группы.'),
   (
     'Waiting for the other person to accept',
     'Ждём, пока собеседник примет чат. Сообщения не будут доставлены, пока он не примет.',

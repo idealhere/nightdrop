@@ -1286,6 +1286,97 @@
   "@pasteText": {
     "description": "Tooltip for the composer paste button."
   },
+  "newGroup": "New group",
+  "@newGroup": {
+    "description": "Menu entry and title of the create-group screen."
+  },
+  "groupLabel": "Group",
+  "@groupLabel": {
+    "description": "Subtitle of a group in the chat list; also the default group name."
+  },
+  "groupName": "Group name",
+  "@groupName": {
+    "description": "Label of the group name field."
+  },
+  "groupCreate": "Create group",
+  "@groupCreate": {
+    "description": "Button that creates the group."
+  },
+  "groupEveryoneConnected": "Pick people you already chat with — up to 9. For now everyone in the group also needs a chat with each other, otherwise they will not see each other’s messages.",
+  "@groupEveryoneConnected": {
+    "description": "Explains who can be added to a group and the current limitation."
+  },
+  "groupNeedsNewer": "Needs a newer version of the app",
+  "@groupNeedsNewer": {
+    "description": "Shown under a contact whose app cannot do groups."
+  },
+  "groupNoContacts": "Start a chat with someone first — a group is made of people you already talk to.",
+  "@groupNoContacts": {
+    "description": "Create-group screen when there are no contacts."
+  },
+  "groupMembersCount": "Members: {count}",
+  "@groupMembersCount": {
+    "description": "Line under the group name.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupMembersTitle": "Members",
+  "@groupMembersTitle": {
+    "description": "Title of the member list."
+  },
+  "groupYou": "You",
+  "@groupYou": {
+    "description": "How the local user is named in a member list."
+  },
+  "groupUnknownMember": "Member",
+  "@groupUnknownMember": {
+    "description": "Name for a group member who is not one of our contacts."
+  },
+  "groupCreatorTag": "Created the group",
+  "@groupCreatorTag": {
+    "description": "Shown under the creator in the member list."
+  },
+  "groupLeave": "Leave group",
+  "@groupLeave": {
+    "description": "Menu entry and confirmation title."
+  },
+  "groupLeaveBody": "You will stop receiving messages from this group. The other members will see that you left.",
+  "@groupLeaveBody": {
+    "description": "Body of the leave confirmation."
+  },
+  "groupDelete": "Delete group",
+  "@groupDelete": {
+    "description": "Menu entry and confirmation title."
+  },
+  "groupDeleteBody": "The group and its messages are removed from this device. The other members will see that you left.",
+  "@groupDeleteBody": {
+    "description": "Body of the delete confirmation."
+  },
+  "groupLeftBanner": "You left this group",
+  "@groupLeftBanner": {
+    "description": "Shown in place of the composer after leaving."
+  },
+  "groupCouldNotCreate": "Could not create the group: {error}",
+  "@groupCouldNotCreate": {
+    "description": "Snackbar when creating a group fails.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "groupCouldNotSend": "Could not send: {error}",
+  "@groupCouldNotSend": {
+    "description": "Snackbar when a group message could not be sent to anyone.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

@@ -795,7 +795,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const UserRankBadge(rank: UserRankBadge.defaultRank),
+                    UserRankBadge(rank: contact.rank),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -924,8 +924,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               : _Bubble(
                                   message: m,
                                   senderName: m.fromMe
-                                      ? contact.myName
-                                      : contact.theirName,
+                                      ? contact.shownMyName
+                                      : contact.shownTheirName,
                                   // Right-click (desktop) or long-press (mobile) own recent/
                                   // queued text to edit or unsend it.
                                   onLongPress: m.canEdit

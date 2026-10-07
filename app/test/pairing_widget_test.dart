@@ -77,7 +77,7 @@ void main() {
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          home: VerifyScreen(contactId: contact.id, name: 'Dog'),
+          home: VerifyScreen(contactId: contact.id, name: 'NightDog'),
         ),
       ),
     );

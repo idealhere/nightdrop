@@ -79,31 +79,35 @@ class UserRankBadge extends StatelessWidget {
   /// The rank every user has until more ranks exist.
   static const defaultRank = 'nightdog';
 
-  static const _labels = {'nightdog': 'NIGHTDOG'};
+  static const _labels = {'nightdog': 'NIGHTDOG', 'cyberdog': 'CYBERDOG'};
+
+  /// Ranks that have been earned are drawn in the brand violet; the starting rank stays muted.
+  static const _earned = {'cyberdog'};
 
   final String rank;
 
   @override
   Widget build(BuildContext context) {
+    final ink = _earned.contains(rank) ? CyberDog.violetSoft : CyberDog.rankInk;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: const Color(0x408E97BD)),
+        border: Border.all(color: ink.withValues(alpha: .3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CyberDogMark(size: 9, color: CyberDog.rankInk),
+          CyberDogMark(size: 9, color: ink),
           const SizedBox(width: 3),
           Text(
             _labels[rank] ?? rank.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9,
               height: 1.2,
               letterSpacing: .8,
               fontWeight: FontWeight.w600,
-              color: CyberDog.rankInk,
+              color: ink,
             ),
           ),
         ],

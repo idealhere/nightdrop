@@ -2807,7 +2807,7 @@ pub(crate) fn parse_invite(payload: &str) -> Result<(String, PreKeyBundle)> {
     let query = payload
         .split_once("://pair?")
         .map(|(_, q)| q)
-        .ok_or_else(|| anyhow::anyhow!("not a Night Drop invite"))?;
+        .ok_or_else(|| anyhow::anyhow!("not a Night Dog invite"))?;
     let (mut addr, mut ik, mut otk) = (None, None, None);
     for kv in query.split('&') {
         if let Some((k, v)) = kv.split_once('=') {

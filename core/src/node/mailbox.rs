@@ -255,7 +255,7 @@ pub(super) const OLD_VERSION_GRACE_SECS: u64 = 10 * 60;
 
 /// Refusal at the contact cap (§8). Said plainly, because the reason explains the product.
 pub(super) const AT_CONTACT_CAP: &str =
-    "You have 50 contacts, the most Night Drop allows. Delete a \
+    "You have 50 contacts, the most Night Dog allows. Delete a \
     chat to add a new one. The limit keeps a relay from rebuilding your contact list from the \
     mailboxes your device checks.";
 

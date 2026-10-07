@@ -76,10 +76,6 @@
   "@secretWordsExplanation": {
     "description": "Explanation of the short code's slot vs. secret words."
   },
-  "supportNightDrop": "Support Night Dog",
-  "@supportNightDrop": {
-    "description": "Title of the donations screen."
-  },
   "copyAddress": "Copy address",
   "@copyAddress": {
     "description": "Button to copy a cryptocurrency donation address to the clipboard."
@@ -243,7 +239,7 @@
   "@restore": {
     "description": "Confirm button in a restore-from-backup dialog."
   },
-  "onboardingTagline": "Private, end-to-end encrypted, no accounts.\nYour identity lives only on this device.",
+  "onboardingTagline": "End-to-end encrypted. No accounts.\nYour identity lives only on this device.",
   "@onboardingTagline": {
     "description": "Subtitle on the first-run onboarding screen."
   },
@@ -651,10 +647,6 @@
   "backupReminderBody": "Back up your identity so you don’t lose your chats. There’s no account to recover from — if you lose this device without a backup, it’s gone.",
   "@backupReminderBody": {
     "description": "Body of the dismissible backup-reminder banner."
-  },
-  "protocolBreakNotice": "Night Dog 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.",
-  "@protocolBreakNotice": {
-    "description": "Home-screen notice shown in the last 0.1.x releases: 0.2 changes the protocol, so 0.1.x and 0.2 apps cannot message each other."
   },
   "gotIt": "Got it",
   "@gotIt": {
@@ -1082,7 +1074,7 @@
   "@backUpThisChat": {
     "description": "Overflow-menu item to back up a single chat."
   },
-  "sayHi": "Say hi 🌙",
+  "sayHi": "Say hi",
   "@sayHi": {
     "description": "Empty-state text for a new chat with no messages."
   },

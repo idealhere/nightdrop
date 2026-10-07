@@ -49,7 +49,7 @@ class _UpdateCore extends MockNightdropCore {
   Future<String?> downloadUpdate() async {
     downloads++;
     if (gate != null) return gate!.future;
-    return '/tmp/NightDrop-update.apk';
+    return '/tmp/NightDog-update.apk';
   }
 
   @override
@@ -165,7 +165,7 @@ void main() {
     expect(find.textContaining('42%'), findsOneWidget);
 
     // And it goes away when the download does, rather than sitting frozen at some percentage.
-    gate.complete('/tmp/NightDrop-update.apk');
+    gate.complete('/tmp/NightDog-update.apk');
     await tester.pumpAndSettle();
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(find.textContaining('%'), findsNothing);

@@ -69,13 +69,6 @@ abstract class NightdropCore extends ChangeNotifier {
   /// Snooze the backup reminder for a while (on "Later").
   Future<void> snoozeBackupReminder() async {}
 
-  /// Whether to show the "0.2 won't message 0.1 apps" notice: until dismissed, and once more after
-  /// each update to a later 0.1.x. Defaults false (e.g. the mock).
-  Future<bool> shouldShowProtocolBreakNotice() async => false;
-
-  /// Dismiss that notice for this version.
-  Future<void> dismissProtocolBreakNotice() async {}
-
   /// Tell the core whether the app is foreground or background. Backgrounded, the core polls
   /// far less often (battery/data), and new messages raise a local notification.
   void setLifecycle(bool foreground);

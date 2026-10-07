@@ -767,7 +767,6 @@ class RustNightdropCore extends NightdropCore {
 
   static const _kBackedUp = 'nightdrop_backed_up';
   static const _kBackupSnoozeUntil = 'nightdrop_backup_snooze_until';
-  static const _kProtocolNoticeDismissed = 'nightdrop_protocol_notice_dismissed_version';
   static const _kUpdateCheckedAt = 'nightdrop_update_checked_at';
   static const _kUpdateHidden = 'nightdrop_update_hidden_version';
 
@@ -885,7 +884,7 @@ class RustNightdropCore extends NightdropCore {
       // Linux, the installer on Windows.
       final desktop = Platform.isLinux || Platform.isWindows;
       final ext = Platform.isLinux ? 'AppImage' : (Platform.isWindows ? 'exe' : 'apk');
-      final dest = '${dir.path}/NightDrop-update.$ext';
+      final dest = '${dir.path}/NightDog-update.$ext';
       final n = await _core?.downloadUpdate(destPath: dest);
       if (n == null || n <= BigInt.zero) {
         // Rust has already said why on its own diag line; this one marks that the UI gave up, so
@@ -893,7 +892,7 @@ class RustNightdropCore extends NightdropCore {
         await rust.diagNote(line: 'update: download returned nothing — reporting failure');
         return null;
       }
-      // Named for the version it actually is. "NightDrop-update.apk" tells a user nothing months
+      // Named for the version it actually is. "NightDog-update.apk" tells a user nothing months
       // later, and collides with the last one they downloaded.
       final version = _updateAvailable;
       if (desktop) {
@@ -901,7 +900,7 @@ class RustNightdropCore extends NightdropCore {
         // marked executable so it can be started from the file manager; nothing here runs it.
         final name = Platform.isLinux
             ? 'Night_Drop-${version ?? 'update'}-x86_64.AppImage'
-            : 'NightDropSetup-${version ?? 'update'}.exe';
+            : 'NightDogSetup-${version ?? 'update'}.exe';
         final where = await PublicDownloads.toDownloadsFolder(File(dest),
             displayName: name, executable: Platform.isLinux);
         await rust.diagNote(
@@ -914,7 +913,7 @@ class RustNightdropCore extends NightdropCore {
       final where = await PublicDownloads.publish(
         File(dest),
         displayName:
-            version == null ? 'NightDrop.apk' : 'NightDrop-$version.apk',
+            version == null ? 'NightDog.apk' : 'NightDog-$version.apk',
         mimeType: 'application/vnd.android.package-archive',
       );
       // Which of the three routes ran is invisible otherwise, and it is the difference between a
@@ -1000,14 +999,6 @@ class RustNightdropCore extends NightdropCore {
     }
     return true;
   }
-
-  @override
-  Future<bool> shouldShowProtocolBreakNotice() async =>
-      await _secure.read(key: _kProtocolNoticeDismissed) != kAppVersion;
-
-  @override
-  Future<void> dismissProtocolBreakNotice() =>
-      _secure.write(key: _kProtocolNoticeDismissed, value: kAppVersion);
 
   @override
   Future<void> recordBackupDone() async {

@@ -273,9 +273,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const MoonMark(size: 84),
-              const SizedBox(height: 24),
-              const BrandTitle(fontSize: 32, showMoon: false),
+              // Reserved for the Night Dog logo.
+              const SizedBox(height: 96),
+              const BrandTitle(fontSize: 32),
               const SizedBox(height: 8),
               Text(
                 l10n.onboardingTagline,

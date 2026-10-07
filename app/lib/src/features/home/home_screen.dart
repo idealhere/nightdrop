@@ -814,7 +814,7 @@ void _showAbout(BuildContext context) {
                 Text(AppConfig.current.appName,
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 2),
-                Text('Version $version',
+                Text('${AppLocale.pick('Version', 'Версия')} $version',
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
                 const Text('© 2026 Night Dog'),

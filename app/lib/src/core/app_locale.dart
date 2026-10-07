@@ -24,6 +24,10 @@ class AppLocale {
     } catch (_) {}
   }
 
+  /// For the few strings produced outside a widget tree (notifications, the foreground
+  /// service), where there is no `BuildContext` to look translations up from.
+  static String pick(String en, String ru) => current.value == russian ? ru : en;
+
   static Future<void> toggle() async {
     final next = current.value == russian ? english : russian;
     current.value = next;

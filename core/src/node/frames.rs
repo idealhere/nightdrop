@@ -479,7 +479,7 @@ impl Node {
                 if let Some(chat) = self.chats.get_mut(&from) {
                     chat.closed = true;
                     chat.history.push(ChatMessage::system(
-                        "👻 The other person deleted this chat. A new chat will need to be \
+                        "🗑️ The other person deleted this chat. A new chat will need to be \
                          created to keep talking."
                             .to_string(),
                     ));

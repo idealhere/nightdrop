@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../rust/api.dart' as rust;
+import 'app_locale.dart';
 import 'app_process.dart';
 import 'background_delivery.dart';
 import 'app_version.dart';
@@ -2004,10 +2005,15 @@ class RustNightdropCore extends NightdropCore {
     if (!_foreground) {
       if (received > _knownReceived) {
         final n = received - _knownReceived;
-        NotificationService.show('Night Dog', n == 1 ? 'New message' : '$n new messages');
+        NotificationService.show(
+            'Night Dog',
+            n == 1
+                ? AppLocale.pick('New message', 'Новое сообщение')
+                : AppLocale.pick('$n new messages', 'Новых сообщений: $n'));
       }
       if (requests > _knownRequests) {
-        NotificationService.show('Night Dog', 'New chat request');
+        NotificationService.show(
+            'Night Dog', AppLocale.pick('New chat request', 'Новый запрос на чат'));
       }
     }
     _knownReceived = received;

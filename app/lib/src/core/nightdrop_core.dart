@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'app_locale.dart';
 import 'models.dart';
 
 /// Strip the `AnyhowException(...)` wrapper the Rust bridge puts around core errors, so the UI
@@ -18,10 +19,17 @@ String cleanCoreError(Object error) {
 String identitySetupError(Object error) {
   final msg = cleanCoreError(error);
   if (msg.toLowerCase().contains('launch onion service')) {
-    return 'Night Dog may already be running, or another copy is using its data. '
-        'Close the other window, then try again.';
+    return AppLocale.pick(
+      'Night Dog may already be running, or another copy is using its data. '
+          'Close the other window, then try again.',
+      'Возможно, Night Dog уже запущен или его данные использует другая копия. '
+          'Закройте другое окно и попробуйте снова.',
+    );
   }
-  return 'Could not set up your identity: $msg';
+  return AppLocale.pick(
+    'Could not set up your identity: $msg',
+    'Не удалось создать личность: $msg',
+  );
 }
 
 /// The UI's single seam to the security core.

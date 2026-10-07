@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import 'app_locale.dart';
 import 'app_process.dart';
 
 /// Opt-in **Android foreground-service background delivery** (§11.8, TODO #13).
@@ -258,7 +259,7 @@ class BackgroundDelivery {
       holds: _holds,
     );
     if (run) {
-      await start(text: _holds > 0 ? _holdText : 'Watching for messages');
+      await start(text: _holds > 0 ? _holdText : null);
     } else {
       await stop();
     }
@@ -266,8 +267,10 @@ class BackgroundDelivery {
 
   /// Start the foreground service, or update its notification if it is already running
   /// (idempotent either way).
-  static Future<void> start({String text = 'Watching for messages'}) async {
+  static Future<void> start({String? text}) async {
     if (!supported) return;
+    final label =
+        text ?? AppLocale.pick('Watching for messages', 'Проверка новых сообщений');
     try {
       if (await FlutterForegroundTask.isRunningService) {
         // Already up, possibly saying the wrong thing: a persistent notification reading
@@ -275,14 +278,14 @@ class BackgroundDelivery {
         // their phone is busy.
         await FlutterForegroundTask.updateService(
           notificationTitle: 'Night Dog',
-          notificationText: text,
+          notificationText: label,
         );
         return;
       }
       await FlutterForegroundTask.startService(
         serviceId: 424242,
         notificationTitle: 'Night Dog',
-        notificationText: text,
+        notificationText: label,
         callback: nightdropBackgroundCallback,
       );
     } catch (_) {}

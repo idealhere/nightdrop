@@ -12,10 +12,12 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
+import '../../core/app_locale.dart';
 import '../../core/nightdrop_core.dart';
 import '../../core/media_cache.dart';
 import '../../core/models.dart';
 import '../../core/screenshot_detector.dart';
+import '../../core/system_notices.dart';
 import '../backup/backup_actions.dart';
 import 'verify_screen.dart';
 
@@ -902,7 +904,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         itemBuilder: (context, i) {
                           final m = visibleMessages[i];
                           final row = m.system
-                              ? _SystemNotice(text: m.text)
+                              ? _SystemNotice(text: localizeSystemNotice(m.text))
                               : _Bubble(
                                   message: m,
                                   senderName: m.fromMe
@@ -1504,9 +1506,13 @@ String _disappearingLabel(int secs) {
   return '${secs}s';
 }
 
-/// A 12-hour local clock time, e.g. "3:45 PM" (no `intl` dependency).
+/// A local clock time: 12-hour in English ("3:45 PM"), 24-hour in Russian ("15:45"). No `intl`
+/// dependency.
 String _formatTime(DateTime at) {
   final t = at.toLocal();
+  if (AppLocale.current.value == AppLocale.russian) {
+    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
   final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
   final minute = t.minute.toString().padLeft(2, '0');
   return '$hour12:$minute ${t.hour < 12 ? 'AM' : 'PM'}';
@@ -1523,6 +1529,16 @@ String _dayLabel(DateTime at) {
   final day = DateTime(t.year, t.month, t.day);
   final today = DateTime(now.year, now.month, now.day);
   final diff = today.difference(day).inDays;
+  if (AppLocale.current.value == AppLocale.russian) {
+    const russianMonths = [
+      'янв.', 'февр.', 'мар.', 'апр.', 'мая', 'июн.',
+      'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.' //
+    ];
+    if (diff == 0) return 'Сегодня';
+    if (diff == 1) return 'Вчера';
+    final russianYear = t.year == now.year ? '' : ' ${t.year}';
+    return '${t.day} ${russianMonths[t.month - 1]}$russianYear';
+  }
   if (diff == 0) return 'Today';
   if (diff == 1) return 'Yesterday';
   final year = t.year == now.year ? '' : ', ${t.year}';

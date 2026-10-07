@@ -866,7 +866,7 @@ void _showAbout(BuildContext context) {
                 Text('${AppLocale.pick('Version', 'Версия')} $version',
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
-                const Text('© 2026 Night Dog'),
+                const Text('© 2026 CyberDog'),
                 const Text('AGPL-3.0-or-later'),
                 const SizedBox(height: 12),
               ],

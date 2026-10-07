@@ -20,9 +20,9 @@ String identitySetupError(Object error) {
   final msg = cleanCoreError(error);
   if (msg.toLowerCase().contains('launch onion service')) {
     return AppLocale.pick(
-      'Night Dog may already be running, or another copy is using its data. '
+      'CyberDog may already be running, or another copy is using its data. '
           'Close the other window, then try again.',
-      'Возможно, Night Dog уже запущен или его данные использует другая копия. '
+      'Возможно, CyberDog уже запущен или его данные использует другая копия. '
           'Закройте другое окно и попробуйте снова.',
     );
   }

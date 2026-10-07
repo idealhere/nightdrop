@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
-/// Night Dog's dark, low-key theme.
+/// CyberDog's dark, low-key theme.
 ThemeData nightdropTheme() {
-  // Night Dog palette: deep night blue surfaces, a restrained violet accent, moonlight cream
+  // CyberDog palette: deep night blue surfaces, a restrained violet accent, moonlight cream
   // for the main call to action.
   final scheme = ColorScheme.fromSeed(
     seedColor: const Color(0xFF9B7CFF),

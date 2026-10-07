@@ -41,7 +41,7 @@ const _notices = <(String, String)>[
     'Собеседник удалил этот чат. Чтобы продолжить общение, нужно создать новый чат.',
   ),
   ('took a screenshot of this chat', 'Собеседник сделал скриншот этого чата.'),
-  ('You took a screenshot', 'Вы сделали скриншот. Собеседнику об этом сообщили.'),
+  ('You took a screenshot', 'Сделан скриншот · собеседник уведомлён'),
   (
     'keeping a backup of this chat',
     'Собеседник хранит резервную копию этого чата, поэтому ваши сообщения могут оставаться в '
@@ -71,9 +71,28 @@ final _timer =
 final _span = RegExp(r'^(\d+) (week|day|hour|minute|second)\(s\)$');
 const _units = {'week': 'нед.', 'day': 'дн.', 'hour': 'ч', 'minute': 'мин', 'second': 'с'};
 
+/// The leading pictogram the core put on a notice ("" when there is none). The chat screen
+/// turns it into a small outline icon.
+String noticeMarker(String text) {
+  final marker = _marker(text);
+  return marker.isEmpty ? '' : marker.trimRight();
+}
+
+/// The notice text in the current language, without its leading pictogram.
+String noticeBody(String text) {
+  final localized = localizeSystemNotice(text);
+  final marker = _marker(localized);
+  return marker.isEmpty ? localized : localized.substring(marker.length);
+}
+
 /// The notice as it should be shown in the current language.
 String localizeSystemNotice(String text) {
-  if (AppLocale.current.value != AppLocale.russian) return text;
+  if (AppLocale.current.value != AppLocale.russian) {
+    // One notice is shortened in English too, so it stays a single compact line.
+    return text.contains('You took a screenshot')
+        ? '${_marker(text)}Screenshot taken · the other person was told'
+        : text;
+  }
 
   final timer = _timer.firstMatch(text);
   if (timer != null) {

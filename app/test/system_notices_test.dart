@@ -17,7 +17,7 @@ void main() {
     expect(localizeSystemNotice(screenshot), '📸 Собеседник сделал скриншот этого чата.');
     expect(
       localizeSystemNotice('📸 You took a screenshot. The other person was told.'),
-      '📸 Вы сделали скриншот. Собеседнику об этом сообщили.',
+      '📸 Сделан скриншот · собеседник уведомлён',
     );
   });
 
@@ -31,6 +31,13 @@ void main() {
       localizeSystemNotice('⏱️ The other person set disappearing messages to off.'),
       '⏱️ Собеседник установил исчезающие сообщения: выкл.',
     );
+  });
+
+  test('marker and body are available separately', () {
+    AppLocale.current.value = AppLocale.russian;
+    expect(noticeMarker(screenshot), '📸');
+    expect(noticeBody(screenshot), 'Собеседник сделал скриншот этого чата.');
+    expect(noticeMarker('no marker here'), '');
   });
 
   test('an unknown notice is shown unchanged', () {

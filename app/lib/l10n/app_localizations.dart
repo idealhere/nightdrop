@@ -97,7 +97,7 @@ abstract class AppLocalizations {
   /// The application name, shown as the window/app title.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog'**
+  /// **'CyberDog'**
   String get appTitle;
 
   /// Title of the pairing screen where a user starts a new 1:1 chat.
@@ -199,7 +199,7 @@ abstract class AppLocalizations {
   /// Title of the donations screen.
   ///
   /// In en, this message translates to:
-  /// **'Support Night Dog'**
+  /// **'Support CyberDog'**
   String get supportNightDrop;
 
   /// Button to copy a cryptocurrency donation address to the clipboard.
@@ -325,13 +325,13 @@ abstract class AppLocalizations {
   /// Shown when camera permission is permanently denied / restricted.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for Night Dog in Settings.'**
+  /// **'CyberDog needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for CyberDog in Settings.'**
   String get cameraPermissionPermanent;
 
   /// Shown when camera permission has not yet been granted.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog needs camera access to scan an invite QR.'**
+  /// **'CyberDog needs camera access to scan an invite QR.'**
   String get cameraPermissionNeeded;
 
   /// Button that opens system app settings to enable a permission.
@@ -367,7 +367,7 @@ abstract class AppLocalizations {
   /// Toast when a QR decodes cleanly but is not a pairing payload.
   ///
   /// In en, this message translates to:
-  /// **'That QR isn’t a Night Dog invite. Ask them to open New chat → Invite.'**
+  /// **'That QR isn’t a CyberDog invite. Ask them to open New chat → Invite.'**
   String get qrNotRecognised;
 
   /// Toast when no QR could be decoded before the scan deadline.
@@ -529,13 +529,13 @@ abstract class AppLocalizations {
   /// Body text of the load-failure recovery screen.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.'**
+  /// **'CyberDog found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.'**
   String get loadErrorBody;
 
   /// Android/iOS wording for the same screen. No mention of desktop keyrings; the phone equivalent is not something the user can unlock by hand.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.'**
+  /// **'CyberDog found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.'**
   String get loadErrorBodyMobile;
 
   /// Button to retry loading the saved session.
@@ -817,13 +817,13 @@ abstract class AppLocalizations {
   /// Shown in the About dialog. Discloses the one outbound connection the app makes on its own behalf, so it is stated somewhere durable rather than only in a banner nobody is looking at.
   ///
   /// In en, this message translates to:
-  /// **'Update checks: this build asks the Night Dog onion site, over Tor, at most once a day whether a newer version exists, and only ever tells you — it never installs anything. Copies installed from F-Droid don’t do this at all, because F-Droid updates them.'**
+  /// **'Update checks: this build asks the CyberDog onion site, over Tor, at most once a day whether a newer version exists, and only ever tells you — it never installs anything. Copies installed from F-Droid don’t do this at all, because F-Droid updates them.'**
   String get aboutUpdateChecks;
 
   /// Menu item opening the about dialog (app name, version, license).
   ///
   /// In en, this message translates to:
-  /// **'About Night Dog'**
+  /// **'About CyberDog'**
   String get aboutMenu;
 
   /// Menu item that disconnects from Tor and closes the app, keeping the identity (issue #15).
@@ -835,13 +835,13 @@ abstract class AppLocalizations {
   /// Title of the Exit confirmation.
   ///
   /// In en, this message translates to:
-  /// **'Exit Night Dog?'**
+  /// **'Exit CyberDog?'**
   String get exitTitle;
 
   /// Body of the Exit confirmation: what stops, and what is kept.
   ///
   /// In en, this message translates to:
-  /// **'Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Dog within that time to receive them — after that they expire, and the sender sees them as not delivered.'**
+  /// **'Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open CyberDog within that time to receive them — after that they expire, and the sender sees them as not delivered.'**
   String get exitBody;
 
   /// Confirm button of the Exit dialog.
@@ -919,7 +919,7 @@ abstract class AppLocalizations {
   /// Home-screen notice shown in the last 0.1.x releases: 0.2 changes the protocol, so 0.1.x and 0.2 apps cannot message each other.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.'**
+  /// **'CyberDog 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.'**
   String get protocolBreakNotice;
 
   /// Button that dismisses an informational notice.
@@ -949,7 +949,7 @@ abstract class AppLocalizations {
   /// Shown when the on-demand check finds no newer release.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog is up to date.'**
+  /// **'CyberDog is up to date.'**
   String get updateUpToDate;
 
   /// Button that starts the verified download of a newer build.
@@ -967,7 +967,7 @@ abstract class AppLocalizations {
   /// Shown when the system (not the user) ended the foreground service, e.g. a foreground-service-type time budget running out. The point is that the user could not otherwise tell.
   ///
   /// In en, this message translates to:
-  /// **'Android stopped background delivery, so messages may not have arrived. Reopen Night Dog to start it again.'**
+  /// **'Android stopped background delivery, so messages may not have arrived. Reopen CyberDog to start it again.'**
   String get backgroundStoppedBySystem;
 
   /// One-line form of peerCapturesSilentBanner; tapping it shows the full text.
@@ -991,7 +991,7 @@ abstract class AppLocalizations {
   /// Shown when the peer's app predates private mailbox addressing. The peer's older app cannot display this, so the text asks the reader to tell them.
   ///
   /// In en, this message translates to:
-  /// **'This person is using an older version of Night Dog, so messages that wait on a relay for either of you are addressed less privately. Their app can\'t tell them — ask them to update. Support for their version will end in a future release.'**
+  /// **'This person is using an older version of CyberDog, so messages that wait on a relay for either of you are addressed less privately. Their app can\'t tell them — ask them to update. Support for their version will end in a future release.'**
   String get peerOnOldVersionBanner;
 
   /// Shown while the update APK is downloading.
@@ -1057,7 +1057,7 @@ abstract class AppLocalizations {
   /// Explanation in the background-delivery dialog.
   ///
   /// In en, this message translates to:
-  /// **'Keep receiving messages while Night Dog is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.'**
+  /// **'Keep receiving messages while CyberDog is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.'**
   String get backgroundDeliveryBody;
 
   /// Title of the background-delivery offer shown during onboarding.
@@ -1069,7 +1069,7 @@ abstract class AppLocalizations {
   /// Explanation of what background delivery does, its privacy properties and its costs, shown during onboarding.
   ///
   /// In en, this message translates to:
-  /// **'Android suspends Night Dog whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps Night Dog running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.'**
+  /// **'Android suspends CyberDog whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps CyberDog running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.'**
   String get onboardingBackgroundBody;
 
   /// Button accepting background delivery during onboarding.
@@ -1573,7 +1573,7 @@ abstract class AppLocalizations {
   /// No description provided for @lockedTitle.
   ///
   /// In en, this message translates to:
-  /// **'Night Dog is locked'**
+  /// **'CyberDog is locked'**
   String get lockedTitle;
 
   /// No description provided for @lockedBody.
@@ -1885,7 +1885,7 @@ abstract class AppLocalizations {
   /// No description provided for @bridgesLimit.
   ///
   /// In en, this message translates to:
-  /// **'Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — Night Dog will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.'**
+  /// **'Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — CyberDog will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.'**
   String get bridgesLimit;
 
   /// No description provided for @bridgesHint.
@@ -1921,7 +1921,7 @@ abstract class AppLocalizations {
   /// No description provided for @bridgesRestartBody.
   ///
   /// In en, this message translates to:
-  /// **'Bridges are used when Night Dog connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.'**
+  /// **'Bridges are used when CyberDog connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.'**
   String get bridgesRestartBody;
 
   /// No description provided for @bridgesRestartNow.

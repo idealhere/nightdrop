@@ -36,10 +36,10 @@ void main() {
     });
 
     final where = await PublicDownloads.publish(source,
-        displayName: 'NightDog-0.1.18.apk');
+        displayName: 'CyberDog-0.1.18.apk');
 
-    expect(where, 'Downloads/NightDog-0.1.18.apk');
-    expect(asked, 'NightDog-0.1.18.apk');
+    expect(where, 'Downloads/CyberDog-0.1.18.apk');
+    expect(asked, 'CyberDog-0.1.18.apk');
     // MediaStore holds its own copy. Keeping ours would double ~45MB on a device whose storage
     // pressure is the whole reason for being careful here.
     expect(source.existsSync(), isFalse,
@@ -55,9 +55,9 @@ void main() {
     PublicDownloads.externalDirectory = () async => external;
 
     final where = await PublicDownloads.publish(source,
-        displayName: 'NightDog-0.1.18.apk');
+        displayName: 'CyberDog-0.1.18.apk');
 
-    expect(where, '${external.path}/NightDog-0.1.18.apk');
+    expect(where, '${external.path}/CyberDog-0.1.18.apk');
     expect(File(where).readAsStringSync(), 'a build');
     expect(source.existsSync(), isFalse);
   });
@@ -72,7 +72,7 @@ void main() {
     PublicDownloads.externalDirectory = () async => null;
 
     final where = await PublicDownloads.publish(source,
-        displayName: 'NightDog-0.1.18.apk');
+        displayName: 'CyberDog-0.1.18.apk');
 
     expect(where, source.path);
     expect(source.readAsStringSync(), 'a build',
@@ -107,8 +107,8 @@ void main() {
       final downloadsDir = Directory('${tmp.path}/Downloads')..createSync();
       PublicDownloads.downloadsDirectory = () async => downloadsDir;
       final where = await PublicDownloads.toDownloadsFolder(source,
-          displayName: 'NightDogSetup-0.1.27.exe');
-      expect(where, '${downloadsDir.path}/NightDogSetup-0.1.27.exe');
+          displayName: 'CyberDogSetup-0.1.27.exe');
+      expect(where, '${downloadsDir.path}/CyberDogSetup-0.1.27.exe');
       if (!Platform.isWindows) {
         expect(File(where).statSync().mode & 0x40, 0, reason: 'only asked-for files get +x');
       }

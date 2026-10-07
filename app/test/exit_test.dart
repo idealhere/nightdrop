@@ -51,7 +51,7 @@ void main() {
     final core = await pumpHome(tester);
     await openExit(tester);
 
-    expect(find.text('Exit Night Dog?'), findsOneWidget);
+    expect(find.text('Exit CyberDog?'), findsOneWidget);
     expect(find.textContaining('identity and chats stay'), findsOneWidget,
         reason: 'the harmless way out must say it is harmless, next to the one that is not');
     expect(find.textContaining('up to 24 hours'), findsOneWidget,

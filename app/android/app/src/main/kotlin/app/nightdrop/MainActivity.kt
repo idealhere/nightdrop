@@ -203,7 +203,7 @@ class MainActivity : FlutterActivity() {
         val nm = getSystemService(NotificationManager::class.java) ?: return
         val channel = nm.getNotificationChannel("nightdrop_background") ?: return
         channel.name = "Background delivery status"
-        channel.description = "Shows that Night Dog is checking for messages in the background. " +
+        channel.description = "Shows that CyberDog is checking for messages in the background. " +
             "Turning this off only hides the notification — messages keep arriving."
         nm.createNotificationChannel(channel)
     }

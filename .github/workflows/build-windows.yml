@@ -1,9 +1,10 @@
 name: Build Windows installer (HTTPS-first)
 
-# Builds the Night Dog desktop app for Windows and packs it into a small per-user installer.
+# Builds the CyberDog desktop app for Windows and packs it into a small per-user installer.
 # Runs only when this file changes, or manually. The Tor/WebTunnel transport is left out: the
 # desktop build talks to the relay over HTTPS, which keeps the download small and needs no
 # BoringSSL toolchain on the runner.
+# rebuild: 3
 on:
   push:
     branches: [feature/https-primary-transport]
@@ -84,8 +85,8 @@ jobs:
           & $iscc /Q "/DAppVersion=$Version" "/DBundleDir=$Stage" "/DOutputDir=$Out" (Join-Path $App 'windows\installer\night_drop.iss')
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
 
-          $name = "NightDogSetup-$Version-b$env:GITHUB_RUN_NUMBER.exe"
-          Move-Item (Join-Path $Out 'NightDogSetup.exe') (Join-Path $PWD $name)
+          $name = "CyberDogSetup-$Version-b$env:GITHUB_RUN_NUMBER.exe"
+          Move-Item (Join-Path $Out 'CyberDogSetup.exe') (Join-Path $PWD $name)
           "INSTALLER=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "VERSION=$Version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host ("installer: {0} ({1:N1} MB)" -f $name, ((Get-Item $name).Length / 1MB))
@@ -96,5 +97,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete windows-preview --yes --cleanup-tag
-          gh release create windows-preview $env:INSTALLER --prerelease --target $env:GITHUB_SHA --title "Night Dog $env:VERSION build $env:GITHUB_RUN_NUMBER for Windows (preview)" --notes "Unsigned test build. Not a production release."
+          gh release create windows-preview $env:INSTALLER --prerelease --target $env:GITHUB_SHA --title "CyberDog $env:VERSION build $env:GITHUB_RUN_NUMBER for Windows (preview)" --notes "Unsigned test build. Not a production release."
           if ($LASTEXITCODE -ne 0) { throw "publish failed ($LASTEXITCODE)" }

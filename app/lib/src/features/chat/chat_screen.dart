@@ -18,6 +18,7 @@ import '../../core/media_cache.dart';
 import '../../core/models.dart';
 import '../../core/screenshot_detector.dart';
 import '../../core/system_notices.dart';
+import '../../theme/cyberdog.dart';
 import '../backup/backup_actions.dart';
 import 'verify_screen.dart';
 
@@ -767,7 +768,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
         return Scaffold(
           appBar: AppBar(
-            title: Column(
+            title: Row(mainAxisSize: MainAxisSize.min, children: [
+              const CyberDogMark(size: 26),
+              const SizedBox(width: 10),
+              Flexible(
+                  child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
@@ -787,16 +792,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ],
                   ],
                 ),
-                Text(
-                  shortId(contact.id),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.normal,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const UserRankBadge(rank: UserRankBadge.defaultRank),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        shortId(contact.id),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
-            ),
+            )),
+            ]),
             // Only the two icons that show a setting's state stay in the bar; everything else is
             // in the overflow menu. Seven icons filled a phone's app bar edge to edge, and the
             // verify shield sat right beside Back, so reaching for Back opened the verify screen.
@@ -904,7 +920,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         itemBuilder: (context, i) {
                           final m = visibleMessages[i];
                           final row = m.system
-                              ? _SystemNotice(text: localizeSystemNotice(m.text))
+                              ? _SystemNotice(text: m.text)
                               : _Bubble(
                                   message: m,
                                   senderName: m.fromMe
@@ -1247,25 +1263,50 @@ class _SystemNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: scheme.onSurfaceVariant,
-          fontSize: 12.5,
-          fontStyle: FontStyle.italic,
+    final icon = _noticeIcons[noticeMarker(text).runes.firstOrNull];
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: CyberDog.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: CyberDog.hairline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 15, color: scheme.secondary),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                noticeBody(text),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+/// The core marks each system notice with a pictogram; shown here as a small outline icon.
+const _noticeIcons = <int, IconData>{
+  0x1F4F8: Icons.photo_camera_outlined,
+  0x2705: Icons.verified_outlined,
+  0x1F511: Icons.key_outlined,
+  0x2601: Icons.cloud_outlined,
+  0x23F1: Icons.timer_outlined,
+  0x26A0: Icons.warning_amber_outlined,
+  0x1F5D1: Icons.delete_outline,
+  0x1F47B: Icons.delete_outline,
+  0x1F5C4: Icons.inventory_2_outlined,
+  0x1F504: Icons.sync,
+  0x23F3: Icons.hourglass_empty,
+};
 
 class _Bubble extends StatelessWidget {
   const _Bubble(
@@ -1301,11 +1342,11 @@ class _Bubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             constraints: const BoxConstraints(maxWidth: 320),
             decoration: BoxDecoration(
-              color: mine ? scheme.primary : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: mine
-                  ? const [BoxShadow(color: Color(0x339B7CFF), blurRadius: 14)]
-                  : null,
+              color: mine ? null : scheme.surfaceContainerHighest,
+              gradient: mine ? CyberDog.outgoing : null,
+              border: mine ? null : Border.all(color: CyberDog.hairline),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: mine ? CyberDog.glow : null,
             ),
             child: Column(
               crossAxisAlignment:
@@ -1920,16 +1961,20 @@ class _Composer extends StatelessWidget {
                 onSecondaryTap: open,
                 child: IconButton(
                   tooltip: l10n.attachImageOrVideo,
+                  style: _composerTile,
                   icon: const Icon(Icons.attach_file),
                   onPressed: onAttach,
                 ),
               );
             }),
+            const SizedBox(width: 6),
             IconButton(
               tooltip: l10n.pasteText,
+              style: _composerTile,
               icon: const Icon(Icons.content_paste),
               onPressed: onPaste,
             ),
+            const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 controller: controller,
@@ -1940,16 +1985,18 @@ class _Composer extends StatelessWidget {
                 decoration: InputDecoration(
                   hintText: l10n.messageHint,
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainer,
+                  fillColor: CyberDog.panel,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: CyberDog.hairline),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: CyberDog.hairline),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: CyberDog.hairlineBright, width: 1.4),
                   ),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -1972,9 +2019,9 @@ class _Composer extends StatelessWidget {
               return GestureDetector(
                 onLongPress: open,
                 onSecondaryTap: open,
-                child: IconButton.filled(
+                child: CyberDogSendButton(
+                  key: const ValueKey('send-button'),
                   onPressed: onSend,
-                  icon: const Icon(Icons.send),
                 ),
               );
             }),
@@ -1984,6 +2031,15 @@ class _Composer extends StatelessWidget {
     );
   }
 }
+
+/// The attach and paste buttons share one quiet tile, so the send button stays the accent.
+final _composerTile = IconButton.styleFrom(
+  backgroundColor: CyberDog.panel,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(12),
+    side: const BorderSide(color: CyberDog.hairline),
+  ),
+);
 
 /// One row of the chat's overflow menu: an icon beside its label.
 PopupMenuItem<String> _menuItem(String value, IconData icon, String label) =>

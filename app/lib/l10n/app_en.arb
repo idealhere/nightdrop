@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "Night Dog",
+  "appTitle": "CyberDog",
   "@appTitle": {
     "description": "The application name, shown as the window/app title."
   },
@@ -191,11 +191,11 @@
   "@cameraErrorFallback": {
     "description": "Fallback hint shown under the camera-error retry button."
   },
-  "cameraPermissionPermanent": "Night Dog needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for Night Dog in Settings.",
+  "cameraPermissionPermanent": "CyberDog needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for CyberDog in Settings.",
   "@cameraPermissionPermanent": {
     "description": "Shown when camera permission is permanently denied / restricted."
   },
-  "cameraPermissionNeeded": "Night Dog needs camera access to scan an invite QR.",
+  "cameraPermissionNeeded": "CyberDog needs camera access to scan an invite QR.",
   "@cameraPermissionNeeded": {
     "description": "Shown when camera permission has not yet been granted."
   },
@@ -219,7 +219,7 @@
   "@pointCameraHint": {
     "description": "Hint overlaid on the live camera preview while scanning."
   },
-  "qrNotRecognised": "That QR isn’t a Night Dog invite. Ask them to open New chat → Invite.",
+  "qrNotRecognised": "That QR isn’t a CyberDog invite. Ask them to open New chat → Invite.",
   "@qrNotRecognised": {
     "description": "Toast when a QR decodes cleanly but is not a pairing payload."
   },
@@ -353,11 +353,11 @@
   "@loadErrorTitle": {
     "description": "Title of the launch-time load-failure recovery screen."
   },
-  "loadErrorBody": "Night Dog found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.",
+  "loadErrorBody": "CyberDog found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.",
   "@loadErrorBody": {
     "description": "Body text of the load-failure recovery screen."
   },
-  "loadErrorBodyMobile": "Night Dog found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.",
+  "loadErrorBodyMobile": "CyberDog found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.",
   "@loadErrorBodyMobile": {
     "description": "Android/iOS wording for the same screen. No mention of desktop keyrings; the phone equivalent is not something the user can unlock by hand."
   },
@@ -578,7 +578,7 @@
   "@resetTorRunning": {
     "description": "Snackbar shown while the Tor connection is being reset."
   },
-  "aboutMenu": "About Night Dog",
+  "aboutMenu": "About CyberDog",
   "@aboutMenu": {
     "description": "Menu item opening the about dialog (app name, version, license)."
   },
@@ -586,11 +586,11 @@
   "@exitMenu": {
     "description": "Menu item that disconnects from Tor and closes the app, keeping the identity (issue #15)."
   },
-  "exitTitle": "Exit Night Dog?",
+  "exitTitle": "Exit CyberDog?",
   "@exitTitle": {
     "description": "Title of the Exit confirmation."
   },
-  "exitBody": "Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Dog within that time to receive them — after that they expire, and the sender sees them as not delivered.",
+  "exitBody": "Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open CyberDog within that time to receive them — after that they expire, and the sender sees them as not delivered.",
   "@exitBody": {
     "description": "Body of the Exit confirmation: what stops, and what is kept."
   },
@@ -674,7 +674,7 @@
   "@updateCheckFailed": {
     "description": "Shown when the on-demand update check could not reach the onion site — deliberately distinct from being up to date."
   },
-  "updateUpToDate": "Night Dog is up to date.",
+  "updateUpToDate": "CyberDog is up to date.",
   "@updateUpToDate": {
     "description": "Shown when the on-demand check finds no newer release."
   },
@@ -686,7 +686,7 @@
   "@updateHide": {
     "description": "Button that hides the update banner until a newer version exists."
   },
-  "backgroundStoppedBySystem": "Android stopped background delivery, so messages may not have arrived. Reopen Night Dog to start it again.",
+  "backgroundStoppedBySystem": "Android stopped background delivery, so messages may not have arrived. Reopen CyberDog to start it again.",
   "@backgroundStoppedBySystem": {
     "description": "Shown when the system (not the user) ended the foreground service, e.g. a foreground-service-type time budget running out. The point is that the user could not otherwise tell."
   },
@@ -702,7 +702,7 @@
   "@peerOnOldVersionSummary": {
     "description": "One-line form of peerOnOldVersionBanner; tapping it shows the full text."
   },
-  "peerOnOldVersionBanner": "This person is using an older version of Night Dog, so messages that wait on a relay for either of you are addressed less privately. Their app can't tell them — ask them to update. Support for their version will end in a future release.",
+  "peerOnOldVersionBanner": "This person is using an older version of CyberDog, so messages that wait on a relay for either of you are addressed less privately. Their app can't tell them — ask them to update. Support for their version will end in a future release.",
   "@peerOnOldVersionBanner": {
     "description": "Shown when the peer's app predates private mailbox addressing. The peer's older app cannot display this, so the text asks the reader to tell them."
   },
@@ -756,7 +756,7 @@
   "@backgroundDelivery": {
     "description": "Title of the background-delivery settings dialog."
   },
-  "backgroundDeliveryBody": "Keep receiving messages while Night Dog is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.",
+  "backgroundDeliveryBody": "Keep receiving messages while CyberDog is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.",
   "@backgroundDeliveryBody": {
     "description": "Explanation in the background-delivery dialog."
   },
@@ -764,7 +764,7 @@
   "@onboardingBackgroundTitle": {
     "description": "Title of the background-delivery offer shown during onboarding."
   },
-  "onboardingBackgroundBody": "Android suspends Night Dog whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps Night Dog running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.",
+  "onboardingBackgroundBody": "Android suspends CyberDog whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps CyberDog running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.",
   "@onboardingBackgroundBody": {
     "description": "Explanation of what background delivery does, its privacy properties and its costs, shown during onboarding."
   },
@@ -1195,7 +1195,7 @@
     "description": "Placeholder text in the message composer."
   },
   "appLockMenu": "App lock",
-  "lockedTitle": "Night Dog is locked",
+  "lockedTitle": "CyberDog is locked",
   "lockedBody": "Enter your PIN or passphrase to open your messages.",
   "lockedField": "PIN or passphrase",
   "lockedFailed": "That didn't unlock it. Try again.",
@@ -1250,7 +1250,7 @@
   "bridgesMenu": "Tor bridges",
   "bridgesTitle": "Tor bridges",
   "bridgesBody": "If your network blocks Tor, a bridge is an unlisted way in. Paste the bridge lines you were given — one per line, exactly as they came.",
-  "bridgesLimit": "Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — Night Dog will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.",
+  "bridgesLimit": "Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — CyberDog will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.",
   "bridgesHint": "203.0.113.5:9001 A1B2C3…",
   "bridgesWhereToGet": "Get bridges from bridges.torproject.org — add ?transport=webtunnel for a WebTunnel bridge, which looks like ordinary HTTPS traffic. Or email bridges@torproject.org with \"get transport none\" in the body.",
   "bridgesSaved": "{count, plural, =0{No bridges saved} =1{1 bridge saved} other{{count} bridges saved}}",
@@ -1270,7 +1270,7 @@
     }
   },
   "bridgesRestartTitle": "Reconnect now?",
-  "bridgesRestartBody": "Bridges are used when Night Dog connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.",
+  "bridgesRestartBody": "Bridges are used when CyberDog connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.",
   "bridgesRestartNow": "Reconnect",
   "coverTrafficMenu": "Cover traffic",
   "coverTrafficTitle": "Cover traffic",

@@ -59,7 +59,7 @@ pub fn run_tui(onion: String, core: Arc<RelayCore>, rx: Receiver<RelayEvent>, st
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" Night Dog Relay (dev) — opaque blobs only, no identities "),
+                    .title(" CyberDog Relay (dev) — opaque blobs only, no identities "),
             );
             f.render_widget(header, rows[0]);
 

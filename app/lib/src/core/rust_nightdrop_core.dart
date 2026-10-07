@@ -445,7 +445,7 @@ class RustNightdropCore extends NightdropCore {
   /// positive failure evidence. The same encrypted state file/identity is reopened, and the
   /// primary relay is expressed as two endpoints of ONE logical RelayCore/store:
   /// HTTPS first, then its onion endpoint. Independent relay stores must never be put in this
-  /// bundle; those use Night Dog's existing fan-out/deduplication instead.
+  /// bundle; those use CyberDog's existing fan-out/deduplication instead.
   ///
   /// Two independent triggers reach this (the liveness watcher and a pairing attempt), so the
   /// switch is single-flight: a second caller awaits the one already running instead of tearing
@@ -680,7 +680,7 @@ class RustNightdropCore extends NightdropCore {
     return v == '1' || v == 'true' || v == 'yes';
   }
 
-  /// Apply the operator-baked independent backup relay through Night Dog's existing multi-relay
+  /// Apply the operator-baked independent backup relay through CyberDog's existing multi-relay
   /// fan-out. This is a DIFFERENT store from the primary, so it must never be placed in the
   /// primary's HTTPS|onion endpoint bundle. The core advertises it to contacts and drains it
   /// separately; identical sealed frames are deduplicated on receipt.
@@ -890,7 +890,7 @@ class RustNightdropCore extends NightdropCore {
       // Linux, the installer on Windows.
       final desktop = Platform.isLinux || Platform.isWindows;
       final ext = Platform.isLinux ? 'AppImage' : (Platform.isWindows ? 'exe' : 'apk');
-      final dest = '${dir.path}/NightDog-update.$ext';
+      final dest = '${dir.path}/CyberDog-update.$ext';
       final n = await _core?.downloadUpdate(destPath: dest);
       if (n == null || n <= BigInt.zero) {
         // Rust has already said why on its own diag line; this one marks that the UI gave up, so
@@ -898,7 +898,7 @@ class RustNightdropCore extends NightdropCore {
         await rust.diagNote(line: 'update: download returned nothing — reporting failure');
         return null;
       }
-      // Named for the version it actually is. "NightDog-update.apk" tells a user nothing months
+      // Named for the version it actually is. "CyberDog-update.apk" tells a user nothing months
       // later, and collides with the last one they downloaded.
       final version = _updateAvailable;
       if (desktop) {
@@ -906,7 +906,7 @@ class RustNightdropCore extends NightdropCore {
         // marked executable so it can be started from the file manager; nothing here runs it.
         final name = Platform.isLinux
             ? 'Night_Drop-${version ?? 'update'}-x86_64.AppImage'
-            : 'NightDogSetup-${version ?? 'update'}.exe';
+            : 'CyberDogSetup-${version ?? 'update'}.exe';
         final where = await PublicDownloads.toDownloadsFolder(File(dest),
             displayName: name, executable: Platform.isLinux);
         await rust.diagNote(
@@ -919,7 +919,7 @@ class RustNightdropCore extends NightdropCore {
       final where = await PublicDownloads.publish(
         File(dest),
         displayName:
-            version == null ? 'NightDog.apk' : 'NightDog-$version.apk',
+            version == null ? 'CyberDog.apk' : 'CyberDog-$version.apk',
         mimeType: 'application/vnd.android.package-archive',
       );
       // Which of the three routes ran is invisible otherwise, and it is the difference between a
@@ -960,9 +960,9 @@ class RustNightdropCore extends NightdropCore {
     await _check();
   }
 
-  /// Night Dog does not ask the upstream Night Drop site about updates: that site only ever
+  /// CyberDog does not ask the upstream Night Drop site about updates: that site only ever
   /// describes upstream builds, signed with upstream's key. The check stays compiled out unless a
-  /// build opts in, until Night Dog has an update channel of its own.
+  /// build opts in, until CyberDog has an update channel of its own.
   static const _updateChecks = bool.fromEnvironment('NIGHTDOG_UPDATE_CHECKS');
 
   /// The check itself. Returns whether the onion site answered.
@@ -1288,7 +1288,7 @@ class RustNightdropCore extends NightdropCore {
     // working install silently loses its identity.
     if (!_abandonExistingStateApproved && await _savedStateExists()) {
       throw StateError(
-        'There is already a saved identity on this device. Restart Night Dog and try again; '
+        'There is already a saved identity on this device. Restart CyberDog and try again; '
         'if it still cannot be opened, the recovery screen will offer to replace it.',
       );
     }
@@ -2023,14 +2023,14 @@ class RustNightdropCore extends NightdropCore {
       if (received > _knownReceived) {
         final n = received - _knownReceived;
         NotificationService.show(
-            'Night Dog',
+            'CyberDog',
             n == 1
                 ? AppLocale.pick('New message', 'Новое сообщение')
                 : AppLocale.pick('$n new messages', 'Новых сообщений: $n'));
       }
       if (requests > _knownRequests) {
         NotificationService.show(
-            'Night Dog', AppLocale.pick('New chat request', 'Новый запрос на чат'));
+            'CyberDog', AppLocale.pick('New chat request', 'Новый запрос на чат'));
       }
     }
     _knownReceived = received;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The Night Dog wordmark, with "Dog" in the accent colour.
+/// The CyberDog wordmark, with "Dog" in the accent colour.
 class BrandTitle extends StatelessWidget {
   const BrandTitle({super.key, this.fontSize = 20});
 
@@ -11,7 +11,7 @@ class BrandTitle extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Text.rich(
       TextSpan(
-        text: 'Night ',
+        text: 'Cyber',
         children: [
           TextSpan(text: 'Dog', style: TextStyle(color: scheme.secondary)),
         ],

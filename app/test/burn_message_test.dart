@@ -188,7 +188,7 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'secret');
     await tester.pump();
 
-    await tester.longPress(find.byIcon(Icons.send));
+    await tester.longPress(find.byKey(const ValueKey('send-button')));
     await tester.pumpAndSettle();
 
     expect(find.textContaining("can't burn messages"), findsOneWidget);
@@ -205,7 +205,7 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'secret');
     await tester.pump();
 
-    await tester.longPress(find.byIcon(Icons.send));
+    await tester.longPress(find.byKey(const ValueKey('send-button')));
     await tester.pumpAndSettle();
 
     // The caveat sits in the menu, at the moment of choosing — not buried in settings.
@@ -228,7 +228,7 @@ void main() {
     await tester.pump();
 
     // Off: no claim either way.
-    await tester.longPress(find.byIcon(Icons.send));
+    await tester.longPress(find.byKey(const ValueKey('send-button')));
     await tester.pumpAndSettle();
     expect(find.textContaining('sits on the relay'), findsNothing);
     await tester.tapAt(const Offset(10, 10)); // dismiss
@@ -237,7 +237,7 @@ void main() {
     // On: said plainly, in the menu, before anything is sent.
     core.setServerStorage(true);
     await tester.pump();
-    await tester.longPress(find.byIcon(Icons.send));
+    await tester.longPress(find.byKey(const ValueKey('send-button')));
     await tester.pumpAndSettle();
     expect(find.textContaining('sits on the relay'), findsOneWidget);
 
@@ -306,7 +306,7 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'ordinary');
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.send));
+    await tester.tap(find.byKey(const ValueKey('send-button')));
     await tester.pumpAndSettle();
 
     expect(core.sent, isEmpty, reason: 'tap must not route through the burn path');

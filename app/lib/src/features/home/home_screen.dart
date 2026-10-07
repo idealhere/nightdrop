@@ -848,8 +848,15 @@ Future<void> _showMyIdentity(BuildContext context, NightdropCore core) async {
 /// dialog rather than Flutter's `showAboutDialog`, which auto-adds a "View licenses" button (the
 /// full bundled-package license list) and a "Powered by Flutter" footer we don't want here.
 void _showAbout(BuildContext context) {
+  // The number after "+" in the pubspec version never changes between our builds, so it says
+  // nothing about which build this is. Preview builds pass their real build number instead; it
+  // matches the number in the downloaded file's name.
+  const build = String.fromEnvironment('CYBERDOG_BUILD');
   final parts = kAppVersion.split('+');
-  final version = parts.length == 2 ? '${parts[0]} (build ${parts[1]})' : kAppVersion;
+  final number = build.isNotEmpty ? build : (parts.length == 2 ? parts[1] : '');
+  final version = number.isEmpty
+      ? parts[0]
+      : '${parts[0]} (${AppLocale.pick('build', 'сборка')} $number)';
   final l10n = AppLocalizations.of(context)!;
   showDialog<void>(
     context: context,

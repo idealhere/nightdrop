@@ -4,7 +4,7 @@ name: Build Windows installer (HTTPS-first)
 # Runs only when this file changes, or manually. The Tor/WebTunnel transport is left out: the
 # desktop build talks to the relay over HTTPS, which keeps the download small and needs no
 # BoringSSL toolchain on the runner.
-# rebuild: 13
+# rebuild: 14
 on:
   push:
     branches: [feature/https-primary-transport]
@@ -54,7 +54,7 @@ jobs:
         working-directory: app
         shell: pwsh
         run: |
-          flutter build windows --release "--build-number=$env:GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$env:HTTPS_RELAY"
+          flutter build windows --release "--build-number=$env:GITHUB_RUN_NUMBER" "--dart-define=CYBERDOG_BUILD=$env:GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$env:HTTPS_RELAY"
           if ($LASTEXITCODE -ne 0) { throw "flutter build failed ($LASTEXITCODE)" }
 
       # Same packaging as scripts/build-windows-installer.ps1: the release bundle plus the three

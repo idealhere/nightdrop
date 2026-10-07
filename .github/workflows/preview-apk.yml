@@ -4,7 +4,7 @@ name: Preview Android APK (HTTPS-first)
 # relay deployment is finished. It runs only when this file changes (or manually), so it does
 # not add a second Android build to every push. The APK is debug-signed with the runner's
 # throwaway key: installing a later build over it requires uninstalling first.
-# Edit the line below to request a fresh build: preview 26
+# Edit the line below to request a fresh build: preview 27
 on:
   push:
     branches: [feature/https-primary-transport]
@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           cd app
-          flutter build apk --debug --split-per-abi --target-platform android-arm64 "--build-number=$GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
+          flutter build apk --debug --split-per-abi --target-platform android-arm64 "--build-number=$GITHUB_RUN_NUMBER" "--dart-define=CYBERDOG_BUILD=$GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$HTTPS_RELAY"
 
       - name: Verify Rust core is bundled
         run: |

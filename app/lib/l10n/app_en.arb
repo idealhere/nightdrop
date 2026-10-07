@@ -543,7 +543,7 @@
   "@myNameMenu": {
     "description": "Menu item and dialog title: the name new chats start with."
   },
-  "myNameBody": "The people you chat with see this name. New chats use it automatically; you can still set a different name inside any chat.",
+  "myNameBody": "Your name is shown in front of your rank, for example “Max NightDog”. Leave it empty to be shown by rank alone. New chats use it automatically; you can still set a different name inside any chat.",
   "@myNameBody": {
     "description": "Explains the global name setting and that per-chat names still exist."
   },

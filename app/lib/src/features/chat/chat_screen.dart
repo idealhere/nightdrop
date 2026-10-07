@@ -795,8 +795,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    UserRankBadge(rank: contact.rank),
-                    const SizedBox(width: 6),
                     Flexible(
                       child: Text(
                         shortId(contact.id),

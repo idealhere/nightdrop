@@ -775,7 +775,7 @@ Future<void> _createServerBackup(BuildContext context, NightdropCore core) async
 Future<void> _editMyName(BuildContext context, NightdropCore core) async {
   final l10n = AppLocalizations.of(context)!;
   final previous = ProfileName.current.value;
-  final controller = TextEditingController(text: previous.isEmpty ? kDefaultName : previous);
+  final controller = TextEditingController(text: previous == kDefaultName ? '' : previous);
   final entered = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
@@ -790,8 +790,7 @@ Future<void> _editMyName(BuildContext context, NightdropCore core) async {
           TextField(
             controller: controller,
             autofocus: true,
-            maxLength: 32,
-            decoration: const InputDecoration(hintText: kDefaultName),
+            maxLength: 24,
           ),
         ],
       ),

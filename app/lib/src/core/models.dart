@@ -11,13 +11,18 @@ const String kDefaultName = 'NightDog';
 /// What a default-named user is called once the chat's safety number has been verified.
 const String kVerifiedName = 'CyberDog';
 
-/// Default names from earlier builds, treated the same as [kDefaultName].
-const _defaultNames = {kDefaultName, 'Dog', 'Anon'};
-
-/// A user who kept the default name is a NightDog until the chat is verified and a CyberDog
-/// after. A name someone chose is always shown as chosen.
-String rankedName(String name, {required bool verified}) =>
-    _defaultNames.contains(name) ? (verified ? kVerifiedName : kDefaultName) : name;
+/// How a user is shown in a chat: the rank is always there — NightDog until the chat's safety
+/// number is verified, CyberDog after — and a name the user chose goes in front of it
+/// ("Max NightDog"). Someone who chose no name is shown by rank alone.
+String rankedName(String name, {required bool verified}) {
+  final rank = verified ? kVerifiedName : kDefaultName;
+  // A stored name that is itself a rank word (the default, or one typed by hand) is not a name.
+  final own = name
+      .split(' ')
+      .where((word) => word.isNotEmpty && word != kDefaultName && word != kVerifiedName)
+      .join(' ');
+  return own.isEmpty ? rank : '$own $rank';
+}
 
 /// A compact, readable form of a long base64 identity id for display (e.g. in chat headers
 /// and request tiles). Full ids remain available via "view identity" surfaces.

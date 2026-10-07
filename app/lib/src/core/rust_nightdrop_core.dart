@@ -2116,6 +2116,18 @@ class RustNightdropCore extends NightdropCore {
       );
 
   List<Message> _mapMessages(String contactId, List<rust.ChatMessage> history) {
+    // Media that has left the chat (unsent, burned, expired) must not stay decrypted in memory.
+    final live = <String>{
+      for (final m in history) ...[m.mediaId, m.thumbId],
+    };
+    for (final old in _messages[contactId] ?? const <Message>[]) {
+      for (final id in [old.mediaId, old.thumbId]) {
+        if (id.isEmpty || live.contains(id)) continue;
+        MediaCache.bytes.remove(id);
+        MediaCache.bytes.remove('thumb:$id');
+        MediaCache.files.remove(id);
+      }
+    }
     var i = 0;
     return _withPendingReveals(contactId, history
         .map((m) => Message(

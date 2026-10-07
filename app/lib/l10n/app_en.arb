@@ -1079,6 +1079,10 @@
   "@deleteForEveryoneTitle": {
     "description": "Title of the unsend confirmation."
   },
+  "unsendMediaBody": "This removes it from both devices, files included. If the other person has an older version of the app, their copy stays.",
+  "@unsendMediaBody": {
+    "description": "Body of the unsend confirmation for a photo or video."
+  },
   "unsendBody": "This removes the message from both devices. If it hasn’t been delivered yet, the other person never receives it.",
   "@unsendBody": {
     "description": "Body of the unsend confirmation."

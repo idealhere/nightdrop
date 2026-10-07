@@ -756,9 +756,14 @@ impl Node {
         self.deliver(&peer_address, contact_id, &frame)
     }
 
-    /// Unsend ("delete for both") one of our earlier text messages — same eligibility as
+    /// Unsend ("delete for both") one of our earlier messages — same eligibility as
     /// [`edit_message`](Self::edit_message) (queued, or within [`EDIT_WINDOW`]). The local
-    /// copy becomes a "deleted" tombstone (`kind = "deleted"`, empty text); the peer converges:
+    /// copy becomes a "deleted" tombstone (`kind = "deleted"`, empty text); the peer converges.
+    ///
+    /// A photo or video is named by its `transfer_id` and always takes the second path below
+    /// (attachments keep no recall receipts); its sealed files are deleted on both devices.
+    /// A peer on a build that predates this ignores the request, so their copy stays.
+    ///
     ///
     /// * **Still queued + receipt held**: recall the undelivered blob — the peer never receives
     ///   the message at all, so nothing needs to be sent.
@@ -777,16 +782,21 @@ impl Node {
         let msg_index = chat
             .history
             .iter_mut()
-            .position(|m| m.from_me && !m.system && m.kind == "text" && m.msg_id == msg_id)
+            .position(|m| {
+                m.from_me
+                    && !m.system
+                    && ((m.kind == "text" && m.msg_id == msg_id) || is_attachment_named(m, msg_id))
+            })
             .ok_or_else(|| anyhow::anyhow!("message not found or not deletable"))?;
         let msg = &chat.history[msg_index];
+        let attachment = msg.kind != "text";
         let queued = msg.delivery == "queued";
         let in_window = msg.at != 0 && now.saturating_sub(msg.at) <= EDIT_WINDOW.as_secs();
         if !queued && !in_window {
             anyhow::bail!("messages can only be unsent within 15 minutes of sending");
         }
         // Path 1: recall every still-queued copy so the peer never receives the message (#17).
-        if queued {
+        if queued && !attachment {
             let copies = chat.relay_receipts.remove(msg_id).unwrap_or_default();
             // Recall *every* fanned-out copy (#17), rebuilding each client from its stored address so
             // this still works after a restart. Must not short-circuit — a `.any()` would stop at the
@@ -803,7 +813,16 @@ impl Node {
 
         // The peer may already have the original (or a fanned-out copy remains), so preserve
         // the conversation position locally and tell them to tombstone their copy too.
-        make_tombstone(&mut chat.history[msg_index]);
+        let dead_files = if attachment {
+            make_attachment_tombstone(&mut chat.history[msg_index])
+        } else {
+            make_tombstone(&mut chat.history[msg_index]);
+            Vec::new()
+        };
+        if let Some((dir, _)) = &self.media_store {
+            remove_attachment_files(dir, &dead_files);
+        }
+        self.dirty = true;
 
         // Path 2: the peer (may) have the original — tell them to delete it.
         let envelope = pack_unsend(msg_id);

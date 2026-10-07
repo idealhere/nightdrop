@@ -5,7 +5,7 @@ name: Preview Android APK (HTTPS-first)
 # It runs only when this file changes (or manually), so it does not add a second Android build
 # to every push. No keystore is configured, so the APKs are signed with the runner's throwaway
 # key: installing a later build over an earlier one requires uninstalling first.
-# Edit the line below to request a fresh build: preview 29
+# Edit the line below to request a fresh build: preview 30
 on:
   push:
     branches: [feature/https-primary-transport]

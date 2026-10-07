@@ -1931,6 +1931,50 @@ fn make_tombstone(msg: &mut ChatMessage) {
     msg.delivery = String::new();
 }
 
+/// Whether `msg` is an attachment that `id` names. Attachments have no `msg_id`; the id both
+/// sides share is the `transfer_id`.
+fn is_attachment_named(msg: &ChatMessage, id: &str) -> bool {
+    (msg.kind == "image" || msg.kind == "video")
+        && !msg.transfer_id.is_empty()
+        && msg.transfer_id == id
+}
+
+/// Turn an unsent attachment into the same "deleted" tombstone a text message becomes, and return
+/// the ids of its sealed files for the caller to delete. The `transfer_id` is kept on purpose: a
+/// second copy of the attachment can still be on its way (a relay copy next to a direct one), and
+/// the receive path uses the id to recognise it and drop it instead of bringing the photo back.
+fn make_attachment_tombstone(msg: &mut ChatMessage) -> Vec<String> {
+    let files = [
+        std::mem::take(&mut msg.media_id),
+        std::mem::take(&mut msg.thumb_id),
+    ]
+    .into_iter()
+    .filter(|id| !id.is_empty())
+    .collect();
+    make_tombstone(msg);
+    msg.mime = String::new();
+    msg.media_size = 0;
+    msg.burn_secs = 0;
+    msg.viewed_at = 0;
+    files
+}
+
+/// Delete an unsent attachment's files: the sealed copies in the media store (`dir`) and any
+/// decrypted copy left in the scratch dir beside it from opening the attachment in a player.
+fn remove_attachment_files(dir: &str, ids: &[String]) {
+    let open_cache = std::path::Path::new(dir).with_file_name("nightdrop-open");
+    for id in ids {
+        let _ = std::fs::remove_file(format!("{dir}/{id}.bin"));
+        if let Ok(entries) = std::fs::read_dir(&open_cache) {
+            for entry in entries.flatten() {
+                if entry.path().file_stem().and_then(|s| s.to_str()) == Some(id.as_str()) {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+}
+
 /// The burn timer that means **view once**: a photo the recipient may open a single time.
 ///
 /// No new frame and no new field — it rides the existing burn path as a reserved timer value, so

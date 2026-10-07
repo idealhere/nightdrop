@@ -373,9 +373,21 @@ class Message {
   /// place instead of deleting it without a trace (`burn-messages.md` §6); it carries no content.
   bool get isBurnExpired => kind == 'burn_expired';
 
-  /// Whether we can unsend this message — identical eligibility to [canEdit] (our own
-  /// recent/queued text). Kept separate so the bubble menu can label the action distinctly.
-  bool get canUnsend => canEdit;
+  /// Whether we can unsend this message: anything we could edit, and also our own recent or
+  /// still-queued photo or video. Mirrors the rule enforced by the Rust core.
+  bool get canUnsend =>
+      canEdit ||
+      (fromMe &&
+          (isImage || isVideo) &&
+          !system &&
+          !sending &&
+          transferId.isNotEmpty &&
+          (delivery == 'queued' ||
+              DateTime.now().difference(at) < const Duration(minutes: 15)));
+
+  /// The id that names this message to the core for an unsend: text carries [msgId], an
+  /// attachment has none and is named by [transferId].
+  String get unsendId => msgId.isNotEmpty ? msgId : transferId;
 
   /// A received video whose payload hasn't arrived yet (only the incoming placeholder).
   bool get receiving => isVideo && mediaId.isEmpty && !sending;

@@ -373,19 +373,31 @@ impl Node {
                     unpack_unsend(&plaintext)?
                 };
                 let now = crate::api::now_secs();
+                let mut dead_files: Vec<String> = Vec::new();
+                let mut found = false;
                 if let Some(chat) = self.chats.get_mut(&from) {
                     if let Some(msg) = chat.history.iter_mut().find(|m| {
                         !m.from_me
                             && !m.system
-                            && m.kind == "text"
-                            && !m.msg_id.is_empty()
-                            && m.msg_id == target_id
+                            && ((m.kind == "text" && !m.msg_id.is_empty() && m.msg_id == target_id)
+                                || is_attachment_named(m, &target_id))
                             && m.at != 0
                             && now.saturating_sub(m.at) <= EDIT_WINDOW.as_secs()
                     }) {
-                        make_tombstone(msg);
-                        return Ok(Some((from, String::new())));
+                        if msg.kind == "text" {
+                            make_tombstone(msg);
+                        } else {
+                            // A photo or video: the sealed files go too, not just the bubble.
+                            dead_files = make_attachment_tombstone(msg);
+                        }
+                        found = true;
                     }
+                }
+                if let Some((dir, _)) = &self.media_store {
+                    remove_attachment_files(dir, &dead_files);
+                }
+                if found {
+                    return Ok(Some((from, String::new())));
                 }
                 Ok(None)
             }
@@ -813,7 +825,7 @@ impl Node {
                         !m.from_me
                             && !m.transfer_id.is_empty()
                             && m.transfer_id == transfer_id
-                            && !m.media_id.is_empty()
+                            && (!m.media_id.is_empty() || m.kind == "deleted")
                     })
                 });
                 if !duplicate {
@@ -824,6 +836,7 @@ impl Node {
                             !m.transfer_id.is_empty()
                                 && m.transfer_id == transfer_id
                                 && m.media_id.is_empty()
+                                && m.kind != "deleted"
                         });
                         if let Some(m) = placeholder {
                             m.media_id = media_id;
@@ -881,7 +894,7 @@ impl Node {
                         !m.from_me
                             && !m.transfer_id.is_empty()
                             && m.transfer_id == transfer_id
-                            && !m.media_id.is_empty()
+                            && (!m.media_id.is_empty() || m.kind == "deleted")
                     })
                 });
                 if !duplicate {

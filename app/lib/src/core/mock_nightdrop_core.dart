@@ -313,7 +313,7 @@ class MockNightdropCore extends NightdropCore {
   Future<void> unsendMessage(String contactId, String msgId) async {
     final list = _messages[contactId];
     if (list == null) return;
-    final i = list.indexWhere((m) => m.msgId == msgId && m.fromMe);
+    final i = list.indexWhere((m) => m.unsendId == msgId && m.fromMe);
     if (i < 0) return;
     final old = list[i];
     list[i] = Message(

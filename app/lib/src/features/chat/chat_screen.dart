@@ -641,11 +641,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: Text(l10n.edit),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
+            // A photo or video can be removed but not edited.
+            if (message.canEdit)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: Text(l10n.edit),
+                onTap: () => Navigator.pop(context, 'edit'),
+              ),
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: Text(l10n.deleteForEveryone),
@@ -671,7 +673,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(l10n.deleteForEveryoneTitle),
-        content: Text(l10n.unsendBody),
+        content: Text(message.isText ? l10n.unsendBody : l10n.unsendMediaBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -687,7 +689,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (confirm != true || !mounted) return;
     try {
       await NightdropScope.of(context)
-          .unsendMessage(widget.contactId, message.msgId);
+          .unsendMessage(widget.contactId, message.unsendId);
     } catch (e) {
       _toast(l10n.couldNotDelete(e.toString()));
     }
@@ -1021,7 +1023,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       : contact.shownTheirName,
                                   // Right-click (desktop) or long-press (mobile) own recent/
                                   // queued text to edit or unsend it.
-                                  onLongPress: m.canEdit
+                                  onLongPress: m.canUnsend
                                       ? () => _showMessageMenu(m)
                                       : null,
                                   onReveal: m.isBurnHidden && !m.fromMe

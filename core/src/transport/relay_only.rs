@@ -91,9 +91,11 @@ impl Transport for RelayOnlyTransport {
         #[cfg(not(feature = "https-relay"))]
         {
             let message = "HTTPS relay support is not compiled into this build".to_string();
-            Some(std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {
-                Err(anyhow::anyhow!(message.clone()))
-            }))
+            Some(std::sync::Arc::new(
+                move |_request: &str| -> crate::Result<String> {
+                    Err(anyhow::anyhow!(message.clone()))
+                },
+            ))
         }
     }
 

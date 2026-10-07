@@ -258,6 +258,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
+      // The bar only carries the language switch; the content keeps the full screen height.
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         actions: [
@@ -273,8 +275,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset('assets/icons/icon-512.png', width: 96, height: 96),
-              const SizedBox(height: 24),
+              Image.asset('assets/icons/icon-512.png', width: 88, height: 88),
+              const SizedBox(height: 20),
               const BrandTitle(fontSize: 32),
               const SizedBox(height: 8),
               Text(

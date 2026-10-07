@@ -273,8 +273,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Reserved for the Night Dog logo.
-              const SizedBox(height: 96),
+              Image.asset('assets/icons/icon-512.png', width: 96, height: 96),
+              const SizedBox(height: 24),
               const BrandTitle(fontSize: 32),
               const SizedBox(height: 8),
               Text(

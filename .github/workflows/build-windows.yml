@@ -1,0 +1,98 @@
+name: Build Windows installer (HTTPS-first)
+
+# Builds the Night Dog desktop app for Windows and packs it into a small per-user installer.
+# Runs only when this file changes, or manually. The Tor/WebTunnel transport is left out: the
+# desktop build talks to the relay over HTTPS, which keeps the download small and needs no
+# BoringSSL toolchain on the runner.
+on:
+  push:
+    branches: [feature/https-primary-transport]
+    paths: [.github/workflows/build-windows.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows
+  cancel-in-progress: true
+
+env:
+  HTTPS_RELAY: https://relay.dforadar.ru/v1/relay
+  NIGHTDROP_WEBTUNNEL: "0"
+
+jobs:
+  windows:
+    name: x64 installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: app/.fvmrc
+
+      - name: Resolve Dart dependencies
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter gen-l10n
+
+      - name: Build the app
+        working-directory: app
+        shell: pwsh
+        run: |
+          flutter build windows --release "--build-number=$env:GITHUB_RUN_NUMBER" "--dart-define=NIGHTDROP_HTTPS_RELAY=$env:HTTPS_RELAY"
+          if ($LASTEXITCODE -ne 0) { throw "flutter build failed ($LASTEXITCODE)" }
+
+      # Same packaging as scripts/build-windows-installer.ps1: the release bundle plus the three
+      # VC++ runtime DLLs, compressed by Inno Setup (lzma2, solid).
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $App = Join-Path $PWD 'app'
+          $Version = ((Select-String -Path (Join-Path $App 'pubspec.yaml') -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value).Split('+')[0]
+          $Release = Join-Path $App 'build\windows\x64\runner\Release'
+          $Stage = Join-Path $App 'build\windows\installer\bundle'
+          New-Item -ItemType Directory -Force $Stage | Out-Null
+          Copy-Item -Recurse -Path (Join-Path $Release '*') -Destination $Stage
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $crt = Get-ChildItem -Directory (Join-Path $vs 'VC\Redist\MSVC') | Where-Object { $_.Name -match '^\d' } | Sort-Object Name -Descending | Select-Object -First 1
+          $crtDir = Get-ChildItem -Directory (Join-Path $crt.FullName 'x64') | Where-Object { $_.Name -like 'Microsoft.VC*.CRT' } | Select-Object -First 1
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') { Copy-Item (Join-Path $crtDir.FullName $dll) $Stage }
+
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          $Out = Join-Path $App 'build\windows\installer'
+          & $iscc /Q "/DAppVersion=$Version" "/DBundleDir=$Stage" "/DOutputDir=$Out" (Join-Path $App 'windows\installer\night_drop.iss')
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+          $name = "NightDogSetup-$Version-b$env:GITHUB_RUN_NUMBER.exe"
+          Move-Item (Join-Path $Out 'NightDogSetup.exe') (Join-Path $PWD $name)
+          "INSTALLER=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VERSION=$Version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host ("installer: {0} ({1:N1} MB)" -f $name, ((Get-Item $name).Length / 1MB))
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows-preview --yes --cleanup-tag
+          gh release create windows-preview $env:INSTALLER --prerelease --target $env:GITHUB_SHA --title "Night Dog $env:VERSION build $env:GITHUB_RUN_NUMBER for Windows (preview)" --notes "Unsigned test build. Not a production release."
+          if ($LASTEXITCODE -ne 0) { throw "publish failed ($LASTEXITCODE)" }

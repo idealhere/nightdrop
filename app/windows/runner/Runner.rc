@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "Night Drop" "\0"
-            VALUE "FileDescription", "Night Drop" "\0"
+            VALUE "CompanyName", "Night Dog" "\0"
+            VALUE "FileDescription", "Night Dog" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "night_drop" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 Night Drop. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Night Dog. All rights reserved." "\0"
             VALUE "OriginalFilename", "night_drop.exe" "\0"
-            VALUE "ProductName", "Night Drop" "\0"
+            VALUE "ProductName", "Night Dog" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

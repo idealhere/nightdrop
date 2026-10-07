@@ -24,7 +24,9 @@ env:
 jobs:
   windows:
     name: x64 installer
-    runs-on: windows-latest
+    # Pinned to the VS 2022 image: a plugin still builds with /await, which the VS 2026 toolset
+    # on windows-latest rejects (STL1011).
+    runs-on: windows-2022
     permissions:
       contents: write
     steps:

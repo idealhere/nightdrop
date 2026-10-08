@@ -13,7 +13,10 @@ import 'scan_screen.dart';
 ///   • Invite — show a QR (pre-authorized) and a short code (`slot-secret-words`).
 ///   • Join — enter a short code; the PAKE secret words authorize and block MITM.
 class PairingScreen extends StatelessWidget {
-  const PairingScreen({super.key, this.groupId});
+  const PairingScreen({super.key, this.groupId, this.initialTab = 0});
+
+  /// Which tab opens first: 0 to invite, 1 to join (scan or type someone's code).
+  final int initialTab;
 
   /// When set, this is an invitation into that group: only the code is shown, and whoever uses
   /// it becomes a contact and is added to the group in the same step.
@@ -31,6 +34,7 @@ class PairingScreen extends StatelessWidget {
     }
     return DefaultTabController(
       length: 2,
+      initialIndex: initialTab,
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.newChat),

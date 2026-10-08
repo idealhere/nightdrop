@@ -31,7 +31,8 @@ void main() {
   testWidgets('two unnamed contacts are distinguishable by their identity tag', (tester) async {
     await pumpList(tester);
 
-    expect(find.text('NightDog'), findsNWidgets(2));
+    // Neither chose a name, so both read "Anon" — the rank is no longer part of a name.
+    expect(find.text('Anon'), findsNWidgets(2));
     expect(find.text('K7QF2M'), findsOneWidget);
     expect(find.text('X3TWB9'), findsOneWidget);
   });

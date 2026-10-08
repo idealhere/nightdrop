@@ -19,58 +19,120 @@ import 'my_address_screen.dart';
 import '../lock/app_lock_settings.dart';
 import '../pairing/pairing_screen.dart';
 import '../privacy/privacy_screen.dart';
+import '../../theme/brand.dart';
+import '../../theme/cyberdog.dart';
 
-/// The conversation list. Empty until the user pairs with someone.
-class HomeScreen extends StatelessWidget {
+/// The app's home: four sections — chats, groups, settings, profile — under one compact header.
+/// A bar along the bottom on a phone; a rail down the side on a wide window, where a bottom bar
+/// would sit a long way from everything else.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  static const _wide = 900.0;
+
+  int _tab = 0;
+
+  void _push(Widget screen) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+  /// The one button for starting something: a chat, a group, or scanning someone's code.
+  Future<void> _newAction() async {
+    final l10n = AppLocalizations.of(context)!;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const ValueKey('new-chat'),
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: Text(l10n.newChat),
+              onTap: () => Navigator.pop(context, 'chat'),
+            ),
+            ListTile(
+              key: const ValueKey('new-group'),
+              leading: const Icon(Icons.group_add_outlined),
+              title: Text(l10n.newGroup),
+              onTap: () => Navigator.pop(context, 'group'),
+            ),
+            ListTile(
+              key: const ValueKey('scan-qr'),
+              leading: const Icon(Icons.qr_code_scanner),
+              title: Text(l10n.scanQr),
+              onTap: () => Navigator.pop(context, 'scan'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'chat':
+        _push(const PairingScreen());
+      case 'group':
+        _push(const CreateGroupScreen());
+      case 'scan':
+        _push(const PairingScreen(initialTab: 1));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final core = NightdropScope.of(context);
     final l10n = AppLocalizations.of(context)!;
+    final wide = MediaQuery.sizeOf(context).width >= _wide;
+    final sections = [
+      (Icons.chat_bubble_outline, Icons.chat_bubble, l10n.chats),
+      (Icons.groups_outlined, Icons.groups, l10n.tabGroups),
+      (Icons.settings_outlined, Icons.settings, l10n.tabSettings),
+      (Icons.person_outline, Icons.person, l10n.tabProfile),
+    ];
+    final page = switch (_tab) {
+      0 => const _ChatList(groupsOnly: false),
+      1 => const _ChatList(groupsOnly: true),
+      2 => const _SettingsTab(),
+      _ => const _ProfileTab(),
+    };
+    final content = Column(
+      children: [
+        if (_tab < 2) ...[
+          _OnionBanner(core: core),
+          const _BackgroundStoppedBanner(),
+          _RelayHealthBanner(core: core),
+          _BackupReminderBanner(core: core),
+        ],
+        Expanded(child: page),
+      ],
+    );
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.chats),
+        titleSpacing: 16,
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CyberDogMark(size: 24),
+            SizedBox(width: 10),
+            BrandTitle(fontSize: 18),
+          ],
+        ),
         actions: [
           PopupMenuButton<String>(
-            tooltip: l10n.backUp,
-            icon: const Icon(Icons.backup_outlined),
             onSelected: (value) {
-              if (value == 'file') createAndSaveBackup(context, core);
-              if (value == 'server') _createServerBackup(context, core);
-              if (value == 'merge') mergeChatBackup(context, core);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(value: 'file', child: Text(l10n.saveBackupFile)),
-              PopupMenuItem(
-                  value: 'server', child: Text(l10n.backUpToServer24h)),
-              PopupMenuItem(
-                  value: 'merge', child: Text(l10n.mergeChatBackupMenu)),
-            ],
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'newgroup') {
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const CreateGroupScreen()));
-              }
-              if (value == 'address') {
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const MyAddressScreen()));
-              }
+              if (value == 'newgroup') _push(const CreateGroupScreen());
+              if (value == 'address') _push(const MyAddressScreen());
               if (value == 'identity') _showMyIdentity(context, core);
               if (value == 'myname') _editMyName(context, core);
-              if (value == 'privacy') {
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const PrivacyScreen()));
-              }
+              if (value == 'privacy') _push(const PrivacyScreen());
               if (value == 'background') _backgroundDeliverySettings(context);
               if (value == 'applock') showAppLockSettings(context, core);
               if (value == 'duress') showDuressSettings(context, core);
-              if (value == 'bridges') {
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const BridgesScreen()));
-              }
+              if (value == 'bridges') _push(const BridgesScreen());
               if (value == 'cover') _coverTrafficSettings(context, core);
               if (value == 'burnreceipts') _burnReceiptSettings(context, core);
               if (value == 'relays') _editRelays(context, core);
@@ -111,105 +173,415 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const PairingScreen()),
-        ),
-        icon: const Icon(Icons.qr_code_2),
-        label: Text(l10n.newChat),
-      ),
-      body: Column(
-        children: [
-          _OnionBanner(core: core),
-          const _BackgroundStoppedBanner(),
-          _RelayHealthBanner(core: core),
-          _BackupReminderBanner(core: core),
-          Expanded(
-            child: ListenableBuilder(
-        listenable: core,
-        builder: (context, _) {
-          final requests = core.incomingRequests;
-          final contacts = core.contacts;
-          final groups = core.groups;
-          if (requests.isEmpty && contacts.isEmpty && groups.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  l10n.noChatsYet,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          return ListView(
-            children: [
-              for (final r in requests) _RequestTile(request: r, core: core),
-              for (final g in groups)
-                ListTile(
-                  leading: const ExcludeSemantics(
-                    child: CircleAvatar(child: Icon(Icons.group_outlined)),
-                  ),
-                  title: Text(g.name),
-                  subtitle: Text(l10n.groupMembersCount(g.members.length)),
-                  trailing: switch (core.groupUnreadCount(g.id)) {
-                    0 => null,
-                    final n => Badge(label: Text('$n')),
-                  },
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => GroupChatScreen(groupId: g.id),
-                    ),
-                  ),
-                ),
-              for (final c in contacts)
-                // Long-press (touch) or right-click (desktop) a chat to delete it.
-                GestureDetector(
-                  onLongPress: () => _confirmDeleteChat(context, core, c),
-                  onSecondaryTapDown: (_) => _confirmDeleteChat(context, core, c),
-                  child: ListTile(
-                    leading: const ExcludeSemantics(
-                      child: CircleAvatar(child: Icon(Icons.person_outline)),
-                    ),
-                    title: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(child: Text(c.displayName)),
-                        if (c.showIdentityTag) ...[
-                          const SizedBox(width: 6),
-                          IdentityTag(tag: c.identityTag),
-                        ],
-                        if (c.verified) ...[
-                          const SizedBox(width: 6),
-                          Icon(Icons.verified_user,
-                              semanticLabel: l10n.verified,
-                              size: 15,
-                              color: Theme.of(context).colorScheme.primary),
-                        ],
-                      ],
-                    ),
-                    subtitle: c.remoteStorage
-                        ? Text(l10n.storedOnServer24h)
-                        : Text(l10n.storedOnThisDevice),
-                    // Counted once per tile: unreadCount scans the chat's history.
-                    trailing: switch (core.unreadCount(c.id)) {
-                      0 => null,
-                      final n => Badge(label: Text('$n')),
-                    },
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ChatScreen(contactId: c.id),
+      floatingActionButton: _tab < 2
+          ? FloatingActionButton(
+              key: const ValueKey('new-action'),
+              tooltip: l10n.newChat,
+              backgroundColor: CyberDog.accent,
+              onPressed: _newAction,
+              child: const CyberDogMark(size: 30, color: Color(0xFFF5F2FF)),
+            )
+          : null,
+      body: wide
+          ? Row(
+              children: [
+                NavigationRail(
+                  backgroundColor: Colors.transparent,
+                  extended: MediaQuery.sizeOf(context).width >= 1100,
+                  selectedIndex: _tab,
+                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  destinations: [
+                    for (final (icon, selected, label) in sections)
+                      NavigationRailDestination(
+                        icon: Icon(icon),
+                        selectedIcon: Icon(selected),
+                        label: Text(label),
                       ),
+                  ],
+                ),
+                const VerticalDivider(width: 1, color: CyberDog.hairline),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: content,
                     ),
                   ),
                 ),
-            ],
-          );
-        },
+              ],
+            )
+          : content,
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              height: 64,
+              backgroundColor: CyberDog.panel,
+              indicatorColor: CyberDog.accent.withValues(alpha: 0.22),
+              selectedIndex: _tab,
+              onDestinationSelected: (i) => setState(() => _tab = i),
+              destinations: [
+                for (final (icon, selected, label) in sections)
+                  NavigationDestination(
+                    icon: Icon(icon),
+                    selectedIcon: Icon(selected, color: CyberDog.accentLight),
+                    label: label,
+                  ),
+              ],
             ),
+    );
+  }
+}
+
+/// One row of the chat list: a contact or a group, with the last thing said in it.
+class _Row {
+  const _Row({this.contact, this.group, this.last});
+
+  final Contact? contact;
+  final Group? group;
+
+  /// The newest message that is not a system notice, if there is one.
+  final Message? last;
+}
+
+/// What the list says a message was, without printing more than a line of it. A message that is
+/// meant to disappear is never quoted here.
+String _preview(AppLocalizations l10n, Message m) {
+  final body = m.isDeleted
+      ? l10n.messageDeleted
+      : m.burnSecs > 0 || m.isBurnExpired || m.isViewedOnce
+          ? l10n.previewHidden
+          : m.isImage
+              ? l10n.previewPhoto
+              : m.isAudio
+                  ? l10n.previewVoice
+                  : m.isVideo
+                      ? l10n.video
+                      : m.text;
+  return m.fromMe ? '${l10n.previewYou} $body' : body;
+}
+
+/// Today's messages by the clock, older ones by the date.
+String _listTime(DateTime at) {
+  final now = DateTime.now();
+  final local = at.toLocal();
+  if (local.year == now.year && local.month == now.month && local.day == now.day) {
+    return formatMessageTime(at);
+  }
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.day)}.${two(local.month)}';
+}
+
+/// The chats, newest activity first: everything, or only the groups.
+class _ChatList extends StatelessWidget {
+  const _ChatList({required this.groupsOnly});
+
+  final bool groupsOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    return ListenableBuilder(
+      listenable: core,
+      builder: (context, _) {
+        final requests = groupsOnly ? const <Contact>[] : core.incomingRequests;
+        final rows = <_Row>[
+          for (final g in core.groups)
+            _Row(
+              group: g,
+              last: core.groupMessagesFor(g.id).where((m) => !m.system).lastOrNull,
+            ),
+          if (!groupsOnly)
+            for (final c in core.contacts)
+              _Row(
+                contact: c,
+                last: core.messagesFor(c.id).where((m) => !m.system).lastOrNull,
+              ),
+        ];
+        // Newest first; chats with nothing said yet keep their order at the end. The sort is
+        // stable only if told to be, so the original position breaks ties.
+        final order = {for (var i = 0; i < rows.length; i++) rows[i]: i};
+        rows.sort((a, b) {
+          final at = a.last?.at, bt = b.last?.at;
+          if (at != null && bt != null) return bt.compareTo(at);
+          if (at != null) return -1;
+          if (bt != null) return 1;
+          return order[a]!.compareTo(order[b]!);
+        });
+        if (requests.isEmpty && rows.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                groupsOnly ? l10n.noGroupsYet : l10n.noChatsYet,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 88),
+          children: [
+            for (final r in requests) _RequestTile(request: r, core: core),
+            for (final row in rows) _ChatTile(row: row, core: core),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A chat in the list: avatar, name, the last line, and on the right the time with either the
+/// unread count or, for our own last message, whether it was delivered.
+class _ChatTile extends StatelessWidget {
+  const _ChatTile({required this.row, required this.core});
+
+  final _Row row;
+  final NightdropCore core;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    final contact = row.contact;
+    final group = row.group;
+    final last = row.last;
+    final unread =
+        contact != null ? core.unreadCount(contact.id) : core.groupUnreadCount(group!.id);
+    final muted = TextStyle(color: scheme.onSurfaceVariant, fontSize: 13);
+    final subtitle = last != null
+        ? _preview(l10n, last)
+        : contact != null
+            ? (contact.remoteStorage ? l10n.storedOnServer24h : l10n.storedOnThisDevice)
+            : l10n.groupMembersCount(group!.members.length);
+    void open() => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => contact != null
+                ? ChatScreen(contactId: contact.id)
+                : GroupChatScreen(groupId: group!.id),
           ),
-        ],
+        );
+    // Long-press (touch) or right-click (desktop) a chat to delete it.
+    void remove() {
+      if (contact != null) _confirmDeleteChat(context, core, contact);
+    }
+
+    return InkWell(
+      onTap: open,
+      onLongPress: contact != null ? remove : null,
+      onSecondaryTap: contact != null ? remove : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            ExcludeSemantics(
+              child: CircleAvatar(
+                radius: 24,
+                backgroundColor: CyberDog.panel,
+                child: group != null
+                    ? const Icon(Icons.groups_outlined, color: CyberDog.accentLight)
+                    : const CyberDogMark(size: 24),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          contact?.headerName ?? group!.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      if (contact != null && contact.showIdentityTag) ...[
+                        const SizedBox(width: 6),
+                        IdentityTag(tag: contact.identityTag),
+                      ],
+                      if (contact != null && contact.verified) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.verified_user,
+                            semanticLabel: l10n.verified, size: 15, color: scheme.primary),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(last != null ? _listTime(last.at) : '', style: muted.copyWith(fontSize: 12)),
+                const SizedBox(height: 5),
+                if (unread > 0)
+                  Badge(label: Text('$unread'), backgroundColor: CyberDog.accent)
+                else if (last != null && last.fromMe && last.delivery.isNotEmpty)
+                  Icon(
+                    switch (last.delivery) {
+                      'delivered' => Icons.done_all,
+                      'queued' => Icons.cloud_upload_outlined,
+                      'expired' => Icons.error_outline,
+                      _ => group != null ? Icons.done : Icons.schedule,
+                    },
+                    size: 15,
+                    color: scheme.onSurfaceVariant,
+                  )
+                else
+                  const SizedBox(height: 15),
+              ],
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+/// A small heading between groups of settings.
+class _Section extends StatelessWidget {
+  const _Section(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+        child: Text(
+          title.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 11,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w600,
+            color: CyberDog.accentLight,
+          ),
+        ),
+      );
+}
+
+/// Settings, the everyday ones first; what only matters on the Tor transport or to someone
+/// running their own relay is folded away under "Advanced".
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    void push(Widget screen) =>
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    ListTile item(IconData icon, String title, VoidCallback onTap) =>
+        ListTile(leading: Icon(icon), title: Text(title), onTap: onTap);
+    return ListView(
+      children: [
+        _Section(l10n.settingsSectionPrivacy),
+        item(Icons.lock_outline, l10n.privacyMenu, () => push(const PrivacyScreen())),
+        item(Icons.pin_outlined, l10n.appLockMenu, () => showAppLockSettings(context, core)),
+        item(Icons.shield_outlined, l10n.duressMenu, () => showDuressSettings(context, core)),
+        if (BackgroundDelivery.supported)
+          item(Icons.notifications_none, l10n.backgroundDeliveryMenu,
+              () => _backgroundDeliverySettings(context)),
+        _Section(l10n.settingsSectionData),
+        item(Icons.save_alt, l10n.saveBackupFile, () => createAndSaveBackup(context, core)),
+        item(Icons.cloud_upload_outlined, l10n.backUpToServer24h,
+            () => _createServerBackup(context, core)),
+        item(Icons.merge_type, l10n.mergeChatBackupMenu, () => mergeChatBackup(context, core)),
+        _Section(l10n.settingsSectionApp),
+        item(Icons.language, l10n.switchLanguage, AppLocale.toggle),
+        item(Icons.info_outline, l10n.aboutMenu, () => _showAbout(context)),
+        ExpansionTile(
+          leading: const Icon(Icons.tune),
+          title: Text(l10n.settingsSectionAdvanced),
+          children: [
+            item(Icons.visibility_off_outlined, l10n.coverTrafficMenu,
+                () => _coverTrafficSettings(context, core)),
+            item(Icons.local_fire_department_outlined, l10n.burnReceiptsMenu,
+                () => _burnReceiptSettings(context, core)),
+            item(Icons.hub_outlined, l10n.myRelaysMenu, () => _editRelays(context, core)),
+            item(Icons.alt_route, l10n.bridgesMenu, () => push(const BridgesScreen())),
+            item(Icons.restart_alt, l10n.resetTorMenu, () => _confirmResetTor(context, core)),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+/// Who you are here: the name you chose, your ID, and the address others can reach you at.
+class _ProfileTab extends StatelessWidget {
+  const _ProfileTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    void push(Widget screen) =>
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    return ListView(
+      children: [
+        const SizedBox(height: 28),
+        const Center(
+          child: CircleAvatar(
+            radius: 40,
+            backgroundColor: CyberDog.panel,
+            child: CyberDogMark(size: 44),
+          ),
+        ),
+        const SizedBox(height: 14),
+        ValueListenableBuilder<String>(
+          valueListenable: ProfileName.current,
+          builder: (context, name, _) => Text(
+            plainName(name),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Center(child: UserRankBadge(rank: UserRankBadge.defaultRank)),
+        const SizedBox(height: 8),
+        Text(
+          core.identity?.id ?? '',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 20),
+        ListTile(
+          leading: const Icon(Icons.qr_code_2),
+          title: Text(l10n.myAddressTitle),
+          onTap: () => push(const MyAddressScreen()),
+        ),
+        ListTile(
+          leading: const Icon(Icons.badge_outlined),
+          title: Text(l10n.myNameMenu),
+          onTap: () => _editMyName(context, core),
+        ),
+        ListTile(
+          leading: const Icon(Icons.fingerprint),
+          title: Text(l10n.myIdentity),
+          onTap: () => _showMyIdentity(context, core),
+        ),
+        const Divider(height: 32),
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: Text(l10n.exitMenu),
+          onTap: () => _confirmExit(context, core),
+        ),
+        ListTile(
+          leading: Icon(Icons.delete_forever_outlined, color: scheme.error),
+          title: Text(l10n.logoutDeleteMenu, style: TextStyle(color: scheme.error)),
+          onTap: () => _confirmLogout(context, core),
+        ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 }

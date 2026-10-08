@@ -1519,6 +1519,58 @@
   "@myAddressFailed": {
     "description": "Shown if the standing address cannot be created."
   },
+  "tabGroups": "Groups",
+  "@tabGroups": {
+    "description": "Navigation: the groups section."
+  },
+  "tabSettings": "Settings",
+  "@tabSettings": {
+    "description": "Navigation: the settings section."
+  },
+  "tabProfile": "Profile",
+  "@tabProfile": {
+    "description": "Navigation: the profile section."
+  },
+  "scanQr": "Scan a QR code",
+  "@scanQr": {
+    "description": "Entry in the new-action menu."
+  },
+  "noGroupsYet": "No groups yet. Tap the button below to create one.",
+  "@noGroupsYet": {
+    "description": "Empty state of the groups section."
+  },
+  "previewYou": "You:",
+  "@previewYou": {
+    "description": "Prefix of our own last message in the chat list."
+  },
+  "previewPhoto": "Photo",
+  "@previewPhoto": {
+    "description": "Chat list: the last message was a photo."
+  },
+  "previewVoice": "Voice message",
+  "@previewVoice": {
+    "description": "Chat list: the last message was a voice message."
+  },
+  "previewHidden": "Hidden message",
+  "@previewHidden": {
+    "description": "Chat list: the last message is one that disappears; its text is not quoted."
+  },
+  "settingsSectionPrivacy": "Privacy and security",
+  "@settingsSectionPrivacy": {
+    "description": "Settings heading."
+  },
+  "settingsSectionData": "Backups",
+  "@settingsSectionData": {
+    "description": "Settings heading."
+  },
+  "settingsSectionApp": "App",
+  "@settingsSectionApp": {
+    "description": "Settings heading."
+  },
+  "settingsSectionAdvanced": "Advanced",
+  "@settingsSectionAdvanced": {
+    "description": "Settings: the folded group of technical options."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

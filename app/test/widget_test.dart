@@ -14,6 +14,6 @@ void main() {
 
     // After creating an identity we land on the (empty) chat list.
     expect(find.text('Chats'), findsOneWidget);
-    expect(find.text('New chat'), findsOneWidget);
+    expect(find.byKey(const ValueKey('new-action')), findsOneWidget);
   });
 }

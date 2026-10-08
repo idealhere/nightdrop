@@ -698,11 +698,11 @@
   "@noChatsYet": {
     "description": "Empty-state text on the conversation list."
   },
-  "storedOnServer24h": "Stored on server (24h)",
+  "storedOnServer24h": "On the server · 24 h",
   "@storedOnServer24h": {
     "description": "Chat subtitle when remote storage is on."
   },
-  "storedOnThisDevice": "Stored on this device",
+  "storedOnThisDevice": "On this device",
   "@storedOnThisDevice": {
     "description": "Chat subtitle when messages are local-only."
   },

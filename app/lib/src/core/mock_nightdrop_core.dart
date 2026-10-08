@@ -43,6 +43,9 @@ class MockNightdropCore extends NightdropCore {
   List<Message> messagesFor(String contactId) =>
       List.unmodifiable(_messages[contactId] ?? const []);
 
+  @override
+  Future<String> myAddress() async => 'nightdrop://pair?addr=mock&ik=mock&otk=mock&static=1';
+
   final List<Group> _groups = [];
   final Map<String, List<Message>> _groupMessages = {};
 

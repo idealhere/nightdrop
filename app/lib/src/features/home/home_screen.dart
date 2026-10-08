@@ -15,6 +15,7 @@ import '../backup/backup_actions.dart';
 import '../bridges/bridges_screen.dart';
 import '../chat/chat_screen.dart';
 import '../groups/group_screens.dart';
+import 'my_address_screen.dart';
 import '../lock/app_lock_settings.dart';
 import '../pairing/pairing_screen.dart';
 import '../privacy/privacy_screen.dart';
@@ -53,6 +54,10 @@ class HomeScreen extends StatelessWidget {
                 Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) => const CreateGroupScreen()));
               }
+              if (value == 'address') {
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const MyAddressScreen()));
+              }
               if (value == 'identity') _showMyIdentity(context, core);
               if (value == 'myname') _editMyName(context, core);
               if (value == 'privacy') {
@@ -77,6 +82,7 @@ class HomeScreen extends StatelessWidget {
             },
             itemBuilder: (context) => [
               PopupMenuItem(value: 'newgroup', child: Text(l10n.newGroup)),
+              PopupMenuItem(value: 'address', child: Text(l10n.myAddressTitle)),
               PopupMenuItem(value: 'identity', child: Text(l10n.myIdentity)),
               PopupMenuItem(value: 'myname', child: Text(l10n.myNameMenu)),
               PopupMenuItem(value: 'privacy', child: Text(l10n.privacyMenu)),

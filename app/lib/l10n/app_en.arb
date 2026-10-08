@@ -1495,6 +1495,26 @@
   "@menuServerStorageOff": {
     "description": "Chat menu entry that turns server storage on."
   },
+  "myAddressTitle": "My address",
+  "@myAddressTitle": {
+    "description": "Menu entry and title of the standing-address screen."
+  },
+  "myAddressIntro": "Your permanent address. Send it to someone, or let them scan the code, and they can ask to chat with you.",
+  "@myAddressIntro": {
+    "description": "Introduction on the standing-address screen."
+  },
+  "myAddressCopy": "Copy address",
+  "@myAddressCopy": {
+    "description": "Button that copies the standing address."
+  },
+  "myAddressWarning": "The address does not expire and cannot be taken back: anyone who gets it can send you a request. Nobody can write to you until you accept theirs. To use it, the other person pastes it under New chat → Join.",
+  "@myAddressWarning": {
+    "description": "Explains what a standing address means for privacy and how the other person uses it."
+  },
+  "myAddressFailed": "Could not create an address.",
+  "@myAddressFailed": {
+    "description": "Shown if the standing address cannot be created."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

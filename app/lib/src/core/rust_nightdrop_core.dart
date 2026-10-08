@@ -55,6 +55,15 @@ class RustNightdropCore extends NightdropCore {
   /// repeated on every refresh.
   final Set<String> _preferredNameApplied = {};
 
+  /// Pending requests that came through the standing address: for the user to decide.
+  Set<String> _addressRequests = const {};
+
+  @override
+  Set<String> get addressRequests => _addressRequests;
+
+  @override
+  Future<String> myAddress() => _core!.myAddress();
+
   /// Requests already accepted automatically this run (see [_acceptInvited]).
   final Set<String> _autoAccepted = {};
 
@@ -2148,6 +2157,9 @@ class RustNightdropCore extends NightdropCore {
   /// end is still a question for the safety-number check, exactly as it was with a manual tap.
   void _acceptInvited() {
     for (final r in _requests) {
+      // Someone who used a code was invited by us a moment ago. Someone who used the address
+      // may be a stranger, so that request waits for the user.
+      if (_addressRequests.contains(r.id)) continue;
       if (_autoAccepted.add(r.id)) {
         unawaited(authorize(r.id, true).catchError((Object _) {}));
       }
@@ -2202,6 +2214,7 @@ class RustNightdropCore extends NightdropCore {
     // Contact/request lists are small — always re-read them (a roster change is cheap).
     _contacts = (await _core!.contacts()).map(_map).toList();
     _requests = (await _core!.incomingRequests()).map(_map).toList();
+    _addressRequests = (await _core!.addressRequests()).toSet();
     _acceptInvited();
     final known = {..._contacts, ..._requests}.map((c) => c.id).toSet();
 

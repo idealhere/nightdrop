@@ -160,6 +160,14 @@ abstract class NightdropCore extends ChangeNotifier {
   /// Messages for a given contact, oldest first.
   List<Message> messagesFor(String contactId);
 
+  /// Our standing address: a link that does not expire and can be given to anyone. Whoever has it
+  /// can send a chat request, which waits in [incomingRequests] until we accept or decline it.
+  Future<String> myAddress() => throw UnsupportedError('no standing address');
+
+  /// The pending requests that came through the standing address. A request from someone we
+  /// showed a code to is accepted for us; these are not — an address can reach anyone.
+  Set<String> get addressRequests => const {};
+
   // --- Groups --------------------------------------------------------------------------------
   //
   // A group message goes to each member separately over the 1:1 chat we already have with them,

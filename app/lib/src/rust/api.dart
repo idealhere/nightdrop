@@ -200,6 +200,10 @@ abstract class NightdropCore implements RustOpaqueInterface {
   Future<void> addGroupMembers(
       {required String groupId, required List<String> memberIds});
 
+  /// The pending requests that came through the standing address, by contact id. Unlike a
+  /// request from someone we showed a code to, these are for the user to accept or decline.
+  Future<List<String>> addressRequests();
+
   /// Approve or decline a pending inbound request. On approval it becomes a contact.
   Future<void> authorize({required String contactId, required bool accept});
 
@@ -390,6 +394,11 @@ abstract class NightdropCore implements RustOpaqueInterface {
 
   /// Messages for a contact, oldest first.
   Future<List<ChatMessage>> messages({required String contactId});
+
+  /// Our standing address: a link that does not expire. Anyone who has it can send a chat
+  /// request ([`connect_via_qr`](Self::connect_via_qr) takes it like any invite), which then
+  /// waits for us to accept it.
+  Future<String> myAddress();
 
   /// Our own identity key — how we appear in a group's member list.
   Future<String> myIdentityKey();

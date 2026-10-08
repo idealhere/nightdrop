@@ -74,6 +74,7 @@ void main() {
 
   testWidgets('settings and profile are sections, not a long menu', (tester) async {
     await _home(tester);
+    expect(find.byIcon(Icons.more_vert), findsNothing, reason: 'no second copy of the settings');
     await tester.tap(find.text('Settings'));
     // The action button leaves with an animation; wait it out before looking for it.
     await tester.pumpAndSettle();

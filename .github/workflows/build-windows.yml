@@ -4,7 +4,7 @@ name: Build Windows installer (HTTPS-first)
 # Runs only when this file changes, or manually. The Tor/WebTunnel transport is left out: the
 # desktop build talks to the relay over HTTPS, which keeps the download small and needs no
 # BoringSSL toolchain on the runner.
-# rebuild: 39
+# rebuild: 40
 on:
   push:
     branches: [feature/https-primary-transport]

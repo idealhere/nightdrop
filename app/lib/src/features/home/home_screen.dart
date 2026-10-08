@@ -186,57 +186,6 @@ class _HomeScreenState extends State<HomeScreen> {
             BrandTitle(fontSize: 18),
           ],
         ),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'newgroup') _push(const CreateGroupScreen());
-              if (value == 'address') _push(const MyAddressScreen());
-              if (value == 'identity') _showMyIdentity(context, core);
-              if (value == 'myname') _editMyName(context, core);
-              if (value == 'privacy') _push(const PrivacyScreen());
-              if (value == 'background') _backgroundDeliverySettings(context);
-              if (value == 'applock') showAppLockSettings(context, core);
-              if (value == 'duress') showDuressSettings(context, core);
-              if (value == 'bridges') _push(const BridgesScreen());
-              if (value == 'cover') _coverTrafficSettings(context, core);
-              if (value == 'burnreceipts') _burnReceiptSettings(context, core);
-              if (value == 'relays') _editRelays(context, core);
-              if (value == 'resettor') _confirmResetTor(context, core);
-              if (value == 'language') AppLocale.toggle();
-              if (value == 'about') _showAbout(context);
-              if (value == 'exit') _confirmExit(context, core);
-              if (value == 'logout') _confirmLogout(context, core);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(value: 'newgroup', child: Text(l10n.newGroup)),
-              PopupMenuItem(value: 'address', child: Text(l10n.myAddressTitle)),
-              PopupMenuItem(value: 'identity', child: Text(l10n.myIdentity)),
-              PopupMenuItem(value: 'myname', child: Text(l10n.myNameMenu)),
-              PopupMenuItem(value: 'privacy', child: Text(l10n.privacyMenu)),
-              if (BackgroundDelivery.supported)
-                PopupMenuItem(
-                    value: 'background', child: Text(l10n.backgroundDeliveryMenu)),
-              PopupMenuItem(value: 'applock', child: Text(l10n.appLockMenu)),
-              // Its own row, and deliberately stateless in the label: "Wipe code" reads the same
-              // whether or not one is armed, so a glance at an unlocked phone gives nothing away.
-              // The feature itself is public; only *your* having armed it is worth hiding (#3).
-              PopupMenuItem(value: 'duress', child: Text(l10n.duressMenu)),
-              PopupMenuItem(value: 'bridges', child: Text(l10n.bridgesMenu)),
-              PopupMenuItem(value: 'cover', child: Text(l10n.coverTrafficMenu)),
-              PopupMenuItem(
-                  value: 'burnreceipts', child: Text(l10n.burnReceiptsMenu)),
-              PopupMenuItem(value: 'relays', child: Text(l10n.myRelaysMenu)),
-              PopupMenuItem(value: 'resettor', child: Text(l10n.resetTorMenu)),
-              PopupMenuItem(value: 'language', child: Text(l10n.switchLanguage)),
-              PopupMenuItem(value: 'about', child: Text(l10n.aboutMenu)),
-              // Issue #15: leave the network and close, keeping the identity. Next to "Log out"
-              // on purpose, so the harmless way out is found before the destructive one.
-              PopupMenuItem(value: 'exit', child: Text(l10n.exitMenu)),
-              PopupMenuItem(
-                  value: 'logout', child: Text(l10n.logoutDeleteMenu)),
-            ],
-          ),
-        ],
       ),
       // Beside an open chat the button belongs to the list, not to the corner of the window,
       // where it would sit on top of the chat's send button.
@@ -564,8 +513,62 @@ class _Section extends StatelessWidget {
       );
 }
 
-/// Settings, the everyday ones first; what only matters on the Tor transport or to someone
-/// running their own relay is folded away under "Advanced".
+/// A rounded panel holding a few related rows, with a hairline between them.
+class _Panel extends StatelessWidget {
+  const _Panel(this.rows);
+
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Material(
+          color: CyberDog.panel.withValues(alpha: 0.9),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: CyberDog.hairline),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) const Divider(height: 1, indent: 56, color: CyberDog.hairline),
+                rows[i],
+              ],
+            ],
+          ),
+        ),
+      );
+}
+
+/// One row of a settings panel: an icon, what it is, and a chevron saying it opens something.
+class _Item extends StatelessWidget {
+  const _Item(this.icon, this.title, this.onTap, {this.danger = false, this.chevron = true});
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  /// Drawn in the error colour: an action that cannot be undone.
+  final bool danger;
+  final bool chevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(icon, color: danger ? scheme.error : CyberDog.accentLight),
+      title: Text(title, style: danger ? TextStyle(color: scheme.error) : null),
+      trailing: chevron
+          ? Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)
+          : null,
+      onTap: onTap,
+    );
+  }
+}
+
+/// Settings — the only place they live. Everyday ones first; what matters only on the Tor
+/// transport, or to someone running their own relay, is folded away under "Advanced".
 class _SettingsTab extends StatelessWidget {
   const _SettingsTab();
 
@@ -575,45 +578,57 @@ class _SettingsTab extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     void push(Widget screen) =>
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
-    ListTile item(IconData icon, String title, VoidCallback onTap) =>
-        ListTile(leading: Icon(icon), title: Text(title), onTap: onTap);
     return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         _Section(l10n.settingsSectionPrivacy),
-        item(Icons.lock_outline, l10n.privacyMenu, () => push(const PrivacyScreen())),
-        item(Icons.pin_outlined, l10n.appLockMenu, () => showAppLockSettings(context, core)),
-        item(Icons.shield_outlined, l10n.duressMenu, () => showDuressSettings(context, core)),
-        if (BackgroundDelivery.supported)
-          item(Icons.notifications_none, l10n.backgroundDeliveryMenu,
-              () => _backgroundDeliverySettings(context)),
+        _Panel([
+          _Item(Icons.lock_outline, l10n.privacyMenu, () => push(const PrivacyScreen())),
+          _Item(Icons.pin_outlined, l10n.appLockMenu, () => showAppLockSettings(context, core)),
+          _Item(Icons.shield_outlined, l10n.duressMenu, () => showDuressSettings(context, core)),
+          if (BackgroundDelivery.supported)
+            _Item(Icons.notifications_none, l10n.backgroundDeliveryMenu,
+                () => _backgroundDeliverySettings(context)),
+        ]),
         _Section(l10n.settingsSectionData),
-        item(Icons.save_alt, l10n.saveBackupFile, () => createAndSaveBackup(context, core)),
-        item(Icons.cloud_upload_outlined, l10n.backUpToServer24h,
-            () => _createServerBackup(context, core)),
-        item(Icons.merge_type, l10n.mergeChatBackupMenu, () => mergeChatBackup(context, core)),
+        _Panel([
+          _Item(Icons.save_alt, l10n.saveBackupFile, () => createAndSaveBackup(context, core)),
+          _Item(Icons.cloud_upload_outlined, l10n.backUpToServer24h,
+              () => _createServerBackup(context, core)),
+          _Item(Icons.merge_type, l10n.mergeChatBackupMenu, () => mergeChatBackup(context, core)),
+        ]),
         _Section(l10n.settingsSectionApp),
-        item(Icons.language, l10n.switchLanguage, AppLocale.toggle),
-        item(Icons.info_outline, l10n.aboutMenu, () => _showAbout(context)),
-        ExpansionTile(
-          leading: const Icon(Icons.tune),
-          title: Text(l10n.settingsSectionAdvanced),
-          children: [
-            item(Icons.visibility_off_outlined, l10n.coverTrafficMenu,
-                () => _coverTrafficSettings(context, core)),
-            item(Icons.local_fire_department_outlined, l10n.burnReceiptsMenu,
-                () => _burnReceiptSettings(context, core)),
-            item(Icons.hub_outlined, l10n.myRelaysMenu, () => _editRelays(context, core)),
-            item(Icons.alt_route, l10n.bridgesMenu, () => push(const BridgesScreen())),
-            item(Icons.restart_alt, l10n.resetTorMenu, () => _confirmResetTor(context, core)),
-          ],
-        ),
-        const SizedBox(height: 24),
+        _Panel([
+          _Item(Icons.language, l10n.switchLanguage, AppLocale.toggle, chevron: false),
+          _Item(Icons.info_outline, l10n.aboutMenu, () => _showAbout(context)),
+        ]),
+        const SizedBox(height: 18),
+        _Panel([
+          ExpansionTile(
+            key: const ValueKey('settings-advanced'),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            leading: const Icon(Icons.tune, color: CyberDog.accentLight),
+            title: Text(l10n.settingsSectionAdvanced),
+            children: [
+              _Item(Icons.visibility_off_outlined, l10n.coverTrafficMenu,
+                  () => _coverTrafficSettings(context, core)),
+              _Item(Icons.local_fire_department_outlined, l10n.burnReceiptsMenu,
+                  () => _burnReceiptSettings(context, core)),
+              _Item(Icons.hub_outlined, l10n.myRelaysMenu, () => _editRelays(context, core)),
+              _Item(Icons.alt_route, l10n.bridgesMenu, () => push(const BridgesScreen())),
+              _Item(Icons.restart_alt, l10n.resetTorMenu,
+                  () => _confirmResetTor(context, core)),
+            ],
+          ),
+        ]),
       ],
     );
   }
 }
 
-/// Who you are here: the name you chose, your ID, and the address others can reach you at.
+/// Who you are here: the name you chose, your ID, the address others can reach you at — and the
+/// two ways out.
 class _ProfileTab extends StatelessWidget {
   const _ProfileTab();
 
@@ -625,6 +640,7 @@ class _ProfileTab extends StatelessWidget {
     void push(Widget screen) =>
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
     return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         const SizedBox(height: 28),
         const Center(
@@ -651,34 +667,20 @@ class _ProfileTab extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: scheme.onSurfaceVariant),
         ),
-        const SizedBox(height: 20),
-        ListTile(
-          leading: const Icon(Icons.qr_code_2),
-          title: Text(l10n.myAddressTitle),
-          onTap: () => push(const MyAddressScreen()),
-        ),
-        ListTile(
-          leading: const Icon(Icons.badge_outlined),
-          title: Text(l10n.myNameMenu),
-          onTap: () => _editMyName(context, core),
-        ),
-        ListTile(
-          leading: const Icon(Icons.fingerprint),
-          title: Text(l10n.myIdentity),
-          onTap: () => _showMyIdentity(context, core),
-        ),
-        const Divider(height: 32),
-        ListTile(
-          leading: const Icon(Icons.logout),
-          title: Text(l10n.exitMenu),
-          onTap: () => _confirmExit(context, core),
-        ),
-        ListTile(
-          leading: Icon(Icons.delete_forever_outlined, color: scheme.error),
-          title: Text(l10n.logoutDeleteMenu, style: TextStyle(color: scheme.error)),
-          onTap: () => _confirmLogout(context, core),
-        ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
+        _Panel([
+          _Item(Icons.qr_code_2, l10n.myAddressTitle, () => push(const MyAddressScreen())),
+          _Item(Icons.badge_outlined, l10n.myNameMenu, () => _editMyName(context, core)),
+          _Item(Icons.fingerprint, l10n.myIdentity, () => _showMyIdentity(context, core)),
+        ]),
+        const SizedBox(height: 18),
+        // The harmless way out above the destructive one, so it is the one found first.
+        _Panel([
+          _Item(Icons.logout, l10n.exitMenu, () => _confirmExit(context, core), chevron: false),
+          _Item(Icons.delete_forever_outlined, l10n.logoutDeleteMenu,
+              () => _confirmLogout(context, core),
+              danger: true, chevron: false),
+        ]),
       ],
     );
   }

@@ -95,7 +95,14 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.more_vert));
+    // Settings → Advanced, the one place this lives.
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('settings-advanced')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-advanced')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Burn read receipts'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Burn read receipts'));
     await tester.pumpAndSettle();

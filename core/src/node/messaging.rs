@@ -1855,6 +1855,27 @@ impl Node {
                 changed |= chat.history.len() != before;
             }
         }
+        // Groups: the per-group timer, same rule.
+        for group in self.groups.values_mut() {
+            let limit = group.disappearing_secs;
+            if limit == 0 {
+                continue;
+            }
+            let before = group.history.len();
+            group.history.retain(|gm| {
+                let m = &gm.message;
+                let expired = m.at != 0 && now.saturating_sub(m.at) > limit;
+                if expired {
+                    for id in [m.media_id.as_str(), m.thumb_id.as_str()] {
+                        if !id.is_empty() {
+                            dead_media.push(id.to_string());
+                        }
+                    }
+                }
+                !expired
+            });
+            changed |= group.history.len() != before;
+        }
         if let Some((dir, _)) = &self.media_store {
             for id in dead_media {
                 let _ = std::fs::remove_file(format!("{dir}/{id}.bin"));

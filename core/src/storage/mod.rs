@@ -291,6 +291,8 @@ pub struct PersistedGroup {
     pub members: Vec<String>,
     #[serde(default)]
     pub left: bool,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub disappearing_secs: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<PersistedGroupMessage>,
 }

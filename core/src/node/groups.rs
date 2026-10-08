@@ -26,16 +26,43 @@ pub(crate) struct Group {
     /// Identity keys of every member, the local user included; sorted.
     pub members: Vec<String>,
     pub history: Vec<GroupMessage>,
-    /// We left: the group is read-only and nothing more is sent to or accepted for it.
+    /// We left, or the creator removed us: the group is read-only and nothing more is sent to
+    /// or accepted for it.
     pub left: bool,
+    /// The group's disappearing-messages timer in seconds; 0 = off. Any member may set it.
+    pub disappearing_secs: u64,
+}
+
+/// A system notice as a group history entry.
+fn notice(text: &str) -> GroupMessage {
+    GroupMessage {
+        sender: String::new(),
+        message: ChatMessage::system(text.to_string()),
+    }
+}
+
+/// Parse a member list as it travels in `create` and `members`: identity keys, one per line.
+/// `None` unless it is sorted without repeats, within the size limit, and includes `creator`.
+fn parse_members(listed: &str, creator: &str) -> Option<Vec<String>> {
+    let mut members: Vec<String> = listed
+        .split('\n')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    members.sort();
+    let unique = members.windows(2).all(|w| w[0] != w[1]);
+    let ok = unique
+        && members.len() <= MAX_GROUP_MEMBERS
+        && members.iter().any(|m| m.as_str() == creator);
+    ok.then_some(members)
 }
 
 /// An invite payload longer than this is not an invite.
 const MAX_INTRO_PAYLOAD: usize = 4096;
 
 /// Pack a group envelope: `[group_id][op][body…]`. `op` names what the frame does (`create`,
-/// `msg`, `media`, `unsend`, `leave`, `intro`); a build that does not know an `op` ignores the
-/// frame.
+/// `msg`, `media`, `unsend`, `timer`, `members`, `leave`, `intro`); a build that does not know
+/// an `op` ignores the frame.
 pub(super) fn pack_group(group_id: &str, op: &str, body: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     put_field(&mut out, group_id.as_bytes());
@@ -154,6 +181,7 @@ impl Node {
                     message: ChatMessage::system("👥 You created the group.".to_string()),
                 }],
                 left: false,
+                disappearing_secs: 0,
             },
         );
         self.dirty = true;
@@ -330,6 +358,136 @@ impl Node {
         Ok(())
     }
 
+    /// The other members of a group we are an active member of, plus the group's name, member
+    /// list and timer; an error if there is no such group or we left it. With `as_creator`, also
+    /// an error unless we created it.
+    fn group_snapshot(
+        &self,
+        group_id: &str,
+        as_creator: bool,
+    ) -> Result<(Vec<String>, String, Vec<String>, u64)> {
+        let me = self.identity_key();
+        let group = self
+            .groups
+            .get(group_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown group"))?;
+        if group.left {
+            anyhow::bail!("you left this group");
+        }
+        if as_creator && group.creator != me {
+            anyhow::bail!("only the person who created the group can change its members");
+        }
+        let others = group
+            .members
+            .iter()
+            .filter(|m| m.as_str() != me.as_str())
+            .cloned()
+            .collect();
+        Ok((
+            others,
+            group.name.clone(),
+            group.members.clone(),
+            group.disappearing_secs,
+        ))
+    }
+
+    /// Set the group's disappearing-messages timer (0 = off) and tell the other members. Any
+    /// member may; messages older than the timer are then dropped on every device.
+    pub fn set_group_disappearing(&mut self, group_id: &str, secs: u64) -> Result<()> {
+        let (others, ..) = self.group_snapshot(group_id, false)?;
+        if let Some(group) = self.groups.get_mut(group_id) {
+            group.disappearing_secs = secs;
+            group.history.push(notice(&format!(
+                "⏱️ You set disappearing messages to {}.",
+                disappearing_label(secs)
+            )));
+        }
+        self.dirty = true;
+        let _ = self.fan_out(
+            &others,
+            &pack_group(group_id, "timer", secs.to_string().as_bytes()),
+        );
+        Ok(())
+    }
+
+    /// Add contacts to a group we created. They receive the group as if it had just been made;
+    /// the members already in it receive the new member list.
+    pub fn add_group_members(&mut self, group_id: &str, member_ids: &[String]) -> Result<()> {
+        let (others, name, old_members, timer) = self.group_snapshot(group_id, true)?;
+        if member_ids.is_empty() {
+            anyhow::bail!("nobody to add");
+        }
+        if old_members.len() + member_ids.len() > MAX_GROUP_MEMBERS {
+            anyhow::bail!("a group can have at most {MAX_GROUP_MEMBERS} members");
+        }
+        let mut members = old_members;
+        for id in member_ids {
+            if members.contains(id) {
+                anyhow::bail!("already a member, or added twice");
+            }
+            let chat = self
+                .chats
+                .get(id)
+                .ok_or_else(|| anyhow::anyhow!("unknown contact"))?;
+            if !chat.authorized || chat.closed {
+                anyhow::bail!("every member must be an open chat of yours");
+            }
+            if !self.groups_peers.contains(id) {
+                anyhow::bail!("a member needs a newer version of the app");
+            }
+            members.push(id.clone());
+        }
+        members.sort();
+        let listed = members.join("\n");
+        if let Some(group) = self.groups.get_mut(group_id) {
+            group.members = members;
+            group
+                .history
+                .push(notice("👥 You added a member to the group."));
+        }
+        self.dirty = true;
+
+        let _ = self.fan_out(&others, &pack_group(group_id, "members", listed.as_bytes()));
+        let mut body = Vec::new();
+        put_field(&mut body, name.as_bytes());
+        put_field(&mut body, listed.as_bytes());
+        self.fan_out(member_ids, &pack_group(group_id, "create", &body))?;
+        if timer > 0 {
+            let _ = self.fan_out(
+                member_ids,
+                &pack_group(group_id, "timer", timer.to_string().as_bytes()),
+            );
+        }
+        Ok(())
+    }
+
+    /// Remove a member from a group we created. Everyone, the removed member included, receives
+    /// the new member list; the removed member's copy becomes read-only.
+    pub fn remove_group_member(&mut self, group_id: &str, member_id: &str) -> Result<()> {
+        let (others, _, old_members, _) = self.group_snapshot(group_id, true)?;
+        if member_id == self.identity_key() {
+            anyhow::bail!("to go yourself, leave the group");
+        }
+        if !old_members.iter().any(|m| m.as_str() == member_id) {
+            anyhow::bail!("not a member of this group");
+        }
+        let members: Vec<String> = old_members
+            .into_iter()
+            .filter(|m| m.as_str() != member_id)
+            .collect();
+        let listed = members.join("\n");
+        if let Some(group) = self.groups.get_mut(group_id) {
+            group.members = members;
+            group
+                .history
+                .push(notice("👥 You removed a member from the group."));
+        }
+        self.dirty = true;
+        // `others` still includes the removed member: they are told too.
+        let _ = self.fan_out(&others, &pack_group(group_id, "members", listed.as_bytes()));
+        Ok(())
+    }
+
     /// Remove a group from this device, leaving it first if we had not already.
     pub fn delete_group(&mut self, group_id: &str) {
         let _ = self.leave_group(group_id);
@@ -337,9 +495,10 @@ impl Node {
         self.dirty = true;
     }
 
-    /// Every group as `(id, name, members, creator, left)`, sorted by name then id.
-    pub fn groups(&self) -> Vec<(String, String, Vec<String>, String, bool)> {
-        let mut out: Vec<(String, String, Vec<String>, String, bool)> = self
+    /// Every group as `(id, name, members, creator, left, disappearing_secs)`, sorted by name
+    /// then id.
+    pub fn groups(&self) -> Vec<(String, String, Vec<String>, String, bool, u64)> {
+        let mut out: Vec<(String, String, Vec<String>, String, bool, u64)> = self
             .groups
             .values()
             .map(|g| {
@@ -349,6 +508,7 @@ impl Node {
                     g.members.clone(),
                     g.creator.clone(),
                     g.left,
+                    g.disappearing_secs,
                 )
             })
             .collect();
@@ -375,45 +535,46 @@ impl Node {
         let (group_id, op, body) = unpack_group(plaintext)?;
         match op.as_str() {
             "create" => {
-                if self.groups.contains_key(&group_id) {
-                    return Ok(None);
-                }
                 let mut p = 0;
                 let name = String::from_utf8(take_field(&body, &mut p)?)?;
                 let listed = String::from_utf8(take_field(&body, &mut p)?)?;
-                let mut members: Vec<String> = listed
-                    .split('\n')
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string)
-                    .collect();
-                members.sort();
-                let unique = members.windows(2).all(|w| w[0] != w[1]);
                 let me = self.identity_key();
+                let Some(members) = parse_members(&listed, from) else {
+                    return Ok(None);
+                };
                 if name.chars().count() > 64
-                    || !unique
                     || members.len() < 2
-                    || members.len() > MAX_GROUP_MEMBERS
-                    || !members.iter().any(|m| m.as_str() == from)
                     || !members.iter().any(|m| m.as_str() == me.as_str())
                 {
                     return Ok(None);
                 }
-                self.groups.insert(
-                    group_id.clone(),
-                    Group {
-                        id: group_id.clone(),
-                        name,
-                        creator: from.to_string(),
-                        members,
-                        history: vec![GroupMessage {
-                            sender: String::new(),
-                            message: ChatMessage::system(
-                                "👥 You were added to the group.".to_string(),
-                            ),
-                        }],
-                        left: false,
-                    },
-                );
+                if let Some(group) = self.groups.get_mut(&group_id) {
+                    // A group we already have: only its creator adding us back after we left or
+                    // were removed. The history we kept stays; the timer comes again if it is on.
+                    if !group.left || group.creator.as_str() != from {
+                        return Ok(None);
+                    }
+                    group.left = false;
+                    group.name = name;
+                    group.members = members;
+                    group.disappearing_secs = 0;
+                    group
+                        .history
+                        .push(notice("👥 You were added to the group."));
+                } else {
+                    self.groups.insert(
+                        group_id.clone(),
+                        Group {
+                            id: group_id.clone(),
+                            name,
+                            creator: from.to_string(),
+                            members,
+                            history: vec![notice("👥 You were added to the group.")],
+                            left: false,
+                            disappearing_secs: 0,
+                        },
+                    );
+                }
                 self.dirty = true;
                 self.offer_introductions(&group_id);
                 Ok(Some((from.to_string(), String::new())))
@@ -555,6 +716,63 @@ impl Node {
                     remove_attachment_files(dir, &dead_files);
                 }
                 self.dirty = true;
+                Ok(Some((from.to_string(), String::new())))
+            }
+            "timer" => {
+                let Ok(secs) = String::from_utf8_lossy(&body).parse::<u64>() else {
+                    return Ok(None);
+                };
+                let Some(group) = self.groups.get_mut(&group_id) else {
+                    return Ok(None);
+                };
+                if group.left
+                    || !group.members.iter().any(|m| m.as_str() == from)
+                    || group.disappearing_secs == secs
+                {
+                    return Ok(None);
+                }
+                group.disappearing_secs = secs;
+                group.history.push(notice(&format!(
+                    "⏱️ A member set disappearing messages to {}.",
+                    disappearing_label(secs)
+                )));
+                self.dirty = true;
+                Ok(Some((from.to_string(), String::new())))
+            }
+            "members" => {
+                // The whole new member list, from the creator — the only one who may change it.
+                let me = self.identity_key();
+                let still_in = {
+                    let Some(group) = self.groups.get_mut(&group_id) else {
+                        return Ok(None);
+                    };
+                    if group.left || group.creator.as_str() != from {
+                        return Ok(None);
+                    }
+                    let Some(members) = parse_members(&String::from_utf8_lossy(&body), from) else {
+                        return Ok(None);
+                    };
+                    if members == group.members {
+                        return Ok(None);
+                    }
+                    let still_in = members.iter().any(|m| m.as_str() == me.as_str());
+                    let added = members.iter().any(|m| !group.members.contains(m));
+                    group.history.push(notice(if !still_in {
+                        "👥 You were removed from the group."
+                    } else if added {
+                        "👥 A member was added to the group."
+                    } else {
+                        "👥 A member was removed from the group."
+                    }));
+                    group.left = !still_in;
+                    group.members = members;
+                    still_in
+                };
+                self.dirty = true;
+                if still_in {
+                    // Someone new may be a stranger to us.
+                    self.offer_introductions(&group_id);
+                }
                 Ok(Some((from.to_string(), String::new())))
             }
             "leave" => {

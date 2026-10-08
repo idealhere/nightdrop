@@ -101,6 +101,7 @@ impl Node {
                 creator: g.creator.clone(),
                 members: g.members.clone(),
                 left: g.left,
+                disappearing_secs: g.disappearing_secs,
                 history: g
                     .history
                     .iter()
@@ -401,6 +402,7 @@ impl Node {
                         })
                         .collect(),
                     left: g.left,
+                    disappearing_secs: g.disappearing_secs,
                 },
             );
         }

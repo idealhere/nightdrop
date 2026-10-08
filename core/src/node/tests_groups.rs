@@ -59,7 +59,7 @@ fn creating_a_group_adds_it_for_every_member() {
     for node in [&bob, &carol] {
         let groups = node.groups();
         assert_eq!(groups.len(), 1);
-        let (id, name, members, creator, left) = groups[0].clone();
+        let (id, name, members, creator, left, _timer) = groups[0].clone();
         assert_eq!(id, gid);
         assert_eq!(name, "trio");
         assert_eq!(members.len(), 3);
@@ -261,6 +261,7 @@ fn plant_group(node: &mut Node, id: &str, creator: &str, members: &[String]) {
             members,
             history: Vec::new(),
             left: false,
+            disappearing_secs: 0,
         },
     );
 }
@@ -580,4 +581,157 @@ fn a_voice_message_reaches_the_group_and_can_be_unsent() {
         .send_group_media(&gid, &[1], "application/pdf", "file")
         .is_err());
     remove_stores(&dirs);
+}
+
+#[test]
+fn a_group_timer_is_shared_and_noted() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let gid = alice
+        .create_group("timer", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice.set_group_disappearing(&gid, 3600).unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    for node in [&alice, &bob, &carol] {
+        assert_eq!(node.groups()[0].5, 3600);
+        let last = last_of(node, &gid);
+        assert!(last.system);
+        assert!(last.text.contains("disappearing messages to 1 hour"));
+    }
+}
+
+#[test]
+fn group_messages_expire_with_the_timer() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let gid = alice
+        .create_group("expire", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice.set_group_disappearing(&gid, 60).unwrap();
+    alice.send_group(&gid, "old").unwrap();
+    alice.send_group(&gid, "fresh").unwrap();
+
+    // Two minutes pass for the first message only.
+    let group = alice.groups.get_mut(&gid).unwrap();
+    let old = group
+        .history
+        .iter_mut()
+        .find(|gm| gm.message.text == "old")
+        .unwrap();
+    old.message.at = crate::api::now_secs() - 120;
+    alice.sweep_time();
+
+    let texts: Vec<String> = alice
+        .group_messages(&gid)
+        .into_iter()
+        .map(|gm| gm.message.text)
+        .collect();
+    assert!(!texts.iter().any(|t| t == "old"));
+    assert!(texts.iter().any(|t| t == "fresh"));
+}
+
+#[test]
+fn the_creator_can_add_a_member_who_then_gets_messages() {
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    let mut carol = Node::new(Box::new(net.endpoint("carol")));
+    let mut dave = Node::new(Box::new(net.endpoint("dave")));
+    pair(&mut alice, "alice", &mut bob);
+    pair(&mut alice, "alice", &mut carol);
+    pair(&mut alice, "alice", &mut dave);
+    let gid = alice
+        .create_group("grow", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol, &mut dave]);
+    alice.set_group_disappearing(&gid, 3600).unwrap();
+
+    alice
+        .add_group_members(&gid, &[dave.identity_key()])
+        .unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol, &mut dave]);
+
+    for node in [&alice, &bob, &carol, &dave] {
+        assert_eq!(node.groups()[0].2.len(), 4);
+    }
+    assert_eq!(dave.groups()[0].5, 3600, "the newcomer gets the timer too");
+
+    // Dave knew only Alice; the others were introduced to him.
+    dave.send_group(&gid, "dave here").unwrap();
+    bob.send_group(&gid, "hello dave").unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol, &mut dave]);
+    assert!(bob
+        .group_messages(&gid)
+        .iter()
+        .any(|gm| gm.sender == dave.identity_key() && gm.message.text == "dave here"));
+    assert!(dave
+        .group_messages(&gid)
+        .iter()
+        .any(|gm| gm.sender == bob.identity_key() && gm.message.text == "hello dave"));
+}
+
+#[test]
+fn only_the_creator_can_change_members() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let gid = alice
+        .create_group("roles", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    assert!(bob
+        .remove_group_member(&gid, &carol.identity_key())
+        .is_err());
+    assert!(bob
+        .add_group_members(&gid, &[carol.identity_key()])
+        .is_err());
+
+    // A member list that arrives from someone other than the creator changes nothing.
+    let before = carol.groups()[0].2.clone();
+    let without_alice = [bob.identity_key(), carol.identity_key()].join("\n");
+    let envelope = pack_group(&gid, "members", without_alice.as_bytes());
+    assert_eq!(
+        carol
+            .on_group_frame(&bob.identity_key(), &envelope)
+            .unwrap(),
+        None
+    );
+    assert_eq!(carol.groups()[0].2, before);
+}
+
+#[test]
+fn a_removed_member_is_out_and_can_be_added_back() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let gid = alice
+        .create_group("remove", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    alice
+        .remove_group_member(&gid, &bob.identity_key())
+        .unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+    assert_eq!(alice.groups()[0].2.len(), 2);
+    assert_eq!(carol.groups()[0].2.len(), 2);
+    assert!(bob.groups()[0].4, "Bob's copy is read-only");
+    assert!(bob.send_group(&gid, "still here?").is_err());
+
+    // What Bob might still send is refused by the others.
+    let before = carol.group_messages(&gid).len();
+    let late = msg_envelope(&gid, "late-id", "still here?");
+    assert_eq!(
+        carol.on_group_frame(&bob.identity_key(), &late).unwrap(),
+        None
+    );
+    assert_eq!(carol.group_messages(&gid).len(), before);
+
+    alice
+        .add_group_members(&gid, &[bob.identity_key()])
+        .unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+    assert!(!bob.groups()[0].4);
+    assert_eq!(bob.groups()[0].2.len(), 3);
+    alice.send_group(&gid, "welcome back").unwrap();
+    settle(&mut [&mut alice, &mut bob, &mut carol]);
+    assert_eq!(last_of(&bob, &gid).text, "welcome back");
 }

@@ -378,8 +378,10 @@ pub struct GroupInfo {
     pub members: Vec<String>,
     /// Identity key of the member who created the group.
     pub creator: String,
-    /// We left this group: it is read-only.
+    /// We left this group, or were removed from it: it is read-only.
     pub left: bool,
+    /// The group's disappearing-messages timer in seconds; 0 = off.
+    pub disappearing_secs: u64,
 }
 
 /// One entry in a group's history (UI-facing).
@@ -2153,13 +2155,16 @@ impl NightdropCore {
             .me
             .groups()
             .into_iter()
-            .map(|(id, name, members, creator, left)| GroupInfo {
-                id,
-                name,
-                members,
-                creator,
-                left,
-            })
+            .map(
+                |(id, name, members, creator, left, disappearing_secs)| GroupInfo {
+                    id,
+                    name,
+                    members,
+                    creator,
+                    left,
+                    disappearing_secs,
+                },
+            )
             .collect()
     }
 
@@ -2215,6 +2220,30 @@ impl NightdropCore {
     pub fn unsend_group_message(&self, group_id: &str, id: &str) -> Result<()> {
         let mut g = self.lock();
         g.me.unsend_group_message(group_id, id)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Set a group's disappearing-messages timer in seconds (0 = off). Any member may.
+    pub fn set_group_disappearing(&self, group_id: &str, secs: u64) -> Result<()> {
+        let mut g = self.lock();
+        g.me.set_group_disappearing(group_id, secs)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Add contacts to a group we created.
+    pub fn add_group_members(&self, group_id: &str, member_ids: Vec<String>) -> Result<()> {
+        let mut g = self.lock();
+        let added = g.me.add_group_members(group_id, &member_ids);
+        g.save();
+        added
+    }
+
+    /// Remove a member from a group we created.
+    pub fn remove_group_member(&self, group_id: &str, member_id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.remove_group_member(group_id, member_id)?;
         g.save();
         Ok(())
     }

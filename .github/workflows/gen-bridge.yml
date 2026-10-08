@@ -5,7 +5,7 @@ name: Regenerate Dart-Rust bridge
 # never pushes. On a tree whose bindings are current the patch is empty, which is the check that
 # this job reproduces the committed bindings before anyone relies on it for a real change.
 # It runs only when this file changes (or manually).
-# Edit the line below to request a fresh run: bridge 3
+# Edit the line below to request a fresh run: bridge 4
 on:
   push:
     branches: [feature/https-primary-transport]

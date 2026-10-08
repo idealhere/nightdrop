@@ -85,6 +85,19 @@ static RELAY_POLL_NOW: AtomicBool = AtomicBool::new(true);
 const RELAY_POLL_FOREGROUND: Duration = Duration::from_secs(15);
 const RELAY_POLL_BACKGROUND: Duration = Duration::from_secs(5 * 60);
 
+/// The cadences above assume a direct connection carries live messages and the relay only holds
+/// mail for someone who was away. On the HTTPS-first transport there is no direct connection:
+/// **every** message waits on the relay for the next poll, so those cadences are the delivery
+/// delay itself — up to 15 s with the chat open, up to five minutes with the app in the
+/// background. A round here is plain HTTPS rather than Tor circuits, which is what made frequent
+/// rounds expensive, so the relay is asked far more often. (Holding a request open until mail
+/// arrives would be better still; that needs the relay's cooperation and is not done yet.)
+const RELAY_POLL_FOREGROUND_PRIMARY: Duration = Duration::from_secs(2);
+const RELAY_POLL_BACKGROUND_PRIMARY: Duration = Duration::from_secs(30);
+
+/// Set when the relay is the only path messages take ([`NightdropCore::new_https_relay`]).
+static RELAY_IS_PRIMARY: AtomicBool = AtomicBool::new(false);
+
 /// While a short-code invite is outstanding, the inviter polls the rendezvous this often so
 /// answering a joiner's SPAKE2 opener feels near-instant (pairing is a brief, attended flow).
 const RELAY_POLL_PAIRING: Duration = Duration::from_secs(2);
@@ -1081,6 +1094,7 @@ impl NightdropCore {
         let dialer = crate::relay_client::https::https_relay_dialer(&relay_url)?;
         let relay = RelayClient::with_dialer_for(relay_url, dialer);
         let transport = crate::transport::relay_only::RelayOnlyTransport::new();
+        RELAY_IS_PRIMARY.store(true, Ordering::Relaxed);
 
         let persist = match (persist_path, persist_key) {
             (Some(path), Some(key)) => Some((path, decode_store_key(&key)?)),
@@ -2850,12 +2864,13 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
                 let g = inner.lock().unwrap_or_else(|e| e.into_inner());
                 g.me.has_pending_invites()
             };
-            let interval = if pairing {
-                RELAY_POLL_PAIRING
-            } else if background {
-                RELAY_POLL_BACKGROUND
-            } else {
-                RELAY_POLL_FOREGROUND
+            let primary = RELAY_IS_PRIMARY.load(Ordering::Relaxed);
+            let interval = match (pairing, background, primary) {
+                (true, _, _) => RELAY_POLL_PAIRING,
+                (false, true, true) => RELAY_POLL_BACKGROUND_PRIMARY,
+                (false, true, false) => RELAY_POLL_BACKGROUND,
+                (false, false, true) => RELAY_POLL_FOREGROUND_PRIMARY,
+                (false, false, false) => RELAY_POLL_FOREGROUND,
             };
             // Due only when no drain is in flight; `&&` keeps a poll-now request queued meanwhile.
             let relay_due = drain_job.is_none()
@@ -3031,6 +3046,9 @@ mod tests {
     fn background_relay_polling_runs_at_the_designed_cadence() {
         const { assert!(RELAY_POLL_BACKGROUND.as_secs() == 300) };
         const { assert!(RELAY_POLL_FOREGROUND.as_secs() < RELAY_POLL_BACKGROUND.as_secs()) };
+        // Where the relay is the only path, it is asked more often than where it is a fallback.
+        const { assert!(RELAY_POLL_FOREGROUND_PRIMARY.as_secs() < RELAY_POLL_FOREGROUND.as_secs()) };
+        const { assert!(RELAY_POLL_BACKGROUND_PRIMARY.as_secs() < RELAY_POLL_BACKGROUND.as_secs()) };
     }
 
     /// A memory transport that reports itself asynchronous, as Tor does, so messages go through the

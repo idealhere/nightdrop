@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
@@ -223,7 +224,43 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     }
   }
 
-  /// Long-press on our own recent message: delete it for everyone.
+  /// Long-press on a message: copy its text, or delete our own recent one for everyone.
+  Future<void> _showMessageMenu(Message message, {required bool canDelete}) async {
+    final l10n = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (message.canCopy)
+              ListTile(
+                key: const ValueKey('message-copy'),
+                leading: const Icon(Icons.copy_outlined),
+                title: Text(l10n.copyText),
+                onTap: () => Navigator.pop(context, 'copy'),
+              ),
+            if (canDelete)
+              ListTile(
+                key: const ValueKey('message-delete'),
+                leading: const Icon(Icons.delete_outline),
+                title: Text(l10n.deleteForEveryone),
+                onTap: () => Navigator.pop(context, 'delete'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (action == 'copy') {
+      await Clipboard.setData(ClipboardData(text: message.text));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.textCopied)));
+    } else if (action == 'delete' && mounted) {
+      await _offerDelete(message);
+    }
+  }
+
+  /// Confirm, then delete one of our own recent messages for everyone.
   Future<void> _offerDelete(Message message) async {
     final l10n = AppLocalizations.of(context)!;
     final core = NightdropScope.of(context);
@@ -517,7 +554,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                     final m = messages[i];
                     if (m.system) return _Notice(text: m.text);
                     return GestureDetector(
-                      onLongPress: m.canUnsend && !group.left ? () => _offerDelete(m) : null,
+                      onLongPress: m.canCopy || (m.canUnsend && !group.left)
+                          ? () => _showMessageMenu(m, canDelete: m.canUnsend && !group.left)
+                          : null,
                       child: _GroupBubble(
                         message: m,
                         sender: m.fromMe ? '' : groupMemberName(context, core, m.senderId),

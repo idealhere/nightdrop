@@ -510,26 +510,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Paste text from the clipboard into the composer at the cursor. (Image paste was dropped
-  /// with the `pasteboard` plugin — the last KGP-warning dependency; send a picture with the
-  /// attach button instead, which also compresses it for Tor.)
-  Future<void> _paste() async {
-    final l10n = AppLocalizations.of(context)!;
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text;
-    if (text != null && text.isNotEmpty) {
-      final sel = _input.selection;
-      final base = _input.text;
-      if (sel.isValid) {
-        _input.text = base.replaceRange(sel.start, sel.end, text);
-      } else {
-        _input.text = base + text;
-      }
-    } else {
-      _toast(l10n.nothingToPaste);
-    }
-  }
-
   Future<void> _sendMedia(
       List<int> bytes, String mime, String kind, List<int> thumb) async {
     final l10n = AppLocalizations.of(context)!;
@@ -646,7 +626,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Long-press menu for one of our own eligible messages: edit or unsend.
+  /// Long-press menu for a message: copy its text, and for one of our own recent messages also
+  /// edit or unsend.
   Future<void> _showMessageMenu(Message message) async {
     final l10n = AppLocalizations.of(context)!;
     final action = await showModalBottomSheet<String>(
@@ -655,6 +636,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (message.canCopy)
+              ListTile(
+                key: const ValueKey('message-copy'),
+                leading: const Icon(Icons.copy_outlined),
+                title: Text(l10n.copyText),
+                onTap: () => Navigator.pop(context, 'copy'),
+              ),
             // A photo or video can be removed but not edited.
             if (message.canEdit)
               ListTile(
@@ -662,17 +650,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 title: Text(l10n.edit),
                 onTap: () => Navigator.pop(context, 'edit'),
               ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: Text(l10n.deleteForEveryone),
-              onTap: () => Navigator.pop(context, 'unsend'),
-            ),
+            if (message.canUnsend)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: Text(l10n.deleteForEveryone),
+                onTap: () => Navigator.pop(context, 'unsend'),
+              ),
           ],
         ),
       ),
     );
     if (!mounted || action == null) return;
-    if (action == 'edit') {
+    if (action == 'copy') {
+      await Clipboard.setData(ClipboardData(text: message.text));
+      _toast(l10n.textCopied);
+    } else if (action == 'edit') {
       await _editMessage(message);
     } else if (action == 'unsend') {
       await _unsendMessage(message);
@@ -1052,7 +1044,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                       : contact.shownTheirName,
                                   // Right-click (desktop) or long-press (mobile) own recent/
                                   // queued text to edit or unsend it.
-                                  onLongPress: m.canUnsend
+                                  onLongPress: m.canCopy || m.canUnsend
                                       ? () => _showMessageMenu(m)
                                       : null,
                                   onReveal: m.isBurnHidden && !m.fromMe
@@ -1085,7 +1077,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   onBurn: _offerBurn,
                   onBurnAttach: _offerBurnMedia,
                   onAttach: _attachMedia,
-                  onPaste: _paste,
                   onVoice: () => setState(() => _recordingVoice = true),
                 ),
             ],
@@ -2086,7 +2077,6 @@ class _Composer extends StatelessWidget {
     required this.onBurn,
     required this.onAttach,
     required this.onBurnAttach,
-    required this.onPaste,
     required this.onVoice,
   });
 
@@ -2105,7 +2095,6 @@ class _Composer extends StatelessWidget {
 
   /// Long-press / right-click the attach button: send the attachment as a burn message.
   final Future<void> Function(Offset position) onBurnAttach;
-  final Future<void> Function() onPaste;
 
   @override
   Widget build(BuildContext context) {
@@ -2143,13 +2132,6 @@ class _Composer extends StatelessWidget {
               style: _composerTile,
               icon: const Icon(Icons.mic_none),
               onPressed: onVoice,
-            ),
-            const SizedBox(width: 6),
-            IconButton(
-              tooltip: l10n.pasteText,
-              style: _composerTile,
-              icon: const Icon(Icons.content_paste),
-              onPressed: onPaste,
             ),
             const SizedBox(width: 8),
             Expanded(

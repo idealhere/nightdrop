@@ -1447,6 +1447,14 @@
   "@voiceNoPermission": {
     "description": "Shown when the microphone permission is refused."
   },
+  "copyText": "Copy",
+  "@copyText": {
+    "description": "Entry in the message menu: copy the message text."
+  },
+  "textCopied": "Copied",
+  "@textCopied": {
+    "description": "Snackbar after copying a message."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

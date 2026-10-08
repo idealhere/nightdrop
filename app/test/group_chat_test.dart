@@ -69,6 +69,9 @@ void main() {
 
     await tester.longPress(find.text('oops'));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('message-copy')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('message-delete')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('group-delete-confirm')));
     await tester.pumpAndSettle();
 

@@ -303,6 +303,8 @@
   "voicePlay": "Слушать",
   "voicePause": "Пауза",
   "voiceNoPermission": "Чтобы записать голосовое сообщение, CyberDog нужен доступ к микрофону.",
+  "copyText": "Скопировать",
+  "textCopied": "Скопировано",
   "messageHint": "Сообщение",
   "appLockMenu": "Блокировка приложения",
   "lockedTitle": "CyberDog заблокирован",

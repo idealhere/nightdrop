@@ -423,6 +423,10 @@ class Message {
           (delivery == 'queued' ||
               DateTime.now().difference(at) < const Duration(minutes: 15)));
 
+  /// Whether this message has text that may be copied: ordinary text, ours or theirs. A burn
+  /// message is left out — it exists to not be kept.
+  bool get canCopy => isText && !system && !sending && burnSecs == 0 && text.isNotEmpty;
+
   /// The id that names this message to the core for an unsend: text carries [msgId], an
   /// attachment has none and is named by [transferId].
   String get unsendId => msgId.isNotEmpty ? msgId : transferId;

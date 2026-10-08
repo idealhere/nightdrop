@@ -46,13 +46,35 @@ class _InviteTabState extends State<_InviteTab> {
   PairingInvite? _invite;
   bool _requested = false;
 
+  /// The chats that existed when this screen opened, so the one the invite creates stands out.
+  Set<String>? _before;
+  bool _opened = false;
+
+  /// Runs when the screen appears and again whenever the core changes.
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final core = NightdropScope.of(context);
+    final before = _before ??= core.contacts.map((c) => c.id).toSet();
+    _openNewChat(core, before);
     if (_requested) return;
     _requested = true;
-    NightdropScope.of(context).createInvite().then((inv) {
+    core.createInvite().then((inv) {
       if (mounted) setState(() => _invite = inv);
+    });
+  }
+
+  /// Someone used the code: there is nothing left to show here, so go to the chat it created.
+  void _openNewChat(NightdropCore core, Set<String> before) {
+    if (_opened) return;
+    final joined = core.contacts.where((c) => !before.contains(c.id)).firstOrNull;
+    if (joined == null) return;
+    _opened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => ChatScreen(contactId: joined.id)),
+      );
     });
   }
 

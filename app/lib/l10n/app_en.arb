@@ -1431,6 +1431,10 @@
   "@voiceSend": {
     "description": "Tooltip of the send button while recording."
   },
+  "voiceSpeed": "Playback speed",
+  "@voiceSpeed": {
+    "description": "Tooltip of the speed button on a voice message."
+  },
   "voicePlay": "Play",
   "@voicePlay": {
     "description": "Tooltip of the play button on a voice message."

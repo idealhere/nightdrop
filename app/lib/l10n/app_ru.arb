@@ -299,6 +299,7 @@
   "voiceRecord": "Записать голосовое сообщение",
   "voiceRecording": "Идёт запись",
   "voiceSend": "Отправить голосовое",
+  "voiceSpeed": "Скорость воспроизведения",
   "voicePlay": "Слушать",
   "voicePause": "Пауза",
   "voiceNoPermission": "Чтобы записать голосовое сообщение, CyberDog нужен доступ к микрофону.",

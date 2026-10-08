@@ -24,6 +24,17 @@ const int kVoiceBitRate = 32000;
 /// Longest voice message the recorder will take, to keep one message a reasonable size.
 const Duration kMaxVoiceLength = Duration(minutes: 5);
 
+/// The playback speeds a voice message offers, in the order the button steps through them.
+const List<double> kVoiceSpeeds = [1.0, 1.5, 0.75];
+
+/// The speed voice messages play at. One choice for the whole app, kept while it is open: someone
+/// who listens at 1.5× wants the next message at 1.5× as well.
+final ValueNotifier<double> voiceSpeed = ValueNotifier<double>(1.0);
+
+/// "1×", "1.5×", "0.75×".
+String voiceSpeedLabel(double speed) =>
+    '${speed == speed.roundToDouble() ? speed.toInt() : speed}×';
+
 String _clock(Duration d) =>
     '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 
@@ -228,6 +239,7 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     _subs.add(_player.onPlayerStateChanged.listen((s) {
       if (mounted) setState(() => _playing = s == PlayerState.playing);
     }));
+    voiceSpeed.addListener(_applySpeed);
     _subs.add(_player.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() {
@@ -240,11 +252,24 @@ class _VoiceBubbleState extends State<VoiceBubble> {
 
   @override
   void dispose() {
+    voiceSpeed.removeListener(_applySpeed);
     for (final s in _subs) {
       s.cancel();
     }
     _player.dispose();
     super.dispose();
+  }
+
+  /// Bring this player to the chosen speed. Before the audio is loaded there is nothing to set;
+  /// [_toggle] applies it when playback starts.
+  void _applySpeed() {
+    if (mounted) setState(() {});
+    if (_loaded) unawaited(_player.setPlaybackRate(voiceSpeed.value).catchError((Object _) {}));
+  }
+
+  void _nextSpeed() {
+    final i = kVoiceSpeeds.indexOf(voiceSpeed.value);
+    voiceSpeed.value = kVoiceSpeeds[(i + 1) % kVoiceSpeeds.length];
   }
 
   Future<void> _toggle() async {
@@ -263,6 +288,8 @@ class _VoiceBubbleState extends State<VoiceBubble> {
         _loaded = true;
       }
       await _player.resume();
+      // After resume: some platforms reset the rate when playback (re)starts.
+      await _player.setPlaybackRate(voiceSpeed.value);
     } catch (_) {
       if (mounted) setState(() => _failed = true);
     }
@@ -275,8 +302,9 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     final ink = widget.mine ? Colors.white : scheme.onSurface;
     final total = _length.inMilliseconds;
     final at = total == 0 ? 0.0 : (_position.inMilliseconds / total).clamp(0.0, 1.0);
-    return SizedBox(
-      width: 230,
+    // Up to this wide, and narrower where the bubble is (a small phone, a group chat).
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 262),
       child: Row(
         children: [
           IconButton(
@@ -309,7 +337,7 @@ class _VoiceBubbleState extends State<VoiceBubble> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Text(
             _clock(_playing || _position > Duration.zero
                 ? _position
@@ -317,6 +345,29 @@ class _VoiceBubbleState extends State<VoiceBubble> {
                     ? _length
                     : Duration(milliseconds: widget.bytes * 8000 ~/ kVoiceBitRate)),
             style: TextStyle(fontSize: 12, color: ink.withValues(alpha: 0.8)),
+          ),
+          const SizedBox(width: 4),
+          // Tap to step through the speeds.
+          InkWell(
+            key: const ValueKey('voice-speed'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: _nextSpeed,
+            child: Tooltip(
+              message: l10n.voiceSpeed,
+              child: Container(
+                width: 44,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ink.withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  voiceSpeedLabel(voiceSpeed.value),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ink),
+                ),
+              ),
+            ),
           ),
         ],
       ),

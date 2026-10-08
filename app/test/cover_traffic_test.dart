@@ -19,6 +19,10 @@ class _CoverCore extends MockNightdropCore {
 
 void main() {
   Future<_CoverCore> pumpHome(WidgetTester tester) async {
+    // Tall enough for the whole Settings section; the default test screen is 600 px high.
+    tester.view.physicalSize = const Size(600, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final core = _CoverCore();
     await tester.runAsync(core.createIdentity);
     await tester.pumpWidget(NightdropApp(core: core));
@@ -27,7 +31,10 @@ void main() {
   }
 
   Future<void> openCoverDialog(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.more_vert));
+    // Settings → Advanced, the one place this lives.
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-advanced')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cover traffic').last);
     await tester.pumpAndSettle();

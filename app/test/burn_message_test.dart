@@ -75,6 +75,10 @@ void main() {
   // version where they get the early deletion without the timing.
   testWidgets('burn read receipts are off by default and disclose what they leak',
       (tester) async {
+    // Tall enough for the whole Settings section; the default test screen is 600 px high.
+    tester.view.physicalSize = const Size(600, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final core = _BurnCore();
     await tester.runAsync(() async {
       await core.createIdentity();
@@ -98,11 +102,7 @@ void main() {
     // Settings → Advanced, the one place this lives.
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('settings-advanced')));
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-advanced')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Burn read receipts'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Burn read receipts'));
     await tester.pumpAndSettle();

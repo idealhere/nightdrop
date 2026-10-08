@@ -14,6 +14,7 @@ import 'media_cache.dart';
 import 'models.dart';
 import 'notifications.dart';
 import 'privacy_prefs.dart';
+import '../features/pairing/scan_screen.dart' show isNightdropInvite;
 import 'profile_name.dart';
 import 'install_source.dart';
 import 'public_downloads.dart';
@@ -1564,7 +1565,7 @@ class RustNightdropCore extends NightdropCore {
     // A scanned/typed QR pre-auth payload (the Tor pairing path) goes through connectViaQr;
     // a bare short code uses the rendezvous (networked) or the in-process demo.
     late rust.Contact created;
-    if (code.startsWith('nightdrop://')) {
+    if (isNightdropInvite(code.trim())) {
       created = await _core!.connectViaQr(payload: code);
     } else if (_networked || _httpsRelay || _tor) {
       // A bare `slot-secret-words` short code: run the SPAKE2 rendezvous handshake over the

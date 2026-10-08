@@ -314,7 +314,7 @@ class _JoinTabState extends State<_JoinTab> {
                   autofocus: true,
                   decoration: InputDecoration(
                     labelText: l10n.shortCodeOrInviteLink,
-                    hintText: '4-cedar-lantern-river  or  nightdrop://pair?…',
+                    hintText: '4-cedar-lantern-river  or  cyberdog://pair?…',
                     border: const OutlineInputBorder(),
                     errorText: _error,
                   ),

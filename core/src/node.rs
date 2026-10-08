@@ -1062,7 +1062,7 @@ impl Node {
         self.require_authorization = require;
     }
 
-    /// Our standing address: a `nightdrop://pair?…` link that does not expire and may be given
+    /// Our standing address: a `cyberdog://pair?…` link that does not expire and may be given
     /// to any number of people. Whoever has it can send a chat request, which then waits for
     /// approval ([`address_requests`](Self::address_requests)). It carries a reusable pre-key in
     /// place of a one-time one; `static=1` only marks it for a reader.
@@ -1076,7 +1076,7 @@ impl Node {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("could not create an address"))?;
         Ok(format!(
-            "nightdrop://pair?addr={}&ik={}&otk={}&static=1",
+            "cyberdog://pair?addr={}&ik={}&otk={}&static=1",
             self.address(),
             self.identity_key(),
             key

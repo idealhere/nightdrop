@@ -1731,7 +1731,7 @@ impl NightdropCore {
         let mut g = self.lock();
         let bundle = g.me.publish_bundle();
         let qr_payload = format!(
-            "nightdrop://pair?addr={}&ik={}&otk={}",
+            "cyberdog://pair?addr={}&ik={}&otk={}",
             g.me.address(),
             bundle.identity_key,
             bundle.one_time_key
@@ -2978,7 +2978,8 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
     });
 }
 
-/// Parse `nightdrop://pair?addr=...&ik=...&otk=...` into (address, pre-key bundle).
+/// Parse `cyberdog://pair?addr=...&ik=...&otk=...` into (address, pre-key bundle). The scheme is
+/// not looked at, so a link written by an older build (`nightdrop://pair?…`) parses the same.
 pub(crate) fn parse_invite(payload: &str) -> Result<(String, PreKeyBundle)> {
     let query = payload
         .split_once("://pair?")

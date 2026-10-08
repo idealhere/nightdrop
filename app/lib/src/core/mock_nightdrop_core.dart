@@ -44,7 +44,7 @@ class MockNightdropCore extends NightdropCore {
       List.unmodifiable(_messages[contactId] ?? const []);
 
   @override
-  Future<String> myAddress() async => 'nightdrop://pair?addr=mock&ik=mock&otk=mock&static=1';
+  Future<String> myAddress() async => 'cyberdog://pair?addr=mock&ik=mock&otk=mock&static=1';
 
   final List<Group> _groups = [];
   final Map<String, List<Message>> _groupMessages = {};
@@ -190,7 +190,7 @@ class MockNightdropCore extends NightdropCore {
     _requests.add(Contact(id: 'nightdrop:${_token(10)}'));
     notifyListeners();
     return PairingInvite(
-        shortCode: code, qrPayload: 'nightdrop://pair?b=${_token(24)}');
+        shortCode: code, qrPayload: 'cyberdog://pair?b=${_token(24)}');
   }
 
   @override

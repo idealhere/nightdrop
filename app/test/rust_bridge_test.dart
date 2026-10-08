@@ -57,7 +57,7 @@ void main() {
     await core.createIdentity();
     final invite = await core.createInvite();
     expect(invite.shortCode.split('-'), hasLength(4));
-    expect(invite.qrPayload, startsWith('nightdrop://pair?addr='));
+    expect(invite.qrPayload, startsWith('cyberdog://pair?addr='));
     expect(invite.qrPayload, contains('&ik='));
   });
 

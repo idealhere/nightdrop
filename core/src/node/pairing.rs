@@ -331,12 +331,12 @@ impl Node {
 
     /// Joiner side: open a session toward the inviter from a payload recovered by
     /// [`run_join_handshake`], and return the new contact.
-    /// A `nightdrop://pair?…` payload for connecting to this node: a fresh pre-key bundle plus our
+    /// A `cyberdog://pair?…` payload for connecting to this node: a fresh pre-key bundle plus our
     /// current address. What a QR invite carries; also what a group introduction passes along.
     pub(super) fn build_pair_payload(&mut self) -> String {
         let bundle = self.publish_bundle();
         format!(
-            "nightdrop://pair?addr={}&ik={}&otk={}",
+            "cyberdog://pair?addr={}&ik={}&otk={}",
             self.address(),
             bundle.identity_key,
             bundle.one_time_key

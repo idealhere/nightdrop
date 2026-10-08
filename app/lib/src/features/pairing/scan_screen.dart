@@ -13,11 +13,12 @@ import '../../../l10n/app_localizations.dart';
 bool get canScanQr => Platform.isAndroid || Platform.isIOS;
 
 /// Returns true if [raw] is a pre-authorized CyberDog pairing payload (§5a):
-/// `nightdrop://pair?addr=...&ik=...&otk=...`.
+/// `cyberdog://pair?addr=...&ik=...&otk=...`.
 bool isNightdropInvite(String raw) {
   final uri = Uri.tryParse(raw);
   return uri != null &&
-      uri.scheme == 'nightdrop' &&
+      // 'nightdrop' is what builds before the rename wrote; both are the same invite.
+      (uri.scheme == 'cyberdog' || uri.scheme == 'nightdrop') &&
       uri.host == 'pair' &&
       uri.queryParameters.containsKey('ik');
 }

@@ -185,7 +185,7 @@ class _CyberDogSendButtonState extends State<CyberDogSendButton> {
           child: AnimatedSlide(
             duration: const Duration(milliseconds: 120),
             offset: _down ? const Offset(.1, 0) : Offset.zero,
-            child: const CyberDogMark(size: 26, color: Color(0xFFF5F2FF)),
+            child: const CyberDogMark(size: 31, color: Color(0xFFF5F2FF)),
           ),
         ),
       ),

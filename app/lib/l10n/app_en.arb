@@ -1455,6 +1455,26 @@
   "@textCopied": {
     "description": "Snackbar after copying a message."
   },
+  "securityLineUnverified": "Secure chat · Not verified",
+  "@securityLineUnverified": {
+    "description": "The one-line security summary above an unverified chat."
+  },
+  "securityLineVerified": "Secure chat · Verified",
+  "@securityLineVerified": {
+    "description": "The one-line security summary above a verified chat."
+  },
+  "unverifiedBannerDetail": "Compare this contact’s safety number with them to be sure no one is in the middle.",
+  "@unverifiedBannerDetail": {
+    "description": "Explanation shown when the unverified security line is tapped."
+  },
+  "menuServerStorageOn": "Server storage: on (24 h)",
+  "@menuServerStorageOn": {
+    "description": "Chat menu entry that turns server storage off."
+  },
+  "menuServerStorageOff": "Server storage: off",
+  "@menuServerStorageOff": {
+    "description": "Chat menu entry that turns server storage on."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

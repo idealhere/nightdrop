@@ -17,6 +17,16 @@ const String kVerifiedName = 'CyberDog';
 /// How a user is shown in a chat: the rank is always there — NightDog until the chat's safety
 /// number is verified, CyberDog after — and a name the user chose goes in front of it
 /// ("Max NightDog"). Someone who chose no name is shown by rank alone.
+/// The name someone chose, without a rank word; "Anon" when they chose none. For places that
+/// show the rank separately, as a badge.
+String plainName(String name) {
+  final own = name
+      .split(' ')
+      .where((word) => word.isNotEmpty && word != kDefaultName && word != kVerifiedName)
+      .join(' ');
+  return own.isEmpty ? 'Anon' : own;
+}
+
 String rankedName(String name, {required bool verified}) {
   final rank = verified ? kVerifiedName : kDefaultName;
   // A stored name that is itself a rank word (the default, or one typed by hand) is not a name.
@@ -209,6 +219,10 @@ class Contact {
   /// What to call this contact in a list or title: your nickname if you set one, else the name
   /// they chose. Never empty.
   String get displayName => localName.isNotEmpty ? localName : shownTheirName;
+
+  /// The contact's name for the chat header and their bubbles: what you call them, else the
+  /// name they chose, else "Anon". The rank is shown beside it as a badge, not as part of it.
+  String get headerName => localName.isNotEmpty ? localName : plainName(theirName);
 
   /// Their name as shown in this chat: the name they chose followed by the rank (see
   /// [rankedName]).

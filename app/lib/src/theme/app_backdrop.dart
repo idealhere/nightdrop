@@ -15,7 +15,7 @@ class AppBackdrop extends StatelessWidget {
         image: DecorationImage(
           image: AssetImage('assets/brand/backdrop.jpg'),
           fit: BoxFit.cover,
-          opacity: .6,
+          opacity: .38,
         ),
       ),
       child: child,

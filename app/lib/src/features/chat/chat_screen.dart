@@ -852,6 +852,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _lastCount = messages.length;
           _scrollToEnd();
         }
+        void openVerify() => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => VerifyScreen(contactId: contact.id, name: contact.theirName),
+              ),
+            );
         return Scaffold(
           appBar: AppBar(
             // Tapping the name opens the contact's profile, where the verify button lives.
@@ -872,18 +877,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(child: Text(contact.displayName)),
-                    if (contact.showIdentityTag) ...[
-                      const SizedBox(width: 6),
-                      IdentityTag(tag: contact.identityTag),
-                    ],
-                    if (contact.verified) ...[
-                      const SizedBox(width: 6),
-                      Icon(Icons.verified_user,
-                          semanticLabel: l10n.verified,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary),
-                    ],
+                    Flexible(
+                      child: Text(contact.headerName, overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 8),
+                    UserRankBadge(rank: contact.rank),
                   ],
                 ),
                 Row(
@@ -905,33 +903,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ],
             )),
             ])),
-            // Only the two icons that show a setting's state stay in the bar; everything else is
-            // in the overflow menu. Seven icons filled a phone's app bar edge to edge, and the
-            // verify shield sat right beside Back, so reaching for Back opened the verify screen.
-            // Verification state is still visible without it: the badge beside the name, and the
-            // unverified banner (which opens the same screen).
+            // One icon, for the one thing worth a glance: whether this contact is verified. It
+            // opens the safety-number screen. Server storage and the timer live in the menu —
+            // they are settings, changed rarely, and their state has its own line when it is on.
             actions: [
               IconButton(
-                tooltip: contact.remoteStorage
-                    ? l10n.storedServerTooltipOn
-                    : l10n.storedServerTooltipOff,
+                key: const ValueKey('security-state'),
+                tooltip: contact.verified ? l10n.verified : l10n.verifySafetyNumber,
                 icon: Icon(
-                  contact.remoteStorage ? Icons.cloud : Icons.cloud_off,
+                  contact.verified ? Icons.verified_user : Icons.gpp_maybe_outlined,
+                  color: contact.verified ? Theme.of(context).colorScheme.primary : null,
                 ),
-                onPressed: () => core.setRemoteStorage(
-                  widget.contactId,
-                  !contact.remoteStorage,
-                ),
-              ),
-              IconButton(
-                tooltip: contact.disappearingSecs > 0
-                    ? l10n.disappearingTooltipOn(
-                        _disappearingLabel(contact.disappearingSecs))
-                    : l10n.disappearingTooltipOff,
-                icon: Icon(contact.disappearingSecs > 0
-                    ? Icons.timer
-                    : Icons.timer_off_outlined),
-                onPressed: () => _pickDisappearing(contact),
+                onPressed: openVerify,
               ),
               PopupMenuButton<String>(
                 tooltip: l10n.more,
@@ -946,6 +929,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       );
+                    case 'storage':
+                      core.setRemoteStorage(widget.contactId, !contact.remoteStorage);
+                    case 'timer':
+                      _pickDisappearing(contact);
                     case 'name':
                       _nameContact(contact);
                     case 'rename':
@@ -963,6 +950,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ? Icons.verified_user
                           : Icons.shield_outlined,
                       l10n.verifySafetyNumber),
+                  _menuItem(
+                      'timer',
+                      contact.disappearingSecs > 0 ? Icons.timer : Icons.timer_off_outlined,
+                      l10n.disappearingMessages),
+                  _menuItem(
+                      'storage',
+                      contact.remoteStorage ? Icons.cloud : Icons.cloud_off,
+                      contact.remoteStorage ? l10n.menuServerStorageOn : l10n.menuServerStorageOff),
                   _menuItem('name', Icons.drive_file_rename_outline,
                       l10n.nameContactTooltip),
                   _menuItem('rename', Icons.badge_outlined,
@@ -977,33 +972,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           body: Column(
             children: [
-              // Nudge toward safety-number verification once the chat is live and still unverified.
-              // Tapping opens the same VerifyScreen as the app-bar shield. Suppressed while awaiting
-              // approval (nothing to verify yet).
+              // One thin line about security, in place of the unverified nudge and the "encrypted"
+              // banner. Unverified, it stays and offers the check; verified, it can be swiped away.
               if (!awaitingApproval && !contact.verified)
-                _UnverifiedBanner(
-                  onVerify: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => VerifyScreen(
-                        contactId: contact.id,
-                        name: contact.theirName,
-                      ),
-                    ),
-                  ),
-                ),
+                _SecurityLine(verified: false, onVerify: openVerify),
               if (!awaitingApproval && contact.verified)
                 _SwipeAway(
                   noticeKey: 'encrypted',
-                  child: _EncryptedBanner(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => VerifyScreen(
-                          contactId: contact.id,
-                          name: contact.theirName,
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: _SecurityLine(verified: true, onVerify: openVerify),
                 ),
               if (contact.remoteStorage)
                 _RemoteStorageBanner(healthy: contact.remoteStorageHealthy),
@@ -1035,13 +1011,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         itemCount: visibleMessages.length,
                         itemBuilder: (context, i) {
                           final m = visibleMessages[i];
+                          final before = i > 0 ? visibleMessages[i - 1] : null;
+                          // The same notice twice in a row says nothing the first did not.
+                          if (m.system &&
+                              before != null &&
+                              before.system &&
+                              noticeBody(before.text) == noticeBody(m.text)) {
+                            return const SizedBox.shrink();
+                          }
                           final row = m.system
-                              ? _SystemNotice(text: m.text)
+                              ? _SystemNotice(
+                                  text: m.text,
+                                  onVerify: noticeAsksToVerify(m.text) ? openVerify : null,
+                                )
                               : _Bubble(
                                   message: m,
-                                  senderName: m.fromMe
-                                      ? contact.shownMyName
-                                      : contact.shownTheirName,
+                                  senderName: contact.headerName,
+                                  // Our own messages are on the right; that is name enough. Theirs
+                                  // carry the name once, at the start of a run of messages.
+                                  showSender: !m.fromMe &&
+                                      (before == null || before.system || before.fromMe),
                                   // Right-click (desktop) or long-press (mobile) own recent/
                                   // queued text to edit or unsend it.
                                   onLongPress: m.canCopy || m.canUnsend
@@ -1175,44 +1164,75 @@ class _SilenceBanner extends StatelessWidget {
   }
 }
 
-/// Subtle, tappable nudge shown on an unverified chat. Verification (comparing the safety number
-/// out-of-band) is what actually rules out a MITM on pairing, but it's easy to skip — so we keep a
-/// low-key reminder in front of the user until they verify. Tap → [VerifyScreen].
-class _UnverifiedBanner extends StatelessWidget {
-  const _UnverifiedBanner({required this.onVerify});
+/// The chat's security in one line: "Secure chat · Not verified   Verify". Tapping the text
+/// opens the explanation underneath; "Verify" opens the safety-number screen. Comparing safety
+/// numbers is what rules out someone in the middle, so the unverified line stays until it is
+/// done — but as a line, not as a paragraph above every conversation.
+class _SecurityLine extends StatefulWidget {
+  const _SecurityLine({required this.verified, required this.onVerify});
 
+  final bool verified;
   final VoidCallback onVerify;
 
   @override
+  State<_SecurityLine> createState() => _SecurityLineState();
+}
+
+class _SecurityLineState extends State<_SecurityLine> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final scheme = Theme.of(context).colorScheme;
+    final ink = scheme.onSurfaceVariant;
     return Material(
-      color: scheme.surfaceContainerHighest,
+      color: Colors.transparent,
       child: InkWell(
-        onTap: onVerify,
+        onTap: () => setState(() => _open = !_open),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          child: Row(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.shield_outlined,
-                  size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  AppLocalizations.of(context)!.unverifiedBannerBody,
-                  style:
-                      TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
-                ),
+              Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 14, color: ink),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.verified ? l10n.securityLineVerified : l10n.securityLineUnverified,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: ink, fontSize: 12.5),
+                    ),
+                  ),
+                  if (!widget.verified)
+                    InkWell(
+                      key: const ValueKey('security-verify'),
+                      onTap: widget.onVerify,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Text(
+                          l10n.verify,
+                          style: TextStyle(
+                            color: scheme.primary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                AppLocalizations.of(context)!.verify,
-                style: TextStyle(
-                  color: scheme.primary,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
+              if (_open)
+                Padding(
+                  padding: const EdgeInsets.only(left: 22, top: 4),
+                  child: Text(
+                    widget.verified ? l10n.encryptedBanner : l10n.unverifiedBannerDetail,
+                    style: TextStyle(color: ink, fontSize: 12),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -1363,9 +1383,12 @@ class _PeerBackupBanner extends StatelessWidget {
 
 /// A centered, unobtrusive system notice (chat deleted / approved / code reused).
 class _SystemNotice extends StatelessWidget {
-  const _SystemNotice({required this.text});
+  const _SystemNotice({required this.text, this.onVerify});
 
   final String text;
+
+  /// For a notice about a changed safety code: opens the screen where it is checked.
+  final VoidCallback? onVerify;
 
   @override
   Widget build(BuildContext context) {
@@ -1393,6 +1416,20 @@ class _SystemNotice extends StatelessWidget {
                 style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
               ),
             ),
+            if (onVerify != null) ...[
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: onVerify,
+                child: Text(
+                  AppLocalizations.of(context)!.verify,
+                  style: TextStyle(
+                    color: scheme.primary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1419,11 +1456,15 @@ class _Bubble extends StatelessWidget {
   const _Bubble(
       {required this.message,
       required this.senderName,
+      this.showSender = true,
       this.onLongPress,
       this.onReveal});
 
   final Message message;
   final String senderName;
+
+  /// Whether to print [senderName] above the content.
+  final bool showSender;
 
   /// Called when the recipient taps a blurred burn message to reveal it. Starts the countdown.
   final VoidCallback? onReveal;
@@ -1458,15 +1499,17 @@ class _Bubble extends StatelessWidget {
               crossAxisAlignment:
                   mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                Text(
-                  senderName,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
-                        .withValues(alpha: 0.7),
+                if (showSender) ...[
+                  Text(
+                    senderName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
+                  const SizedBox(height: 2),
+                ],
                 if (message.isDeleted ||
                     message.isBurnExpired ||
                     message.isViewedOnce)
@@ -1651,18 +1694,6 @@ bool _sameDay(DateTime a, DateTime b) {
   return la.year == lb.year && la.month == lb.month && la.day == lb.day;
 }
 
-/// A compact label for a disappearing-messages timer, e.g. "1h", "1d", "1w".
-String _disappearingLabel(int secs) {
-  if (secs <= 0) return 'off';
-  if (secs % 604800 == 0) return '${secs ~/ 604800}w';
-  if (secs % 86400 == 0) return '${secs ~/ 86400}d';
-  if (secs % 3600 == 0) return '${secs ~/ 3600}h';
-  if (secs % 60 == 0) return '${secs ~/ 60}m';
-  return '${secs}s';
-}
-
-/// A local clock time: 12-hour in English ("3:45 PM"), 24-hour in Russian ("15:45"). No `intl`
-/// dependency.
 /// Whether a bubble shows a delivery state: our own messages once the core has reported one.
 bool _showsDelivery(Message message, bool mine) =>
     mine &&
@@ -1680,6 +1711,8 @@ String _deliveryLabel(AppLocalizations l10n, String delivery) => switch (deliver
       _ => l10n.deliveryDelivered,
     };
 
+/// A local clock time: 12-hour in English ("3:45 PM"), 24-hour in Russian ("15:45"). No `intl`
+/// dependency.
 String _formatTime(DateTime at) {
   final t = at.toLocal();
   if (AppLocale.current.value == AppLocale.russian) {
@@ -2125,14 +2158,6 @@ class _Composer extends StatelessWidget {
                 ),
               );
             }),
-            const SizedBox(width: 6),
-            IconButton(
-              key: const ValueKey('voice-button'),
-              tooltip: l10n.voiceRecord,
-              style: _composerTile,
-              icon: const Icon(Icons.mic_none),
-              onPressed: onVoice,
-            ),
             const SizedBox(width: 8),
             Expanded(
               child: TextField(
@@ -2163,6 +2188,14 @@ class _Composer extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            IconButton(
+              key: const ValueKey('voice-button'),
+              tooltip: l10n.voiceRecord,
+              style: _composerTile,
+              icon: const Icon(Icons.mic_none),
+              onPressed: onVoice,
+            ),
+            const SizedBox(width: 6),
             Builder(builder: (context) {
               // Long-press covers touch AND a held mouse button; onSecondaryTap covers the
               // right-click a desktop user will reach for first. Both, because supporting only
@@ -2451,55 +2484,4 @@ String _shortDuration(Duration d) {
   if (d.inHours > 0) return '${d.inHours}h';
   if (d.inMinutes > 0) return '${d.inMinutes}m';
   return '${d.inSeconds}s';
-}
-
-/// Calm reassurance at the top of a verified chat, in the slot the unverified nudge used. Tapping
-/// it opens the safety-number screen, which is where "encrypted" can actually be checked.
-class _EncryptedBanner extends StatelessWidget {
-  const _EncryptedBanner({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-      child: Material(
-        color: CyberDog.panel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: CyberDog.hairline),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: scheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(Icons.lock_outline, size: 16, color: scheme.secondary),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    AppLocalizations.of(context)!.encryptedBanner,
-                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
-                  ),
-                ),
-                Icon(Icons.chevron_right, size: 18, color: scheme.secondary),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

@@ -5,6 +5,24 @@ import 'app_locale.dart';
 /// whichever language is selected now, and leaves the stored text and the wire format untouched.
 ///
 /// Each entry is a distinctive fragment of the English notice and its Russian wording.
+///
+/// A few notices are long explanations in the core's wording. In the stream of messages they are
+/// shown short, in both languages ([_compact]); the place to read more is the screen they point to.
+const _compact = <(String, String, String)>[
+  ('re-paired', 'Safety code changed', 'Код безопасности изменён'),
+  ('Re-paired with a new secure session', 'Safety code changed', 'Код безопасности изменён'),
+  (
+    'enabled 24h server storage',
+    'Undelivered messages are kept on the server for 24 h',
+    'Хранение недоставленных сообщений: 24 ч',
+  ),
+  ('disabled server storage', 'Server storage is off', 'Хранение на сервере выключено'),
+];
+
+/// Whether this notice is about a changed safety code, and so worth a "Verify" beside it.
+bool noticeAsksToVerify(String text) =>
+    text.contains('re-paired') || text.contains('Re-paired with a new secure session');
+
 const _notices = <(String, String)>[
   (
     're-paired with a new secure session. Your earlier',
@@ -96,6 +114,11 @@ String noticeBody(String text) {
 
 /// The notice as it should be shown in the current language.
 String localizeSystemNotice(String text) {
+  for (final (fragment, english, russian) in _compact) {
+    if (text.contains(fragment)) {
+      return '${_marker(text)}${AppLocale.current.value == AppLocale.russian ? russian : english}';
+    }
+  }
   if (AppLocale.current.value != AppLocale.russian) {
     // One notice is shortened in English too, so it stays a single compact line.
     return text.contains('You took a screenshot')

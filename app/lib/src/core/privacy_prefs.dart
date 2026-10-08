@@ -30,7 +30,19 @@ class PrivacyPrefs {
   /// are concealed again, which is the safer side to err on.
   static final Set<String> _revealed = <String>{};
 
-  /// Fires when the set of revealed photos or the setting changes.
+  /// Notices at the top of a chat that the user swiped away, by key. Remembered, so a notice
+  /// that was read and dismissed does not come back every time the chat opens.
+  static final Set<String> _dismissedNotices = <String>{};
+
+  static bool noticeDismissed(String key) => _dismissedNotices.contains(key);
+
+  static Future<void> dismissNotice(String key) async {
+    if (!_dismissedNotices.add(key)) return;
+    (changes as _Changes).fire();
+    await _save();
+  }
+
+  /// Fires when the set of revealed photos, a dismissed notice or the setting changes.
   static final ChangeNotifier changes = _Changes();
 
   static bool conceals(String mediaId) =>
@@ -51,6 +63,9 @@ class PrivacyPrefs {
       for (final level in NotificationDetail.values) {
         if (saved.contains('notification_detail=${level.name}')) notificationDetail.value = level;
       }
+      for (final line in saved.split('\n')) {
+        if (line.startsWith('dismissed=')) _dismissedNotices.add(line.substring(10));
+      }
     } catch (_) {}
   }
 
@@ -58,7 +73,8 @@ class PrivacyPrefs {
     try {
       await (await _file()).writeAsString(
         'hide_incoming_photos=${hideIncomingPhotos.value ? 1 : 0}\n'
-        'notification_detail=${notificationDetail.value.name}\n',
+        'notification_detail=${notificationDetail.value.name}\n'
+        '${_dismissedNotices.map((k) => 'dismissed=$k\n').join()}',
       );
     } catch (_) {}
   }

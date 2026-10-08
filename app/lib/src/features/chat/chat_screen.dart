@@ -1000,24 +1000,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   ),
                 ),
               if (!awaitingApproval && contact.verified)
-                _EncryptedBanner(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => VerifyScreen(
-                        contactId: contact.id,
-                        name: contact.theirName,
+                _SwipeAway(
+                  noticeKey: 'encrypted',
+                  child: _EncryptedBanner(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => VerifyScreen(
+                          contactId: contact.id,
+                          name: contact.theirName,
+                        ),
                       ),
                     ),
                   ),
                 ),
               if (contact.remoteStorage)
                 _RemoteStorageBanner(healthy: contact.remoteStorageHealthy),
-              if (contact.peerBackedUp) const _PeerBackupBanner(),
+              if (contact.peerBackedUp)
+                _SwipeAway(
+                  noticeKey: 'backup:${contact.id}',
+                  child: const _PeerBackupBanner(),
+                ),
               // Shown to the SENDER, and only when the peer has actually said so. A null here
               // means "they have not told us" and deliberately shows nothing — claiming either
               // answer without evidence is worse than staying quiet.
-              if (contact.peerCapturesSilent == true) const _PeerCapturesSilentBanner(),
-              if (contact.peerOnOldVersion) const _PeerOnOldVersionBanner(),
+              if (contact.peerCapturesSilent == true)
+                _SwipeAway(
+                  noticeKey: 'captures:${contact.id}',
+                  child: const _PeerCapturesSilentBanner(),
+                ),
+              if (contact.peerOnOldVersion)
+                _SwipeAway(
+                  noticeKey: 'oldversion:${contact.id}',
+                  child: const _PeerOnOldVersionBanner(),
+                ),
               _SilenceBanner(lastSeenSecs: contact.lastSeenSecs),
               Expanded(
                 child: visibleMessages.isEmpty
@@ -1211,6 +1226,30 @@ class _UnverifiedBanner extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// An informational notice at the top of a chat that can be swiped away, left or right. It
+/// stays away: the choice is remembered on this device under [noticeKey] — one key for a notice
+/// that says the same thing in every chat, one per contact for a fact about that contact.
+class _SwipeAway extends StatelessWidget {
+  const _SwipeAway({required this.noticeKey, required this.child});
+
+  final String noticeKey;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: PrivacyPrefs.changes,
+      builder: (context, _) => PrivacyPrefs.noticeDismissed(noticeKey)
+          ? const SizedBox.shrink()
+          : Dismissible(
+              key: ValueKey('notice-$noticeKey'),
+              onDismissed: (_) => PrivacyPrefs.dismissNotice(noticeKey),
+              child: child,
+            ),
     );
   }
 }

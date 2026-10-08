@@ -23,6 +23,7 @@ import '../../theme/cyberdog.dart';
 import '../backup/backup_actions.dart';
 import 'contact_profile_screen.dart';
 import 'verify_screen.dart';
+import 'voice.dart';
 
 /// Downscale + recompress an image to JPEG so it's small enough to move over Tor quickly.
 /// Runs in a background isolate (via [compute]). Returns the original bytes on failure.
@@ -353,6 +354,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Pick an attachment and send it. [burnSecs] > 0 sends it as a burn message, in which case
   /// no thumbnail is generated at all — a preview of an unrevealed message would give away the
   /// content the feature exists to withhold, so it must not be produced, let alone transmitted.
+  /// The composer is showing the voice recorder.
+  bool _recordingVoice = false;
+
+  Future<void> _sendVoice(Uint8List audio) async {
+    setState(() => _recordingVoice = false);
+    await _sendMedia(audio, kVoiceMime, kVoiceKind, const <int>[]);
+  }
+
+  void _voiceCancelled(String? error) {
+    setState(() => _recordingVoice = false);
+    if (error != null) _toast(error);
+  }
+
   Future<void> _attachMedia({int burnSecs = 0}) async {
     final l10n = AppLocalizations.of(context)!;
     final result = await FilePicker.pickFiles(
@@ -1047,14 +1061,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         },
                       ),
               ),
-              _Composer(
-                controller: _input,
-                onSend: _send,
-              onBurn: _offerBurn,
-              onBurnAttach: _offerBurnMedia,
-                onAttach: _attachMedia,
-                onPaste: _paste,
-              ),
+              if (_recordingVoice)
+                VoiceRecordingBar(onDone: _sendVoice, onCancel: _voiceCancelled)
+              else
+                _Composer(
+                  controller: _input,
+                  onSend: _send,
+                  onBurn: _offerBurn,
+                  onBurnAttach: _offerBurnMedia,
+                  onAttach: _attachMedia,
+                  onPaste: _paste,
+                  onVoice: () => setState(() => _recordingVoice = true),
+                ),
             ],
           ),
         );
@@ -1479,6 +1497,8 @@ class _Bubble extends StatelessWidget {
                       ],
                     ],
                   )
+                else if (message.isAudio && message.mediaId.isNotEmpty)
+                  VoiceBubble(mediaId: message.mediaId, mine: mine)
                 else
                   _MediaContent(message: message, mine: mine),
                 // "edited" tag once a sender edit replaced the text.
@@ -2011,7 +2031,11 @@ class _Composer extends StatelessWidget {
     required this.onAttach,
     required this.onBurnAttach,
     required this.onPaste,
+    required this.onVoice,
   });
+
+  /// Start recording a voice message.
+  final VoidCallback onVoice;
 
   final TextEditingController controller;
   final Future<void> Function() onSend;
@@ -2056,6 +2080,14 @@ class _Composer extends StatelessWidget {
                 ),
               );
             }),
+            const SizedBox(width: 6),
+            IconButton(
+              key: const ValueKey('voice-button'),
+              tooltip: l10n.voiceRecord,
+              style: _composerTile,
+              icon: const Icon(Icons.mic_none),
+              onPressed: onVoice,
+            ),
             const SizedBox(width: 6),
             IconButton(
               tooltip: l10n.pasteText,

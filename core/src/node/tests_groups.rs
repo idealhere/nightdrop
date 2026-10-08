@@ -552,3 +552,32 @@ fn a_member_cannot_unsend_someone_elses_message() {
     // …and Carol's own app refuses to send it in the first place.
     assert!(carol.unsend_group_message(&gid, &msg_id).is_err());
 }
+
+#[test]
+fn a_voice_message_reaches_the_group_and_can_be_unsent() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let dirs = media_stores("voice", &mut [&mut alice, &mut bob, &mut carol]);
+    let gid = alice
+        .create_group("voice", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice
+        .send_group_media(&gid, &[9, 8, 7], "audio/mp4", "audio")
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    let got = last_of(&bob, &gid);
+    assert_eq!(got.kind, "audio");
+    assert_eq!(bob.media_bytes(&got.media_id).unwrap(), vec![9u8, 8, 7]);
+
+    let transfer_id = last_of(&alice, &gid).transfer_id;
+    alice.unsend_group_message(&gid, &transfer_id).unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    assert_eq!(last_of(&carol, &gid).kind, "deleted");
+    assert!(!sealed(&dirs[1], &got.media_id));
+
+    // Anything that is not a photo, a video or a voice message is refused.
+    assert!(alice
+        .send_group_media(&gid, &[1], "application/pdf", "file")
+        .is_err());
+    remove_stores(&dirs);
+}

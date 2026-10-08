@@ -20,6 +20,8 @@ dependencies:
   file_picker: ^12.0.0-beta.7
   path_provider: ^2.1.4 # default backup locations (Documents/Desktop) + persisted state dir
   flutter_secure_storage: ^10.3.1 # OS-backed keystore for the at-rest persistence key
+  record: ^7.1.1 # record voice messages (microphone, on-device only)
+  audioplayers: ^6.8.1 # play voice messages inside the chat
   open_filex: ^4.5.0 # open a received video/file in the system player (cross-platform)
   image: ^4.9.1 # downscale/recompress images before sending (big speed win over Tor)
   # Preview frame for sent videos (Android/iOS/macOS/Windows; no Linux). Replaced the

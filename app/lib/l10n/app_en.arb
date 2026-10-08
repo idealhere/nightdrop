@@ -1385,6 +1385,30 @@
       }
     }
   },
+  "voiceRecord": "Record a voice message",
+  "@voiceRecord": {
+    "description": "Tooltip of the microphone button."
+  },
+  "voiceRecording": "Recording",
+  "@voiceRecording": {
+    "description": "Label beside the timer while recording."
+  },
+  "voiceSend": "Send voice message",
+  "@voiceSend": {
+    "description": "Tooltip of the send button while recording."
+  },
+  "voicePlay": "Play",
+  "@voicePlay": {
+    "description": "Tooltip of the play button on a voice message."
+  },
+  "voicePause": "Pause",
+  "@voicePause": {
+    "description": "Tooltip of the pause button on a voice message."
+  },
+  "voiceNoPermission": "CyberDog needs access to the microphone to record a voice message.",
+  "@voiceNoPermission": {
+    "description": "Shown when the microphone permission is refused."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

@@ -12,6 +12,7 @@ import '../../core/nightdrop_core.dart';
 import '../../core/system_notices.dart';
 import '../../theme/cyberdog.dart';
 import '../chat/chat_screen.dart' show compressImage, formatBytes, kMaxMediaBytes;
+import '../chat/voice.dart';
 
 /// The name to show for a group member: "You" for us, the contact's name for someone we have a
 /// chat with, and a neutral word for a member we are not connected to.
@@ -151,6 +152,28 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   int _shown = 0;
+
+  /// The composer is showing the voice recorder.
+  bool _recordingVoice = false;
+
+  Future<void> _sendVoice(Uint8List audio) async {
+    final l10n = AppLocalizations.of(context)!;
+    final core = NightdropScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _recordingVoice = false);
+    try {
+      await core.sendGroupMedia(widget.groupId, audio, kVoiceMime, kVoiceKind);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.groupCouldNotSend(e.toString()))));
+    }
+  }
+
+  void _voiceCancelled(String? error) {
+    setState(() => _recordingVoice = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
 
   @override
   void dispose() {
@@ -391,6 +414,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                     ),
                   ),
                 )
+              else if (_recordingVoice)
+                VoiceRecordingBar(onDone: _sendVoice, onCancel: _voiceCancelled)
               else
                 SafeArea(
                   top: false,
@@ -402,6 +427,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                           tooltip: l10n.groupAttachPhoto,
                           onPressed: _attachPhoto,
                           icon: const Icon(Icons.image_outlined),
+                        ),
+                        IconButton(
+                          tooltip: l10n.voiceRecord,
+                          onPressed: () => setState(() => _recordingVoice = true),
+                          icon: const Icon(Icons.mic_none),
                         ),
                         Expanded(
                           child: TextField(
@@ -523,6 +553,8 @@ class _GroupBubble extends StatelessWidget {
               )
             else if (message.isImage && message.mediaId.isNotEmpty)
               _GroupPhoto(mediaId: message.mediaId)
+            else if (message.isAudio && message.mediaId.isNotEmpty)
+              VoiceBubble(mediaId: message.mediaId, mine: mine)
             else
               Text(
                 message.text,

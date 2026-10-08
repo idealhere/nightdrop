@@ -2145,7 +2145,9 @@ class RustNightdropCore extends NightdropCore {
         ? AppLocale.pick('Photo', 'Фото')
         : newest.isVideo
             ? AppLocale.pick('Video', 'Видео')
-            : newest.text;
+            : newest.isAudio
+                ? AppLocale.pick('Voice message', 'Голосовое сообщение')
+                : newest.text;
     return body.isEmpty ? null : (sender, body);
   }
 

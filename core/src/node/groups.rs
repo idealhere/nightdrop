@@ -52,6 +52,11 @@ pub(super) fn unpack_group(buf: &[u8]) -> Result<(String, String, Vec<u8>)> {
     Ok((group_id, op, buf[p..].to_vec()))
 }
 
+/// The attachment kinds a group carries: photos, videos and voice messages.
+fn is_group_attachment(kind: &str) -> bool {
+    matches!(kind, "image" | "video" | "audio")
+}
+
 /// Whether `id` names this message for an unsend: a text message by its `msg_id`, a photo or
 /// video by its `transfer_id`. Notices and tombstones are named by nothing.
 fn names_message(msg: &ChatMessage, id: &str) -> bool {
@@ -216,8 +221,8 @@ impl Node {
                 MAX_MEDIA_BYTES / (1024 * 1024)
             );
         }
-        if kind != "image" && kind != "video" {
-            anyhow::bail!("only photos and videos can be sent to a group");
+        if !is_group_attachment(kind) {
+            anyhow::bail!("this kind of attachment cannot be sent to a group");
         }
         if self.groups.get(group_id).is_none_or(|g| g.left) {
             anyhow::bail!("unknown group, or you left it");
@@ -498,7 +503,7 @@ impl Node {
                 let wanted = self.groups.get(&group_id).is_some_and(|group| {
                     !group.left
                         && group.members.iter().any(|m| m.as_str() == from)
-                        && (kind == "image" || kind == "video")
+                        && is_group_attachment(&kind)
                         && !transfer_id.is_empty()
                         && !group.history.iter().any(|gm| {
                             gm.sender.as_str() == from && gm.message.transfer_id == transfer_id

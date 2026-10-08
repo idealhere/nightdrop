@@ -397,6 +397,9 @@ class Message {
   bool get isImage => kind == 'image';
   bool get isVideo => kind == 'video';
 
+  /// A voice message.
+  bool get isAudio => kind == 'audio';
+
   /// An "unsent" (deleted-for-both) message: rendered as a tombstone, not editable.
   bool get isDeleted => kind == 'deleted';
 
@@ -409,7 +412,7 @@ class Message {
   bool get canUnsend =>
       canEdit ||
       (fromMe &&
-          (isImage || isVideo) &&
+          (isImage || isVideo || isAudio) &&
           !system &&
           !sending &&
           transferId.isNotEmpty &&

@@ -1975,7 +1975,7 @@ fn make_tombstone(msg: &mut ChatMessage) {
 /// Whether `msg` is an attachment that `id` names. Attachments have no `msg_id`; the id both
 /// sides share is the `transfer_id`.
 fn is_attachment_named(msg: &ChatMessage, id: &str) -> bool {
-    (msg.kind == "image" || msg.kind == "video")
+    matches!(msg.kind.as_str(), "image" | "video" | "audio")
         && !msg.transfer_id.is_empty()
         && msg.transfer_id == id
 }

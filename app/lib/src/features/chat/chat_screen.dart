@@ -907,12 +907,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             // opens the safety-number screen. Server storage and the timer live in the menu —
             // they are settings, changed rarely, and their state has its own line when it is on.
             actions: [
+              // The shield is the whole statement: amber with a mark while nobody has compared
+              // safety numbers, violet with a tick once they have. It used to be repeated in a
+              // line under the header; one of the two was enough.
               IconButton(
                 key: const ValueKey('security-state'),
-                tooltip: contact.verified ? l10n.verified : l10n.verifySafetyNumber,
+                tooltip: contact.verified ? l10n.securityLineVerified : l10n.securityLineUnverified,
                 icon: Icon(
                   contact.verified ? Icons.verified_user : Icons.gpp_maybe_outlined,
-                  color: contact.verified ? Theme.of(context).colorScheme.primary : null,
+                  color: contact.verified ? CyberDog.accentLight : _unverifiedAmber,
                 ),
                 onPressed: openVerify,
               ),
@@ -972,15 +975,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           body: Column(
             children: [
-              // One thin line about security, in place of the unverified nudge and the "encrypted"
-              // banner. Unverified, it stays and offers the check; verified, it can be swiped away.
-              if (!awaitingApproval && !contact.verified)
-                _SecurityLine(verified: false, onVerify: openVerify),
-              if (!awaitingApproval && contact.verified)
-                _SwipeAway(
-                  noticeKey: 'encrypted',
-                  child: _SecurityLine(verified: true, onVerify: openVerify),
-                ),
               if (contact.remoteStorage)
                 _RemoteStorageBanner(healthy: contact.remoteStorageHealthy),
               if (contact.peerBackedUp)
@@ -1164,82 +1158,8 @@ class _SilenceBanner extends StatelessWidget {
   }
 }
 
-/// The chat's security in one line: "Secure chat · Not verified   Verify". Tapping the text
-/// opens the explanation underneath; "Verify" opens the safety-number screen. Comparing safety
-/// numbers is what rules out someone in the middle, so the unverified line stays until it is
-/// done — but as a line, not as a paragraph above every conversation.
-class _SecurityLine extends StatefulWidget {
-  const _SecurityLine({required this.verified, required this.onVerify});
-
-  final bool verified;
-  final VoidCallback onVerify;
-
-  @override
-  State<_SecurityLine> createState() => _SecurityLineState();
-}
-
-class _SecurityLineState extends State<_SecurityLine> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final scheme = Theme.of(context).colorScheme;
-    final ink = scheme.onSurfaceVariant;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _open = !_open),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.lock_outline, size: 14, color: ink),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      widget.verified ? l10n.securityLineVerified : l10n.securityLineUnverified,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: ink, fontSize: 12.5),
-                    ),
-                  ),
-                  if (!widget.verified)
-                    InkWell(
-                      key: const ValueKey('security-verify'),
-                      onTap: widget.onVerify,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        child: Text(
-                          l10n.verify,
-                          style: TextStyle(
-                            color: scheme.primary,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              if (_open)
-                Padding(
-                  padding: const EdgeInsets.only(left: 22, top: 4),
-                  child: Text(
-                    widget.verified ? l10n.encryptedBanner : l10n.unverifiedBannerDetail,
-                    style: TextStyle(color: ink, fontSize: 12),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+/// The colour of the header shield while the contact is unverified: a caution, not an alarm.
+const _unverifiedAmber = Color(0xFFFFB74D);
 
 /// An informational notice at the top of a chat that can be swiped away, left or right. It
 /// stays away: the choice is remembered on this device under [noticeKey] — one key for a notice

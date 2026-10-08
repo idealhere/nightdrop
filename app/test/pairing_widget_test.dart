@@ -51,12 +51,15 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.textContaining('Not verified'), findsOneWidget);
+    // The header shield carries the state: a caution mark until the number has been compared.
+    expect(find.byIcon(Icons.gpp_maybe_outlined), findsOneWidget);
+    expect(find.byTooltip('Secure chat · Not verified'), findsOneWidget);
 
     await core.setVerified(contact.id, true);
     await tester.pump();
 
-    expect(find.textContaining('Not verified'), findsNothing);
+    expect(find.byIcon(Icons.gpp_maybe_outlined), findsNothing);
+    expect(find.byTooltip('Secure chat · Verified'), findsOneWidget);
   });
 
   // #3: the peer's verification is shown as an *informational* banner and must never imply our own

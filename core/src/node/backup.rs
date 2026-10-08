@@ -121,6 +121,9 @@ impl Node {
             chats,
             groups,
             groups_peers,
+            address_key: self.address_key.clone(),
+            address_requests: self.address_requests(),
+            address_hellos: self.address_hellos.clone(),
             media: Vec::new(),      // populated only for backups (see `backup`)
             onion_keys: Vec::new(), // populated only for backups (see `backup`)
             my_relays: self.my_relays.clone(),
@@ -385,6 +388,9 @@ impl Node {
         node.pending_control = Self::import_pending_control(&state.pending_control);
         node.pending_invites = Self::import_pending_invites(&state.pending_invites);
         node.groups_peers = state.groups_peers.iter().cloned().collect();
+        node.address_key = state.address_key.clone();
+        node.address_requests = state.address_requests.iter().cloned().collect();
+        node.address_hellos = state.address_hellos.clone();
         for g in &state.groups {
             node.groups.insert(
                 g.id.clone(),

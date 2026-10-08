@@ -20,6 +20,13 @@ impl Node {
             } => {
                 crate::diag!("pair: inbound Hello — a peer is requesting a chat");
                 let olm = message.to_olm()?;
+                // A request to our standing address rather than a one-time invite. Its pre-key
+                // can be used again, so a replay of the very same first message is caught here.
+                let via_address =
+                    self.address_key.is_some() && crypto::pre_key_of(&olm) == self.address_key;
+                if via_address && !self.note_address_hello(&message) {
+                    return Ok(None);
+                }
                 let accepted = crypto::accept_inbound(&mut self.identity, &identity_key, &olm)?;
                 let contact_id = identity_key;
                 // Prefer the address the sender advertised (works over Tor/relay where the
@@ -36,7 +43,17 @@ impl Node {
                 // secure session, after which any earlier safety-number verification no longer holds.
                 // A group member we offered an introduction to is not a stranger (`groups.rs`).
                 let introduced = self.intro_expected.remove(&contact_id);
-                let auto_authorized = introduced || !self.require_authorization;
+                // An address can reach anyone it was passed on to, so a request to it always
+                // waits for the user — unless it comes from someone we already have a chat with.
+                let auto_authorized = !via_address && (introduced || !self.require_authorization);
+                if via_address
+                    && !self
+                        .chats
+                        .get(&contact_id)
+                        .is_some_and(|c| c.authorized && !c.closed)
+                {
+                    self.address_requests.insert(contact_id.clone());
+                }
                 let prior = self.chats.get(&contact_id);
                 let was_verified = prior.map(|c| c.contact.verified).unwrap_or(false);
                 // A Hello lands in one of three states: a brand-new contact, a re-pair of a chat we

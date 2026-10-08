@@ -54,6 +54,8 @@ const MARK_UNVERIFIED: &[u8] = b"nightdrop/ctl/unverified/v1";
 /// Two markers for the screenshot-capability signal (#1), same shape as the verification pair: the
 /// state is *which* marker the receiver's ratchet decrypts, so there is no plaintext flag to flip.
 const MARK_BURNS_V1: &[u8] = b"nightdrop/ctl/burns/v1";
+/// How many requests to the standing address are remembered for replay detection.
+const MAX_ADDRESS_HELLOS: usize = 4096;
 /// Marker for the group capability signal (`Frame::Groups`).
 const MARK_GROUPS_V1: &[u8] = b"nightdrop/ctl/groups/v1";
 /// Prefix of a [`Frame::Version`] plaintext; the app version follows it (`"...:0.1.27"`).
@@ -590,6 +592,16 @@ pub struct Node {
     /// without asking, because joining the group was the consent. In memory only — if it is lost,
     /// that `Hello` simply becomes an ordinary request.
     intro_expected: std::collections::HashSet<String>,
+    /// The public half of our standing address's pre-key ([`Node::my_address`]); `None` until
+    /// the address is first asked for. Persisted: the address must stay the same.
+    address_key: Option<String>,
+    /// Chats that began with a request to the standing address. They wait for the user: a code
+    /// is shown to one person, an address can reach anyone it was passed on to.
+    address_requests: std::collections::HashSet<String>,
+    /// Digests of the requests already received at the standing address. An ordinary pre-key
+    /// cannot be used twice, so a replayed first message fails by itself; the address key can
+    /// be, so a replay is recognised here instead and dropped.
+    address_hellos: Vec<String>,
     /// Group chats, by group id (`node/groups.rs`).
     groups: HashMap<String, groups::Group>,
     /// This build's app version (`"0.1.27"`), set by the app via [`set_app_version`]
@@ -963,6 +975,9 @@ impl Node {
             groups_announced: std::collections::HashSet::new(),
             groups_peers: std::collections::HashSet::new(),
             intro_expected: std::collections::HashSet::new(),
+            address_key: None,
+            address_requests: std::collections::HashSet::new(),
+            address_hellos: Vec::new(),
             groups: HashMap::new(),
             app_version: None,
             version_announced: std::collections::HashSet::new(),
@@ -1045,6 +1060,61 @@ impl Node {
     /// Require explicit approval of inbound chat requests (the recipient-side bouncer).
     pub fn set_require_authorization(&mut self, require: bool) {
         self.require_authorization = require;
+    }
+
+    /// Our standing address: a `nightdrop://pair?…` link that does not expire and may be given
+    /// to any number of people. Whoever has it can send a chat request, which then waits for
+    /// approval ([`address_requests`](Self::address_requests)). It carries a reusable pre-key in
+    /// place of a one-time one; `static=1` only marks it for a reader.
+    pub fn my_address(&mut self) -> Result<String> {
+        if self.address_key.is_none() {
+            self.address_key = self.identity.new_address_key();
+            self.dirty = true;
+        }
+        let key = self
+            .address_key
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("could not create an address"))?;
+        Ok(format!(
+            "nightdrop://pair?addr={}&ik={}&otk={}&static=1",
+            self.address(),
+            self.identity_key(),
+            key
+        ))
+    }
+
+    /// The pending requests that came through the standing address, by contact id. The app must
+    /// not accept these on the user's behalf.
+    pub fn address_requests(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .address_requests
+            .iter()
+            .filter(|id| {
+                self.chats
+                    .get(*id)
+                    .is_some_and(|c| !c.authorized && !c.closed)
+            })
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// Record a first message that used the address key. `false` if this very message was seen
+    /// before — a replay, to be dropped.
+    fn note_address_hello(&mut self, message: &WireOlm) -> bool {
+        use sha2::{Digest, Sha256};
+        let bytes = serde_json::to_vec(message).unwrap_or_default();
+        let digest = base64_handle(Sha256::digest(&bytes).as_slice());
+        if self.address_hellos.contains(&digest) {
+            return false;
+        }
+        if self.address_hellos.len() >= MAX_ADDRESS_HELLOS {
+            self.address_hellos.remove(0);
+        }
+        self.address_hellos.push(digest);
+        self.dirty = true;
+        true
     }
 
     /// Number of pending inbound requests, without cloning the contacts. The background
@@ -2334,6 +2404,8 @@ fn base64_handle(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests_a;
+#[cfg(test)]
+mod tests_address;
 #[cfg(test)]
 mod tests_b;
 #[cfg(test)]

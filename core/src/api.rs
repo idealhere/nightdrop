@@ -2144,6 +2144,22 @@ impl NightdropCore {
         Ok(())
     }
 
+    /// Our standing address: a link that does not expire. Anyone who has it can send a chat
+    /// request ([`connect_via_qr`](Self::connect_via_qr) takes it like any invite), which then
+    /// waits for us to accept it.
+    pub fn my_address(&self) -> Result<String> {
+        let mut g = self.lock();
+        let address = g.me.my_address()?;
+        g.save();
+        Ok(address)
+    }
+
+    /// The pending requests that came through the standing address, by contact id. Unlike a
+    /// request from someone we showed a code to, these are for the user to accept or decline.
+    pub fn address_requests(&self) -> Vec<String> {
+        self.lock().me.address_requests()
+    }
+
     /// Our own identity key — how we appear in a group's member list.
     pub fn my_identity_key(&self) -> String {
         self.lock().me.identity_key()

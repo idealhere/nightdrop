@@ -71,6 +71,20 @@ impl LocalIdentity {
         bundle
     }
 
+    /// Mint the pre-key for a standing address: one that may be used by many people, any number
+    /// of times, where an ordinary pre-key is used once. Olm calls this a fallback key. Returns
+    /// its public half; the caller keeps that, because the account stops listing it once keys
+    /// are marked as published. Call it once per identity — generating another retires this one,
+    /// and with it every copy of the address already handed out.
+    pub fn new_address_key(&mut self) -> Option<String> {
+        let _ = self.account.generate_fallback_key();
+        self.account
+            .fallback_key()
+            .values()
+            .next()
+            .map(|key| key.to_base64())
+    }
+
     /// Shared (immutable) access for outbound session creation (`crypto::`).
     pub(crate) fn account(&self) -> &Account {
         &self.account

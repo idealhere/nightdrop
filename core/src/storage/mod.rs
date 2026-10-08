@@ -308,6 +308,15 @@ pub struct PersistedState {
     /// Contacts whose build announced group support. `#[serde(default)]` for forward-compat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups_peers: Vec<String>,
+    /// The public pre-key of our standing address, once one has been made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address_key: Option<String>,
+    /// Pending chats that began with a request to the standing address.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub address_requests: Vec<String>,
+    /// Digests of requests already received at the standing address (replay detection).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub address_hellos: Vec<String>,
     /// Attachment bytes bundled into a backup so it's self-contained. Empty in the at-rest
     /// state file (media lives in sealed sibling files there). `#[serde(default)]` +
     /// skip-empty keeps older blobs loadable and the state file small.
@@ -472,6 +481,9 @@ mod tests {
             chats: Vec::new(),
             groups: Vec::new(),
             groups_peers: Vec::new(),
+            address_key: None,
+            address_requests: Vec::new(),
+            address_hellos: Vec::new(),
             media: Vec::new(),
             onion_keys: Vec::new(),
             my_relays: Vec::new(),

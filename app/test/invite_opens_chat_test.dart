@@ -26,8 +26,9 @@ void main() {
         ),
       ),
     );
-    // The mock's invite brings a pending request with it.
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 600)));
+    // The mock's invite brings a pending request with it. The screen asked for the invite inside
+    // the test's fake clock, so that clock is the one to advance.
+    await tester.pump(const Duration(seconds: 2));
     await tester.pump();
     expect(find.byType(ChatScreen), findsNothing);
 

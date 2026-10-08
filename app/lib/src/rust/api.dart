@@ -196,6 +196,10 @@ Future<String> clearStorePassphrase(
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<NightdropCore>>
 abstract class NightdropCore implements RustOpaqueInterface {
+  /// Add contacts to a group we created.
+  Future<void> addGroupMembers(
+      {required String groupId, required List<String> memberIds});
+
   /// Approve or decline a pending inbound request. On approval it becomes a contact.
   Future<void> authorize({required String contactId, required bool accept});
 
@@ -473,6 +477,10 @@ abstract class NightdropCore implements RustOpaqueInterface {
 
   Future<List<RelayHealth>> relayHealth();
 
+  /// Remove a member from a group we created.
+  Future<void> removeGroupMember(
+      {required String groupId, required String memberId});
+
   /// Report a **screenshot** of this chat (#1) — log it locally and tell the peer.
   ///
   /// Screenshots stay allowed: blocking them just moves people to photographing the screen, which
@@ -637,6 +645,10 @@ abstract class NightdropCore implements RustOpaqueInterface {
   /// peer. Common values: 3600 (1h), 86400 (1d), 604800 (1w).
   Future<void> setDisappearing(
       {required String contactId, required BigInt secs});
+
+  /// Set a group's disappearing-messages timer in seconds (0 = off). Any member may.
+  Future<void> setGroupDisappearing(
+      {required String groupId, required BigInt secs});
 
   /// Give a contact a nickname that only you see (`contact-naming.md`). Never sent, so a peer
   /// can neither read it nor set it; empty clears it. This is the answer to a contact list of
@@ -1081,8 +1093,11 @@ class GroupInfo {
   /// Identity key of the member who created the group.
   final String creator;
 
-  /// We left this group: it is read-only.
+  /// We left this group, or were removed from it: it is read-only.
   final bool left;
+
+  /// The group's disappearing-messages timer in seconds; 0 = off.
+  final BigInt disappearingSecs;
 
   const GroupInfo({
     required this.id,
@@ -1090,6 +1105,7 @@ class GroupInfo {
     required this.members,
     required this.creator,
     required this.left,
+    required this.disappearingSecs,
   });
 
   @override
@@ -1098,7 +1114,8 @@ class GroupInfo {
       name.hashCode ^
       members.hashCode ^
       creator.hashCode ^
-      left.hashCode;
+      left.hashCode ^
+      disappearingSecs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1109,7 +1126,8 @@ class GroupInfo {
           name == other.name &&
           members == other.members &&
           creator == other.creator &&
-          left == other.left;
+          left == other.left &&
+          disappearingSecs == other.disappearingSecs;
 }
 
 /// One entry in a group's history (UI-facing).

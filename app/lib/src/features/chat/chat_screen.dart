@@ -1498,7 +1498,7 @@ class _Bubble extends StatelessWidget {
                     ],
                   )
                 else if (message.isAudio && message.mediaId.isNotEmpty)
-                  VoiceBubble(mediaId: message.mediaId, mine: mine)
+                  VoiceBubble(mediaId: message.mediaId, mine: mine, bytes: message.mediaSize)
                 else
                   _MediaContent(message: message, mine: mine),
                 // "edited" tag once a sender edit replaced the text.

@@ -80,7 +80,11 @@ class Group {
     required this.members,
     required this.creator,
     this.left = false,
+    this.disappearingSecs = 0,
   });
+
+  /// The group's disappearing-messages timer in seconds; 0 = off. Any member may set it.
+  final int disappearingSecs;
 
   final String id;
   final String name;

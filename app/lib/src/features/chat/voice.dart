@@ -17,6 +17,10 @@ import '../../theme/cyberdog.dart';
 const String kVoiceKind = 'audio';
 const String kVoiceMime = 'audio/mp4';
 
+/// The recorder's bit rate. Also how a voice message's length is estimated from its size before
+/// it has been played, so the bubble does not open on 0:00.
+const int kVoiceBitRate = 32000;
+
 /// Longest voice message the recorder will take, to keep one message a reasonable size.
 const Duration kMaxVoiceLength = Duration(minutes: 5);
 
@@ -66,7 +70,7 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
       await _recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
-          bitRate: 32000,
+          bitRate: kVoiceBitRate,
           sampleRate: 22050,
           numChannels: 1,
         ),
@@ -186,10 +190,18 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
 /// The audio is decrypted to the core's private scratch directory the first time it is played
 /// (the same place and lifetime as a video opened from a chat) and played from there.
 class VoiceBubble extends StatefulWidget {
-  const VoiceBubble({super.key, required this.mediaId, required this.mine});
+  const VoiceBubble({
+    super.key,
+    required this.mediaId,
+    required this.mine,
+    this.bytes = 0,
+  });
 
   final String mediaId;
   final bool mine;
+
+  /// Size of the audio, for the length shown before it is first played.
+  final int bytes;
 
   @override
   State<VoiceBubble> createState() => _VoiceBubbleState();
@@ -299,7 +311,11 @@ class _VoiceBubbleState extends State<VoiceBubble> {
           ),
           const SizedBox(width: 8),
           Text(
-            _clock(_playing || _position > Duration.zero ? _position : _length),
+            _clock(_playing || _position > Duration.zero
+                ? _position
+                : _length > Duration.zero
+                    ? _length
+                    : Duration(milliseconds: widget.bytes * 8000 ~/ kVoiceBitRate)),
             style: TextStyle(fontSize: 12, color: ink.withValues(alpha: 0.8)),
           ),
         ],

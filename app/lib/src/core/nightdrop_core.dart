@@ -195,6 +195,15 @@ abstract class NightdropCore extends ChangeNotifier {
   /// Delete one of our own group messages for everyone ([Message.unsendId]).
   Future<void> unsendGroupMessage(String groupId, String id) async {}
 
+  /// Set a group's disappearing-messages timer in seconds (0 = off). Any member may.
+  Future<void> setGroupDisappearing(String groupId, int secs) async {}
+
+  /// Add contacts to a group we created.
+  Future<void> addGroupMembers(String groupId, List<String> memberIds) async {}
+
+  /// Remove a member from a group we created.
+  Future<void> removeGroupMember(String groupId, String memberId) async {}
+
   /// Leave a group. It stays on this device, read-only, until deleted.
   Future<void> leaveGroup(String groupId) async {}
 

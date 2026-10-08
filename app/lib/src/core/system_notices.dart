@@ -63,6 +63,11 @@ const _notices = <(String, String)>[
   ('You created the group', 'Вы создали группу.'),
   ('You were added to the group', 'Вас добавили в группу.'),
   ('You left the group', 'Вы вышли из группы.'),
+  ('You added a member to the group', 'Вы добавили участника в группу.'),
+  ('You removed a member from the group', 'Вы исключили участника из группы.'),
+  ('You were removed from the group', 'Вас исключили из группы.'),
+  ('A member was added to the group', 'В группу добавлен участник.'),
+  ('A member was removed from the group', 'Участник исключён из группы.'),
   ('A member left the group', 'Участник вышел из группы.'),
   (
     'Waiting for the other person to accept',
@@ -71,7 +76,7 @@ const _notices = <(String, String)>[
 ];
 
 final _timer =
-    RegExp(r'^(\S+ )?(You|The other person) set disappearing messages to (.+)\.$');
+    RegExp(r'^(\S+ )?(You|The other person|A member) set disappearing messages to (.+)\.$');
 final _span = RegExp(r'^(\d+) (week|day|hour|minute|second)\(s\)$');
 const _units = {'week': 'нед.', 'day': 'дн.', 'hour': 'ч', 'minute': 'мин', 'second': 'с'};
 
@@ -100,7 +105,11 @@ String localizeSystemNotice(String text) {
 
   final timer = _timer.firstMatch(text);
   if (timer != null) {
-    final who = timer.group(2) == 'You' ? 'Вы установили' : 'Собеседник установил';
+    final who = switch (timer.group(2)) {
+      'You' => 'Вы установили',
+      'A member' => 'Участник установил',
+      _ => 'Собеседник установил',
+    };
     return '${timer.group(1) ?? ''}$who исчезающие сообщения: ${_duration(timer.group(3)!)}.';
   }
   for (final (fragment, russian) in _notices) {

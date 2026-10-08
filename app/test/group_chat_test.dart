@@ -77,6 +77,24 @@ void main() {
     expect(find.text('Message deleted'), findsOneWidget);
   });
 
+  testWidgets('the creator can remove a member from the member list', (tester) async {
+    final core = await _coreWithContact(tester);
+    final other = core.contacts.first.id;
+    final id = await core.createGroup('Crew', [other]);
+    await tester.pumpWidget(_host(core, GroupChatScreen(groupId: id)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Crew'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('group-add-member')), findsOneWidget);
+    await tester.tap(find.byKey(ValueKey('group-remove-$other')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Remove from group'));
+    await tester.pumpAndSettle();
+
+    expect(core.groups.single.members, isNot(contains(other)));
+  });
+
   testWidgets('after leaving, the composer is replaced by a notice', (tester) async {
     final core = await _coreWithContact(tester);
     final id = await core.createGroup('Crew', [core.contacts.first.id]);

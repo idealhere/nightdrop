@@ -699,6 +699,27 @@ class RustNightdropCore extends NightdropCore {
   }
 
   @override
+  Future<void> setGroupDisappearing(String groupId, int secs) async {
+    await _core!.setGroupDisappearing(groupId: groupId, secs: BigInt.from(secs));
+    await _refresh();
+  }
+
+  @override
+  Future<void> addGroupMembers(String groupId, List<String> memberIds) async {
+    try {
+      await _core!.addGroupMembers(groupId: groupId, memberIds: memberIds);
+    } finally {
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> removeGroupMember(String groupId, String memberId) async {
+    await _core!.removeGroupMember(groupId: groupId, memberId: memberId);
+    await _refresh();
+  }
+
+  @override
   Future<void> leaveGroup(String groupId) async {
     await _core!.leaveGroup(groupId: groupId);
     await _refresh();
@@ -716,7 +737,14 @@ class RustNightdropCore extends NightdropCore {
     _groupCapable = (await _core!.groupCapableContacts()).toSet();
     _groups = [
       for (final g in await _core!.groups())
-        Group(id: g.id, name: g.name, members: g.members, creator: g.creator, left: g.left),
+        Group(
+          id: g.id,
+          name: g.name,
+          members: g.members,
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: g.disappearingSecs.toInt(),
+        ),
     ];
     final live = _groups.map((g) => g.id).toSet();
     final before = {

@@ -1347,6 +1347,40 @@
   "@groupUnsendBody": {
     "description": "Body of the delete-for-everyone confirmation in a group."
   },
+  "groupTimerHint": "Applies to everyone in the group. Any member can change it.",
+  "@groupTimerHint": {
+    "description": "Subtitle of the group timer chooser."
+  },
+  "groupAddMember": "Add a member",
+  "@groupAddMember": {
+    "description": "Entry in the member list, creator only."
+  },
+  "groupNobodyToAdd": "Everyone you can add is already in the group.",
+  "@groupNobodyToAdd": {
+    "description": "Shown when there is no contact left to add."
+  },
+  "groupRemoveMember": "Remove from group",
+  "@groupRemoveMember": {
+    "description": "Tooltip and confirmation title, creator only."
+  },
+  "groupRemoveBody": "{name} will stop receiving messages from this group and will see that they were removed.",
+  "@groupRemoveBody": {
+    "description": "Body of the remove-member confirmation.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "groupCouldNotChange": "Could not change the group: {error}",
+  "@groupCouldNotChange": {
+    "description": "Snackbar when a group change fails.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "groupLeave": "Leave group",
   "@groupLeave": {
     "description": "Menu entry and confirmation title."

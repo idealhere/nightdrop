@@ -294,12 +294,91 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     if (leaveScreen) navigator.pop();
   }
 
+  /// Run a group change and show the reason if it fails.
+  Future<void> _change(Future<void> Function() run) async {
+    final l10n = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await run();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.groupCouldNotChange(e.toString()))));
+    }
+  }
+
+  Future<void> _pickTimer(Group group) async {
+    final l10n = AppLocalizations.of(context)!;
+    final core = NightdropScope.of(context);
+    final options = <String, int>{
+      l10n.disappearingOff: 0,
+      l10n.disappearing5Minutes: 300,
+      l10n.disappearing1Hour: 3600,
+      l10n.disappearing1Day: 86400,
+      l10n.disappearing1Week: 604800,
+    };
+    final secs = await showModalBottomSheet<int>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(l10n.disappearingMessages),
+              subtitle: Text(l10n.groupTimerHint),
+            ),
+            for (final e in options.entries)
+              ListTile(
+                title: Text(e.key),
+                trailing: group.disappearingSecs == e.value ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, e.value),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (secs == null || secs == group.disappearingSecs) return;
+    await _change(() => core.setGroupDisappearing(group.id, secs));
+  }
+
+  /// The contacts the creator can still add: new enough for groups and not already in.
+  Future<void> _addMember(Group group) async {
+    final l10n = AppLocalizations.of(context)!;
+    final core = NightdropScope.of(context);
+    final candidates = [
+      for (final c in core.contacts)
+        if (!group.members.contains(c.id) && core.groupCapableContacts.contains(c.id)) c,
+    ];
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(title: Text(l10n.groupAddMember)),
+            if (candidates.isEmpty)
+              ListTile(title: Text(l10n.groupNobodyToAdd))
+            else
+              for (final c in candidates)
+                ListTile(
+                  leading: const Icon(Icons.person_add_alt),
+                  title: Text(c.displayName),
+                  onTap: () => Navigator.pop(context, c.id),
+                ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await _change(() => core.addGroupMembers(group.id, [picked]));
+  }
+
   void _showMembers(Group group) {
     final l10n = AppLocalizations.of(context)!;
     final core = NightdropScope.of(context);
+    // Only the person who created the group changes who is in it.
+    final manages = !group.left && group.creator == core.myIdentityKey;
     showModalBottomSheet<void>(
       context: context,
-      builder: (context) => SafeArea(
+      builder: (sheet) => SafeArea(
         child: ListView(
           shrinkWrap: true,
           children: [
@@ -307,12 +386,44 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
             for (final id in group.members)
               ListTile(
                 leading: const Icon(Icons.person_outline),
-                title: Text(groupMemberName(context, core, id)),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: Text(groupMemberName(sheet, core, id))),
+                    if (core.contacts.any((c) => c.id == id && c.verified)) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.verified_user,
+                          size: 16, color: Theme.of(sheet).colorScheme.primary),
+                    ],
+                  ],
+                ),
                 subtitle: id == group.creator ? Text(l10n.groupCreatorTag) : null,
-                trailing: core.contacts.any((c) => c.id == id && c.verified)
-                    ? Icon(Icons.verified_user,
-                        size: 18, color: Theme.of(context).colorScheme.primary)
+                trailing: manages && id != core.myIdentityKey
+                    ? IconButton(
+                        key: ValueKey('group-remove-$id'),
+                        tooltip: l10n.groupRemoveMember,
+                        icon: const Icon(Icons.person_remove_outlined),
+                        onPressed: () {
+                          Navigator.pop(sheet);
+                          _confirm(
+                            title: l10n.groupRemoveMember,
+                            body: l10n.groupRemoveBody(groupMemberName(context, core, id)),
+                            action: l10n.groupRemoveMember,
+                            run: () => _change(() => core.removeGroupMember(group.id, id)),
+                          );
+                        },
+                      )
                     : null,
+              ),
+            if (manages && group.members.length < 10)
+              ListTile(
+                key: const ValueKey('group-add-member'),
+                leading: const Icon(Icons.person_add_alt),
+                title: Text(l10n.groupAddMember),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  _addMember(group);
+                },
               ),
           ],
         ),
@@ -346,9 +457,18 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(group.name, overflow: TextOverflow.ellipsis),
-                  Text(
-                    l10n.groupMembersCount(group.members.length),
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l10n.groupMembersCount(group.members.length),
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      ),
+                      if (group.disappearingSecs > 0) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.timer_outlined, size: 13, color: scheme.onSurfaceVariant),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -357,6 +477,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'members') _showMembers(group);
+                  if (value == 'timer') _pickTimer(group);
                   if (value == 'leave') {
                     _confirm(
                       title: l10n.groupLeave,
@@ -377,6 +498,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 },
                 itemBuilder: (context) => [
                   PopupMenuItem(value: 'members', child: Text(l10n.groupMembersTitle)),
+                  if (!group.left)
+                    PopupMenuItem(value: 'timer', child: Text(l10n.disappearingMessages)),
                   if (!group.left) PopupMenuItem(value: 'leave', child: Text(l10n.groupLeave)),
                   PopupMenuItem(value: 'delete', child: Text(l10n.groupDelete)),
                 ],
@@ -554,7 +677,7 @@ class _GroupBubble extends StatelessWidget {
             else if (message.isImage && message.mediaId.isNotEmpty)
               _GroupPhoto(mediaId: message.mediaId)
             else if (message.isAudio && message.mediaId.isNotEmpty)
-              VoiceBubble(mediaId: message.mediaId, mine: mine)
+              VoiceBubble(mediaId: message.mediaId, mine: mine, bytes: message.mediaSize)
             else
               Text(
                 message.text,

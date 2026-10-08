@@ -83,6 +83,46 @@ class MockNightdropCore extends NightdropCore {
     notifyListeners();
   }
 
+  void _replaceGroup(String groupId, Group Function(Group) change) {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i < 0) return;
+    _groups[i] = change(_groups[i]);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setGroupDisappearing(String groupId, int secs) async => _replaceGroup(
+      groupId,
+      (g) => Group(
+          id: g.id,
+          name: g.name,
+          members: g.members,
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: secs));
+
+  @override
+  Future<void> addGroupMembers(String groupId, List<String> memberIds) async => _replaceGroup(
+      groupId,
+      (g) => Group(
+          id: g.id,
+          name: g.name,
+          members: [...g.members, ...memberIds],
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: g.disappearingSecs));
+
+  @override
+  Future<void> removeGroupMember(String groupId, String memberId) async => _replaceGroup(
+      groupId,
+      (g) => Group(
+          id: g.id,
+          name: g.name,
+          members: g.members.where((m) => m != memberId).toList(),
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: g.disappearingSecs));
+
   @override
   Future<void> unsendGroupMessage(String groupId, String id) async {
     final list = _groupMessages[groupId];

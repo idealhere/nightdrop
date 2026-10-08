@@ -293,6 +293,9 @@ pub struct PersistedGroup {
     pub left: bool,
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub disappearing_secs: u64,
+    /// Acknowledgements collected so far for our messages not yet delivered to everyone.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub acks: std::collections::HashMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<PersistedGroupMessage>,
 }

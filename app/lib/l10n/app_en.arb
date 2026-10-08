@@ -1401,6 +1401,10 @@
   "@groupInviteJoining": {
     "description": "Shown after someone used a group invitation, while they are being added."
   },
+  "groupDeliveredToAll": "Delivered to everyone",
+  "@groupDeliveredToAll": {
+    "description": "Tooltip of the double tick on our own group message."
+  },
   "groupLeave": "Leave group",
   "@groupLeave": {
     "description": "Menu entry and confirmation title."

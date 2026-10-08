@@ -102,6 +102,7 @@ impl Node {
                 members: g.members.clone(),
                 left: g.left,
                 disappearing_secs: g.disappearing_secs,
+                acks: g.acks.clone(),
                 history: g
                     .history
                     .iter()
@@ -409,6 +410,7 @@ impl Node {
                         .collect(),
                     left: g.left,
                     disappearing_secs: g.disappearing_secs,
+                    acks: g.acks.clone(),
                 },
             );
         }

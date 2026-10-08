@@ -1713,6 +1713,8 @@ String _deliveryLabel(AppLocalizations l10n, String delivery) => switch (deliver
 
 /// A local clock time: 12-hour in English ("3:45 PM"), 24-hour in Russian ("15:45"). No `intl`
 /// dependency.
+String formatMessageTime(DateTime at) => _formatTime(at);
+
 String _formatTime(DateTime at) {
   final t = at.toLocal();
   if (AppLocale.current.value == AppLocale.russian) {

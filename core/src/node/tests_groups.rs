@@ -262,6 +262,7 @@ fn plant_group(node: &mut Node, id: &str, creator: &str, members: &[String]) {
             history: Vec::new(),
             left: false,
             disappearing_secs: 0,
+            acks: HashMap::new(),
         },
     );
 }
@@ -734,4 +735,47 @@ fn a_removed_member_is_out_and_can_be_added_back() {
     alice.send_group(&gid, "welcome back").unwrap();
     settle(&mut [&mut alice, &mut bob, &mut carol]);
     assert_eq!(last_of(&bob, &gid).text, "welcome back");
+}
+
+#[test]
+fn a_group_message_is_delivered_once_every_member_has_it() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let dirs = media_stores("acks", &mut [&mut alice, &mut bob, &mut carol]);
+    let gid = alice
+        .create_group("acks", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    alice.send_group(&gid, "status?").unwrap();
+    assert_eq!(last_of(&alice, &gid).delivery, "sent");
+
+    // Bob has it; Carol has not looked yet.
+    for _ in 0..2 {
+        bob.pump().unwrap();
+        alice.pump().unwrap();
+    }
+    assert_eq!(
+        last_of(&alice, &gid).delivery,
+        "sent",
+        "one of two is not everyone"
+    );
+
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    assert_eq!(last_of(&alice, &gid).delivery, "delivered");
+    assert!(alice.groups.get(&gid).unwrap().acks.is_empty());
+
+    // A photo is acknowledged by its transfer id.
+    alice
+        .send_group_media(&gid, &[1, 2, 3], "image/png", "image")
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    assert_eq!(last_of(&alice, &gid).delivery, "delivered");
+
+    // Nobody can acknowledge on a member's behalf from outside the group.
+    alice.send_group(&gid, "again").unwrap();
+    let id = last_of(&alice, &gid).msg_id;
+    let forged = pack_group(&gid, "ack", id.as_bytes());
+    assert_eq!(alice.on_group_frame("a stranger", &forged).unwrap(), None);
+    assert_eq!(last_of(&alice, &gid).delivery, "sent");
+    remove_stores(&dirs);
 }

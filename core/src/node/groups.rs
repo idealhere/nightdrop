@@ -31,6 +31,9 @@ pub(crate) struct Group {
     pub left: bool,
     /// The group's disappearing-messages timer in seconds; 0 = off. Any member may set it.
     pub disappearing_secs: u64,
+    /// Who has acknowledged each of our messages still on its way, by message id. An entry goes
+    /// when every member has, and the message then reads "delivered".
+    pub acks: HashMap<String, Vec<String>>,
 }
 
 /// A system notice as a group history entry.
@@ -61,8 +64,8 @@ fn parse_members(listed: &str, creator: &str) -> Option<Vec<String>> {
 const MAX_INTRO_PAYLOAD: usize = 4096;
 
 /// Pack a group envelope: `[group_id][op][body…]`. `op` names what the frame does (`create`,
-/// `msg`, `media`, `unsend`, `timer`, `members`, `leave`, `intro`); a build that does not know
-/// an `op` ignores the frame.
+/// `msg`, `media`, `ack`, `unsend`, `timer`, `members`, `leave`, `intro`); a build that does not
+/// know an `op` ignores the frame.
 pub(super) fn pack_group(group_id: &str, op: &str, body: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     put_field(&mut out, group_id.as_bytes());
@@ -182,6 +185,7 @@ impl Node {
                 }],
                 left: false,
                 disappearing_secs: 0,
+                acks: HashMap::new(),
             },
         );
         self.dirty = true;
@@ -572,6 +576,7 @@ impl Node {
                             history: vec![notice("👥 You were added to the group.")],
                             left: false,
                             disappearing_secs: 0,
+                            acks: HashMap::new(),
                         },
                     );
                 }
@@ -647,13 +652,16 @@ impl Node {
                         .iter()
                         .any(|gm| gm.sender.as_str() == from && gm.message.msg_id == msg_id);
                 if duplicate {
+                    // Acknowledged again: the first acknowledgement may be what got lost.
+                    self.ack_group_message(from, &group_id, &msg_id);
                     return Ok(None);
                 }
                 group.history.push(GroupMessage {
                     sender: from.to_string(),
-                    message: ChatMessage::text(false, text.clone(), msg_id),
+                    message: ChatMessage::text(false, text.clone(), msg_id.clone()),
                 });
                 self.dirty = true;
+                self.ack_group_message(from, &group_id, &msg_id);
                 Ok(Some((from.to_string(), text)))
             }
             "media" => {
@@ -685,10 +693,45 @@ impl Node {
                         mime,
                         media_id,
                         data.len() as u64,
-                        transfer_id,
+                        transfer_id.clone(),
                         String::new(),
                     ),
                 });
+                self.dirty = true;
+                self.ack_group_message(from, &group_id, &transfer_id);
+                Ok(Some((from.to_string(), String::new())))
+            }
+            "ack" => {
+                // A member has our message. It is "delivered" once every member has said so;
+                // there is no "read" in this app, here or anywhere.
+                let id = String::from_utf8_lossy(&body).into_owned();
+                let me = self.identity_key();
+                let Some(group) = self.groups.get_mut(&group_id) else {
+                    return Ok(None);
+                };
+                if id.is_empty() || !group.members.iter().any(|m| m.as_str() == from) {
+                    return Ok(None);
+                }
+                let Some(gm) = group.history.iter_mut().find(|gm| {
+                    gm.message.from_me
+                        && gm.message.delivery != "delivered"
+                        && (gm.message.msg_id == id || gm.message.transfer_id == id)
+                }) else {
+                    return Ok(None);
+                };
+                let acked = group.acks.entry(id.clone()).or_default();
+                if !acked.iter().any(|m| m.as_str() == from) {
+                    acked.push(from.to_string());
+                }
+                let everyone = group
+                    .members
+                    .iter()
+                    .filter(|m| m.as_str() != me.as_str())
+                    .all(|m| acked.contains(m));
+                if everyone {
+                    gm.message.delivery = "delivered".to_string();
+                    group.acks.remove(&id);
+                }
                 self.dirty = true;
                 Ok(Some((from.to_string(), String::new())))
             }
@@ -827,6 +870,13 @@ impl Node {
             if self.send_group_frame(&creator, &envelope).is_ok() {
                 self.intro_expected.insert(target);
             }
+        }
+    }
+
+    /// Tell `to` that their group message (by `msg_id` or `transfer_id`) reached us. Best effort.
+    fn ack_group_message(&mut self, to: &str, group_id: &str, id: &str) {
+        if !id.is_empty() {
+            let _ = self.send_group_frame(to, &pack_group(group_id, "ack", id.as_bytes()));
         }
     }
 

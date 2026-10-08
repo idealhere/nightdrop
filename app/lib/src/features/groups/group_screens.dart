@@ -12,7 +12,8 @@ import '../../core/models.dart';
 import '../../core/nightdrop_core.dart';
 import '../../core/system_notices.dart';
 import '../../theme/cyberdog.dart';
-import '../chat/chat_screen.dart' show compressImage, formatBytes, kMaxMediaBytes;
+import '../chat/chat_screen.dart'
+    show compressImage, formatBytes, formatMessageTime, kMaxMediaBytes;
 import '../chat/voice.dart';
 import '../pairing/pairing_screen.dart';
 
@@ -747,6 +748,7 @@ class _GroupBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final scheme = Theme.of(context).colorScheme;
     final mine = message.fromMe;
     return Align(
@@ -779,7 +781,7 @@ class _GroupBubble extends StatelessWidget {
               ),
             if (message.isDeleted)
               Text(
-                AppLocalizations.of(context)!.messageDeleted,
+                l10n.messageDeleted,
                 style: TextStyle(
                   fontStyle: FontStyle.italic,
                   color: (mine ? Colors.white : scheme.onSurface).withValues(alpha: 0.6),
@@ -794,6 +796,35 @@ class _GroupBubble extends StatelessWidget {
                 message.text,
                 style: TextStyle(color: mine ? Colors.white : scheme.onSurface),
               ),
+            const SizedBox(height: 3),
+            // The time, and on our own messages whether it has reached the group: one tick once
+            // it is sent, two when every member's device has it. There is no "read".
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (mine && !message.isDeleted && message.delivery.isNotEmpty) ...[
+                  Tooltip(
+                    message: message.delivery == 'delivered'
+                        ? l10n.groupDeliveredToAll
+                        : l10n.deliverySent,
+                    child: Icon(
+                      message.delivery == 'delivered' ? Icons.done_all : Icons.done,
+                      key: ValueKey('group-delivery-${message.delivery}'),
+                      size: 13,
+                      color: Colors.white.withValues(alpha: 0.75),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  formatMessageTime(message.at),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: (mine ? Colors.white : scheme.onSurfaceVariant).withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

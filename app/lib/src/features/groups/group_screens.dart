@@ -452,6 +452,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                       )
                     : null,
               ),
+            if (!manages && !group.left)
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: Text(
+                  l10n.groupOnlyCreatorManages,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(sheet).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (manages && group.members.length < 10)
               ListTile(
                 key: const ValueKey('group-add-member'),
@@ -582,41 +593,47 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 SafeArea(
                   top: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+                    // The same row as a 1:1 chat: attach, field, microphone, send.
+                    padding: const EdgeInsets.all(8),
                     child: Row(
                       children: [
                         IconButton(
                           tooltip: l10n.groupAttachPhoto,
+                          style: _composerTile,
                           onPressed: _attachPhoto,
-                          icon: const Icon(Icons.image_outlined),
+                          icon: const Icon(Icons.attach_file),
                         ),
-                        IconButton(
-                          tooltip: l10n.voiceRecord,
-                          onPressed: () => setState(() => _recordingVoice = true),
-                          icon: const Icon(Icons.mic_none),
-                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: TextField(
                             key: const ValueKey('group-input'),
                             controller: _input,
                             minLines: 1,
-                            maxLines: 5,
+                            maxLines: 4,
                             textCapitalization: TextCapitalization.sentences,
                             decoration: InputDecoration(
                               hintText: l10n.messageHint,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
+                              filled: true,
+                              fillColor: CyberDog.panel,
+                              border: _fieldBorder(CyberDog.hairline),
+                              enabledBorder: _fieldBorder(CyberDog.hairline),
+                              focusedBorder: _fieldBorder(CyberDog.hairlineBright, width: 1.4),
                               contentPadding:
-                                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        IconButton.filled(
+                        IconButton(
+                          tooltip: l10n.voiceRecord,
+                          style: _composerTile,
+                          onPressed: () => setState(() => _recordingVoice = true),
+                          icon: const Icon(Icons.mic_none),
+                        ),
+                        const SizedBox(width: 6),
+                        CyberDogSendButton(
                           key: const ValueKey('group-send'),
                           onPressed: _send,
-                          icon: const Icon(Icons.arrow_upward),
                         ),
                       ],
                     ),
@@ -629,6 +646,20 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     );
   }
 }
+
+/// The composer's square buttons and field outline, as in a 1:1 chat.
+final _composerTile = IconButton.styleFrom(
+  backgroundColor: CyberDog.panel,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(12),
+    side: const BorderSide(color: CyberDog.hairline),
+  ),
+);
+
+OutlineInputBorder _fieldBorder(Color color, {double width = 1}) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide(color: color, width: width),
+    );
 
 class _Notice extends StatelessWidget {
   const _Notice({required this.text});

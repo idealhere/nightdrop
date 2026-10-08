@@ -1559,56 +1559,56 @@ class _Bubble extends StatelessWidget {
                 // actually received — and when a message was lost in flight (2026-08-02) the
                 // sender had no way to tell. Now it reads "Sent" until their device confirms
                 // that exact message, and only then "Delivered".
-                if (mine &&
-                    !message.sending &&
-                    (message.delivery == 'queued' ||
-                        message.delivery == 'sent' ||
-                        message.delivery == 'delivered' ||
-                        message.delivery == 'expired')) ...[
+                // Shown as an icon beside the time, not as a word: "Delivered" under every message
+                // made short messages wide. The word is still there for a screen reader and on
+                // hover. Only "expired" keeps its text — it is the one state that needs acting on.
+                if (_showsDelivery(message, mine) || _hasTime(message.at)) ...[
                   const SizedBox(height: 3),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        switch (message.delivery) {
-                          'queued' => Icons.cloud_upload_outlined,
-                          'expired' => Icons.error_outline,
-                          // Deliberately not a tick. A tick reads as "done", and this state means
-                          // only that the peer's onion answered — the message can still be lost
-                          // there, which is exactly what happened on 2026-08-02. The core puts a
-                          // relay copy behind it if no receipt names it, so this resolves on its
-                          // own to "Held for delivery" and then "Delivered".
-                          'sent' => Icons.schedule,
-                          _ => Icons.done_all,
-                        },
-                        size: 12,
-                        color: scheme.onPrimary.withValues(alpha: 0.75),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        switch (message.delivery) {
-                          'queued' => l10n.deliveryHeld,
-                          'expired' => l10n.deliveryExpired,
-                          'sent' => l10n.deliverySent,
-                          _ => l10n.deliveryDelivered,
-                        },
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            color: scheme.onPrimary.withValues(alpha: 0.75)),
-                      ),
+                      if (_showsDelivery(message, mine)) ...[
+                        Tooltip(
+                          message: _deliveryLabel(l10n, message.delivery),
+                          child: Icon(
+                            switch (message.delivery) {
+                              'queued' => Icons.cloud_upload_outlined,
+                              'expired' => Icons.error_outline,
+                              // Deliberately not a tick. A tick reads as "done", and this state
+                              // means only that the peer's onion answered — the message can still
+                              // be lost there, which is exactly what happened on 2026-08-02. The
+                              // core puts a relay copy behind it if no receipt names it, so this
+                              // resolves on its own to "held" and then "delivered".
+                              'sent' => Icons.schedule,
+                              _ => Icons.done_all,
+                            },
+                            size: 13,
+                            semanticLabel: _deliveryLabel(l10n, message.delivery),
+                            color: scheme.onPrimary.withValues(alpha: 0.75),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        if (message.delivery == 'expired') ...[
+                          Text(
+                            l10n.deliveryExpired,
+                            style: TextStyle(
+                                fontSize: 10.5,
+                                color: scheme.onPrimary.withValues(alpha: 0.75)),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                      ],
+                      // Message time (local clock). Omitted for pre-timestamp history (at == 0).
+                      if (_hasTime(message.at))
+                        Text(
+                          _formatTime(message.at),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
                     ],
-                  ),
-                ],
-                // Message time (local clock). Omitted for pre-timestamp history (at == 0).
-                if (_hasTime(message.at)) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    _formatTime(message.at),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
-                          .withValues(alpha: 0.6),
-                    ),
                   ),
                 ],
               ],
@@ -1672,6 +1672,23 @@ String _disappearingLabel(int secs) {
 
 /// A local clock time: 12-hour in English ("3:45 PM"), 24-hour in Russian ("15:45"). No `intl`
 /// dependency.
+/// Whether a bubble shows a delivery state: our own messages once the core has reported one.
+bool _showsDelivery(Message message, bool mine) =>
+    mine &&
+    !message.sending &&
+    (message.delivery == 'queued' ||
+        message.delivery == 'sent' ||
+        message.delivery == 'delivered' ||
+        message.delivery == 'expired');
+
+/// The delivery state in words, for the tooltip and for screen readers.
+String _deliveryLabel(AppLocalizations l10n, String delivery) => switch (delivery) {
+      'queued' => l10n.deliveryHeld,
+      'expired' => l10n.deliveryExpired,
+      'sent' => l10n.deliverySent,
+      _ => l10n.deliveryDelivered,
+    };
+
 String _formatTime(DateTime at) {
   final t = at.toLocal();
   if (AppLocale.current.value == AppLocale.russian) {

@@ -112,8 +112,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               for (final c in contacts)
                 CheckboxListTile(
                   value: _picked.contains(c.id),
-                  title: Text(c.displayName),
-                  subtitle: capable.contains(c.id) ? null : Text(l10n.groupNeedsNewer),
+                  title: Text(c.headerName),
+                  subtitle: Text(
+                    capable.contains(c.id) ? shortId(c.id) : l10n.groupNeedsNewer,
+                    style: capable.contains(c.id)
+                        ? const TextStyle(fontFamily: 'monospace', fontSize: 12)
+                        : null,
+                  ),
                   // A member on an older app would silently miss the whole conversation.
                   onChanged: !capable.contains(c.id) ||
                           (!_picked.contains(c.id) && _picked.length >= _maxOthers)
@@ -409,7 +414,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               for (final c in candidates)
                 ListTile(
                   leading: const Icon(Icons.person_add_alt),
-                  title: Text(c.displayName),
+                  title: Text(c.headerName),
+                  subtitle: Text(
+                    shortId(c.id),
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
                   onTap: () => Navigator.pop(context, c.id),
                 ),
           ],
@@ -452,7 +461,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                     ],
                   ],
                 ),
-                subtitle: id == group.creator ? Text(l10n.groupCreatorTag) : null,
+                // The ID is what tells two members with the same name apart.
+                subtitle: Text(
+                  id == group.creator ? '${shortId(id)} · ${l10n.groupCreatorTag}' : shortId(id),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
                 trailing: manages && id != core.myIdentityKey
                     ? IconButton(
                         key: ValueKey('group-remove-$id'),
@@ -588,7 +601,10 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                           : null,
                       child: _GroupBubble(
                         message: m,
-                        sender: m.fromMe ? '' : groupMemberName(context, core, m.senderId),
+                        sender: m.fromMe || !_startsRun(messages, i)
+                            ? ''
+                            : '${groupMemberName(context, core, m.senderId)} · '
+                                '${shortId(m.senderId)}',
                       ),
                     );
                   },
@@ -678,6 +694,13 @@ OutlineInputBorder _fieldBorder(Color color, {double width = 1}) => OutlineInput
       borderRadius: BorderRadius.circular(16),
       borderSide: BorderSide(color: color, width: width),
     );
+
+/// Whether message [i] is the first of a run from its sender: the one that carries the name.
+bool _startsRun(List<Message> messages, int i) {
+  if (i == 0) return true;
+  final before = messages[i - 1];
+  return before.system || before.fromMe || before.senderId != messages[i].senderId;
+}
 
 class _Notice extends StatelessWidget {
   const _Notice({required this.text});

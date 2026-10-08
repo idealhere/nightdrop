@@ -14,6 +14,7 @@ import '../../core/system_notices.dart';
 import '../../theme/cyberdog.dart';
 import '../chat/chat_screen.dart' show compressImage, formatBytes, kMaxMediaBytes;
 import '../chat/voice.dart';
+import '../pairing/pairing_screen.dart';
 
 /// The name to show for a group member: "You" for us, the contact's name for someone we have a
 /// chat with, and a neutral word for a member we are not connected to.
@@ -21,7 +22,7 @@ String groupMemberName(BuildContext context, NightdropCore core, String memberId
   final l10n = AppLocalizations.of(context)!;
   if (memberId == core.myIdentityKey) return l10n.groupYou;
   final contact = core.contacts.where((c) => c.id == memberId).firstOrNull;
-  return contact?.displayName ?? l10n.groupUnknownMember;
+  return contact?.headerName ?? l10n.groupUnknownMember;
 }
 
 /// Pick a name and members for a new group. Members come from the chats we already have: a
@@ -376,6 +377,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     await _change(() => core.setGroupDisappearing(group.id, secs));
   }
 
+  /// What the add-member sheet returns for "invite with a code" instead of a contact id.
+  static const _inviteByCode = '\u0000invite-by-code';
+
   /// The contacts the creator can still add: new enough for groups and not already in.
   Future<void> _addMember(Group group) async {
     final l10n = AppLocalizations.of(context)!;
@@ -391,6 +395,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           shrinkWrap: true,
           children: [
             ListTile(title: Text(l10n.groupAddMember)),
+            // Someone who is not a contact yet: one code pairs with them and adds them.
+            ListTile(
+              key: const ValueKey('group-invite-code'),
+              leading: const Icon(Icons.qr_code_2),
+              title: Text(l10n.groupInviteByCode),
+              subtitle: Text(l10n.groupInviteByCodeHint),
+              onTap: () => Navigator.pop(context, _inviteByCode),
+            ),
             if (candidates.isEmpty)
               ListTile(title: Text(l10n.groupNobodyToAdd))
             else
@@ -404,7 +416,13 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ),
       ),
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
+    if (picked == _inviteByCode) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => PairingScreen(groupId: group.id)),
+      );
+      return;
+    }
     await _change(() => core.addGroupMembers(group.id, [picked]));
   }
 

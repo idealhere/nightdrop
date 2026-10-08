@@ -1385,6 +1385,22 @@
   "@groupOnlyCreatorManages": {
     "description": "Shown in the member list to someone who did not create the group."
   },
+  "groupInviteByCode": "Invite with a code",
+  "@groupInviteByCode": {
+    "description": "Entry in the add-member sheet: show a QR code and secret words for someone who is not a contact yet."
+  },
+  "groupInviteByCodeHint": "For someone you do not have a chat with yet",
+  "@groupInviteByCodeHint": {
+    "description": "Subtitle of the invite-with-a-code entry."
+  },
+  "groupInviteTitle": "Invite to the group",
+  "@groupInviteTitle": {
+    "description": "Title of the group invitation screen."
+  },
+  "groupInviteJoining": "Connected. Adding them to the group…",
+  "@groupInviteJoining": {
+    "description": "Shown after someone used a group invitation, while they are being added."
+  },
   "groupLeave": "Leave group",
   "@groupLeave": {
     "description": "Menu entry and confirmation title."

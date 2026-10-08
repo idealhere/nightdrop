@@ -13,11 +13,22 @@ import 'scan_screen.dart';
 ///   • Invite — show a QR (pre-authorized) and a short code (`slot-secret-words`).
 ///   • Join — enter a short code; the PAKE secret words authorize and block MITM.
 class PairingScreen extends StatelessWidget {
-  const PairingScreen({super.key});
+  const PairingScreen({super.key, this.groupId});
+
+  /// When set, this is an invitation into that group: only the code is shown, and whoever uses
+  /// it becomes a contact and is added to the group in the same step.
+  final String? groupId;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final groupId = this.groupId;
+    if (groupId != null) {
+      return Scaffold(
+        appBar: AppBar(title: Text(l10n.groupInviteTitle)),
+        body: _InviteTab(groupId: groupId),
+      );
+    }
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -36,7 +47,10 @@ class PairingScreen extends StatelessWidget {
 }
 
 class _InviteTab extends StatefulWidget {
-  const _InviteTab();
+  const _InviteTab({this.groupId});
+
+  /// See [PairingScreen.groupId].
+  final String? groupId;
 
   @override
   State<_InviteTab> createState() => _InviteTabState();
@@ -84,16 +98,57 @@ class _InviteTabState extends State<_InviteTab> {
     // Not from inside the notification itself: it may arrive while a frame is being built.
     Future<void>.microtask(() {
       if (!mounted) return;
+      final groupId = widget.groupId;
+      if (groupId != null) {
+        _addToGroup(core, groupId, joined.id);
+        return;
+      }
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(builder: (_) => ChatScreen(contactId: joined.id)),
       );
     });
   }
 
+  /// The code was an invitation into a group: add whoever used it, then go back to the group.
+  Future<void> _addToGroup(NightdropCore core, String groupId, String contactId) async {
+    final l10n = AppLocalizations.of(context)!;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _addingToGroup = true);
+    // Their app says that it understands groups a moment after pairing; until it has, the core
+    // would refuse to add them.
+    for (var i = 0; i < 60 && !core.groupCapableContacts.contains(contactId); i++) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    try {
+      await core.addGroupMembers(groupId, [contactId]);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.groupCouldNotChange(e.toString()))));
+    }
+    if (mounted) navigator.pop();
+  }
+
+  bool _addingToGroup = false;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final invite = _invite;
+    if (_addingToGroup) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              Text(l10n.groupInviteJoining, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
+    }
     if (invite == null) {
       return const Center(child: CircularProgressIndicator());
     }

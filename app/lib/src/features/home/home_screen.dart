@@ -35,18 +35,18 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static const _wide = 900.0;
 
-  /// From this width the open chat sits beside the list instead of covering it.
-  static const _threePane = 1200.0;
-
   int _tab = 0;
 
-  /// The chat open in the side pane on a wide window: its id and whether it is a group.
+  /// The chat open in the pane beside the rail on a wide window: its id and whether it is a
+  /// group. Null while the pane shows the section itself.
   (String, bool)? _open;
 
-  /// The pane for the open chat. It has a navigator of its own, so what a chat opens — the
-  /// profile, the safety number — opens beside the list too, and so that a chat closing itself
-  /// (deleted, group left) only empties the pane.
-  Widget _detail(NightdropCore core, AppLocalizations l10n) {
+  final _paneKey = GlobalKey<NavigatorState>();
+
+  /// On a wide window the rail stays put and everything else happens in the pane beside it, which
+  /// has a navigator of its own: a chat opens over the list, and its back arrow — or a chat that
+  /// closes itself, deleted or left — returns to the list.
+  Widget _pane(NightdropCore core, Widget section) {
     return ListenableBuilder(
       listenable: core,
       builder: (context, _) {
@@ -55,25 +55,23 @@ class _HomeScreenState extends State<HomeScreen> {
             (open.$2
                 ? core.groups.any((g) => g.id == open.$1)
                 : core.contacts.any((c) => c.id == open.$1));
-        if (!exists) {
-          return Center(
-            child: Text(
-              l10n.selectChatHint,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          );
-        }
         return Navigator(
-          key: ValueKey('detail-${open.$1}'),
+          key: _paneKey,
           pages: [
             MaterialPage<void>(
-              key: ValueKey(open.$1),
-              child: open.$2
-                  ? GroupChatScreen(groupId: open.$1)
-                  : ChatScreen(contactId: open.$1),
+              key: const ValueKey('section'),
+              child: Material(type: MaterialType.transparency, child: section),
             ),
+            if (open != null && exists)
+              MaterialPage<void>(
+                key: ValueKey('chat-${open.$1}'),
+                child: open.$2
+                    ? GroupChatScreen(groupId: open.$1)
+                    : ChatScreen(contactId: open.$1),
+              ),
           ],
-          onDidRemovePage: (_) {
+          onDidRemovePage: (page) {
+            if (page.key == const ValueKey('section')) return;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted && _open == open) setState(() => _open = null);
             });
@@ -134,9 +132,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final l10n = AppLocalizations.of(context)!;
     final width = MediaQuery.sizeOf(context).width;
     final wide = width >= _wide;
-    // Three panes only where there is a chat list to put beside a chat.
-    final threePane = width >= _threePane && _tab < 2;
-    void openBeside(String id, bool group) => setState(() => _open = (id, group));
+    // Beside the rail, a chat opens in the pane rather than over the whole window.
+    void openInPane(String id, bool group) => setState(() => _open = (id, group));
+    final chatOpen = wide && _open != null;
     final sections = [
       (Icons.chat_bubble_outline, Icons.chat_bubble, l10n.chats),
       (Icons.groups_outlined, Icons.groups, l10n.tabGroups),
@@ -144,16 +142,8 @@ class _HomeScreenState extends State<HomeScreen> {
       (Icons.person_outline, Icons.person, l10n.tabProfile),
     ];
     final page = switch (_tab) {
-      0 => _ChatList(
-          groupsOnly: false,
-          onOpen: threePane ? openBeside : null,
-          selected: threePane ? _open?.$1 : null,
-        ),
-      1 => _ChatList(
-          groupsOnly: true,
-          onOpen: threePane ? openBeside : null,
-          selected: threePane ? _open?.$1 : null,
-        ),
+      0 => _ChatList(groupsOnly: false, onOpen: wide ? openInPane : null),
+      1 => _ChatList(groupsOnly: true, onOpen: wide ? openInPane : null),
       2 => const _SettingsTab(),
       _ => const _ProfileTab(),
     };
@@ -188,10 +178,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      // Beside an open chat the button belongs to the list, not to the corner of the window,
-      // where it would sit on top of the chat's send button.
-      // Lifted a little, so that it floats over the list rather than sitting on the bar.
-      floatingActionButton: _tab < 2 && !threePane
+      // Lifted a little, so that it floats over the list rather than sitting on the bar. Gone
+      // while a chat fills the pane: it would sit on top of the chat's send button.
+      floatingActionButton: _tab < 2 && !chatOpen
           ? Padding(padding: const EdgeInsets.only(bottom: 10), child: actionButton)
           : null,
       body: wide
@@ -201,7 +190,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   backgroundColor: Colors.transparent,
                   extended: MediaQuery.sizeOf(context).width >= 1100,
                   selectedIndex: _tab,
-                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  // Choosing a section leaves whatever chat was open in the pane.
+                  onDestinationSelected: (i) => setState(() {
+                    _tab = i;
+                    _open = null;
+                  }),
                   destinations: [
                     for (final (icon, selected, label) in sections)
                       NavigationRailDestination(
@@ -212,21 +205,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const VerticalDivider(width: 1, color: CyberDog.hairline),
-                if (threePane) ...[
-                  SizedBox(
-                    width: 380,
-                    child: Stack(
-                      children: [
-                        content,
-                        Positioned(right: 16, bottom: 16, child: actionButton),
-                      ],
-                    ),
-                  ),
-                  const VerticalDivider(width: 1, color: CyberDog.hairline),
-                  Expanded(child: _detail(core, l10n)),
-                ] else
-                  Expanded(
-                    child: Align(
+                Expanded(
+                  child: _pane(
+                    core,
+                    Align(
                       alignment: Alignment.topCenter,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 760),
@@ -234,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
+                ),
               ],
             )
           : content,
@@ -299,16 +282,13 @@ String _listTime(DateTime at) {
 
 /// The chats, newest activity first: everything, or only the groups.
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.groupsOnly, this.onOpen, this.selected});
+  const _ChatList({required this.groupsOnly, this.onOpen});
 
   final bool groupsOnly;
 
-  /// On a wide window: open the chat beside the list (its id, whether it is a group) instead of
-  /// on top of it. Null on a phone.
+  /// On a wide window: open the chat in the pane beside the rail (its id, whether it is a group)
+  /// instead of over the whole window. Null on a phone.
   final void Function(String id, bool group)? onOpen;
-
-  /// The chat open beside the list, to mark its row.
-  final String? selected;
 
   @override
   Widget build(BuildContext context) {
@@ -357,12 +337,7 @@ class _ChatList extends StatelessWidget {
           children: [
             for (final r in requests) _RequestTile(request: r, core: core),
             for (final row in rows)
-              _ChatTile(
-                row: row,
-                core: core,
-                onOpen: onOpen,
-                selected: selected != null && selected == (row.contact?.id ?? row.group?.id),
-              ),
+              _ChatTile(row: row, core: core, onOpen: onOpen),
           ],
         );
       },
@@ -373,12 +348,11 @@ class _ChatList extends StatelessWidget {
 /// A chat in the list: avatar, name, the last line, and on the right the time with either the
 /// unread count or, for our own last message, whether it was delivered.
 class _ChatTile extends StatelessWidget {
-  const _ChatTile({required this.row, required this.core, this.onOpen, this.selected = false});
+  const _ChatTile({required this.row, required this.core, this.onOpen});
 
   final _Row row;
   final NightdropCore core;
   final void Function(String id, bool group)? onOpen;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -396,9 +370,9 @@ class _ChatTile extends StatelessWidget {
             ? (contact.remoteStorage ? l10n.storedOnServer24h : l10n.storedOnThisDevice)
             : l10n.groupMembersCount(group!.members.length);
     void open() {
-      final beside = onOpen;
-      if (beside != null) {
-        beside(contact?.id ?? group!.id, group != null);
+      final inPane = onOpen;
+      if (inPane != null) {
+        inPane(contact?.id ?? group!.id, group != null);
         return;
       }
       Navigator.of(context).push(
@@ -416,7 +390,7 @@ class _ChatTile extends StatelessWidget {
     }
 
     return Material(
-      color: selected ? CyberDog.accent.withValues(alpha: 0.16) : Colors.transparent,
+      color: Colors.transparent,
       child: InkWell(
       onTap: open,
       onLongPress: contact != null ? remove : null,

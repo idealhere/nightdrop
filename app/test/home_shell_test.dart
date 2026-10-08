@@ -87,18 +87,28 @@ void main() {
     expect(find.text('Anon'), findsOneWidget, reason: 'no name chosen yet');
   });
 
-  testWidgets('on a wide window a chat opens beside the list, not over it', (tester) async {
+  testWidgets('on a wide window a chat opens in the pane, and back returns to the list',
+      (tester) async {
     final core = await _home(tester, size: const Size(1400, 900));
-    expect(find.text('Choose a chat'), findsOneWidget);
+    final person = core.contacts.first.headerName;
 
-    await tester.tap(find.text(core.contacts.first.headerName));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
-
+    await tester.tap(find.text(person));
+    // The chat slides in and the action button scales out: a few frames, not one.
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
     expect(find.byType(ChatScreen), findsOneWidget);
-    expect(find.byType(NavigationRail), findsOneWidget, reason: 'the list and rail stay');
+    expect(find.byType(NavigationRail), findsOneWidget, reason: 'the rail stays');
+    expect(find.byKey(const ValueKey('new-action')), findsNothing,
+        reason: 'the list, and its button, make way for the chat');
+
+    await tester.pageBack();
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.byType(ChatScreen), findsNothing);
     expect(find.byKey(const ValueKey('new-action')), findsOneWidget);
-    expect(find.text('Choose a chat'), findsNothing);
+    expect(find.text(person), findsOneWidget);
   });
 
   testWidgets('a wide window gets a side rail instead of a bottom bar', (tester) async {

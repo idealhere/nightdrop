@@ -1571,6 +1571,10 @@
   "@settingsSectionAdvanced": {
     "description": "Settings: the folded group of technical options."
   },
+  "selectChatHint": "Choose a chat",
+  "@selectChatHint": {
+    "description": "Shown in the empty chat pane on a wide window."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."

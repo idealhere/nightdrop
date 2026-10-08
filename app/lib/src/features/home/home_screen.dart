@@ -35,7 +35,53 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static const _wide = 900.0;
 
+  /// From this width the open chat sits beside the list instead of covering it.
+  static const _threePane = 1200.0;
+
   int _tab = 0;
+
+  /// The chat open in the side pane on a wide window: its id and whether it is a group.
+  (String, bool)? _open;
+
+  /// The pane for the open chat. It has a navigator of its own, so what a chat opens — the
+  /// profile, the safety number — opens beside the list too, and so that a chat closing itself
+  /// (deleted, group left) only empties the pane.
+  Widget _detail(NightdropCore core, AppLocalizations l10n) {
+    return ListenableBuilder(
+      listenable: core,
+      builder: (context, _) {
+        final open = _open;
+        final exists = open != null &&
+            (open.$2
+                ? core.groups.any((g) => g.id == open.$1)
+                : core.contacts.any((c) => c.id == open.$1));
+        if (!exists) {
+          return Center(
+            child: Text(
+              l10n.selectChatHint,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          );
+        }
+        return Navigator(
+          key: ValueKey('detail-${open.$1}'),
+          pages: [
+            MaterialPage<void>(
+              key: ValueKey(open.$1),
+              child: open.$2
+                  ? GroupChatScreen(groupId: open.$1)
+                  : ChatScreen(contactId: open.$1),
+            ),
+          ],
+          onDidRemovePage: (_) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _open == open) setState(() => _open = null);
+            });
+          },
+        );
+      },
+    );
+  }
 
   void _push(Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -86,7 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final core = NightdropScope.of(context);
     final l10n = AppLocalizations.of(context)!;
-    final wide = MediaQuery.sizeOf(context).width >= _wide;
+    final width = MediaQuery.sizeOf(context).width;
+    final wide = width >= _wide;
+    // Three panes only where there is a chat list to put beside a chat.
+    final threePane = width >= _threePane && _tab < 2;
+    void openBeside(String id, bool group) => setState(() => _open = (id, group));
     final sections = [
       (Icons.chat_bubble_outline, Icons.chat_bubble, l10n.chats),
       (Icons.groups_outlined, Icons.groups, l10n.tabGroups),
@@ -94,8 +144,16 @@ class _HomeScreenState extends State<HomeScreen> {
       (Icons.person_outline, Icons.person, l10n.tabProfile),
     ];
     final page = switch (_tab) {
-      0 => const _ChatList(groupsOnly: false),
-      1 => const _ChatList(groupsOnly: true),
+      0 => _ChatList(
+          groupsOnly: false,
+          onOpen: threePane ? openBeside : null,
+          selected: threePane ? _open?.$1 : null,
+        ),
+      1 => _ChatList(
+          groupsOnly: true,
+          onOpen: threePane ? openBeside : null,
+          selected: threePane ? _open?.$1 : null,
+        ),
       2 => const _SettingsTab(),
       _ => const _ProfileTab(),
     };
@@ -109,6 +167,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
         Expanded(child: page),
       ],
+    );
+    final actionButton = FloatingActionButton(
+      key: const ValueKey('new-action'),
+      tooltip: l10n.newChat,
+      backgroundColor: CyberDog.accent,
+      onPressed: _newAction,
+      child: const CyberDogMark(size: 30, color: Color(0xFFF5F2FF)),
     );
     return Scaffold(
       appBar: AppBar(
@@ -173,15 +238,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: _tab < 2
-          ? FloatingActionButton(
-              key: const ValueKey('new-action'),
-              tooltip: l10n.newChat,
-              backgroundColor: CyberDog.accent,
-              onPressed: _newAction,
-              child: const CyberDogMark(size: 30, color: Color(0xFFF5F2FF)),
-            )
-          : null,
+      // Beside an open chat the button belongs to the list, not to the corner of the window,
+      // where it would sit on top of the chat's send button.
+      floatingActionButton: _tab < 2 && !threePane ? actionButton : null,
       body: wide
           ? Row(
               children: [
@@ -200,15 +259,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const VerticalDivider(width: 1, color: CyberDog.hairline),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: content,
+                if (threePane) ...[
+                  SizedBox(
+                    width: 380,
+                    child: Stack(
+                      children: [
+                        content,
+                        Positioned(right: 16, bottom: 16, child: actionButton),
+                      ],
                     ),
                   ),
-                ),
+                  const VerticalDivider(width: 1, color: CyberDog.hairline),
+                  Expanded(child: _detail(core, l10n)),
+                ] else
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: content,
+                      ),
+                    ),
+                  ),
               ],
             )
           : content,
@@ -274,9 +346,16 @@ String _listTime(DateTime at) {
 
 /// The chats, newest activity first: everything, or only the groups.
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.groupsOnly});
+  const _ChatList({required this.groupsOnly, this.onOpen, this.selected});
 
   final bool groupsOnly;
+
+  /// On a wide window: open the chat beside the list (its id, whether it is a group) instead of
+  /// on top of it. Null on a phone.
+  final void Function(String id, bool group)? onOpen;
+
+  /// The chat open beside the list, to mark its row.
+  final String? selected;
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +403,13 @@ class _ChatList extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 88),
           children: [
             for (final r in requests) _RequestTile(request: r, core: core),
-            for (final row in rows) _ChatTile(row: row, core: core),
+            for (final row in rows)
+              _ChatTile(
+                row: row,
+                core: core,
+                onOpen: onOpen,
+                selected: selected != null && selected == (row.contact?.id ?? row.group?.id),
+              ),
           ],
         );
       },
@@ -335,10 +420,12 @@ class _ChatList extends StatelessWidget {
 /// A chat in the list: avatar, name, the last line, and on the right the time with either the
 /// unread count or, for our own last message, whether it was delivered.
 class _ChatTile extends StatelessWidget {
-  const _ChatTile({required this.row, required this.core});
+  const _ChatTile({required this.row, required this.core, this.onOpen, this.selected = false});
 
   final _Row row;
   final NightdropCore core;
+  final void Function(String id, bool group)? onOpen;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -355,19 +442,29 @@ class _ChatTile extends StatelessWidget {
         : contact != null
             ? (contact.remoteStorage ? l10n.storedOnServer24h : l10n.storedOnThisDevice)
             : l10n.groupMembersCount(group!.members.length);
-    void open() => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => contact != null
-                ? ChatScreen(contactId: contact.id)
-                : GroupChatScreen(groupId: group!.id),
-          ),
-        );
+    void open() {
+      final beside = onOpen;
+      if (beside != null) {
+        beside(contact?.id ?? group!.id, group != null);
+        return;
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => contact != null
+              ? ChatScreen(contactId: contact.id)
+              : GroupChatScreen(groupId: group!.id),
+        ),
+      );
+    }
+
     // Long-press (touch) or right-click (desktop) a chat to delete it.
     void remove() {
       if (contact != null) _confirmDeleteChat(context, core, contact);
     }
 
-    return InkWell(
+    return Material(
+      color: selected ? CyberDog.accent.withValues(alpha: 0.16) : Colors.transparent,
+      child: InkWell(
       onTap: open,
       onLongPress: contact != null ? remove : null,
       onSecondaryTap: contact != null ? remove : null,
@@ -440,6 +537,7 @@ class _ChatTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

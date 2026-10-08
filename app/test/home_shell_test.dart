@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:night_drop/l10n/app_localizations.dart';
 import 'package:night_drop/src/app.dart';
 import 'package:night_drop/src/core/mock_nightdrop_core.dart';
+import 'package:night_drop/src/features/chat/chat_screen.dart';
 import 'package:night_drop/src/features/groups/group_screens.dart';
 import 'package:night_drop/src/features/home/home_screen.dart';
 import 'package:night_drop/src/features/pairing/pairing_screen.dart';
@@ -83,6 +84,20 @@ void main() {
     await tester.pump();
     expect(find.text('My address'), findsOneWidget);
     expect(find.text('Anon'), findsOneWidget, reason: 'no name chosen yet');
+  });
+
+  testWidgets('on a wide window a chat opens beside the list, not over it', (tester) async {
+    final core = await _home(tester, size: const Size(1400, 900));
+    expect(find.text('Choose a chat'), findsOneWidget);
+
+    await tester.tap(find.text(core.contacts.first.headerName));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    expect(find.byType(ChatScreen), findsOneWidget);
+    expect(find.byType(NavigationRail), findsOneWidget, reason: 'the list and rail stay');
+    expect(find.byKey(const ValueKey('new-action')), findsOneWidget);
+    expect(find.text('Choose a chat'), findsNothing);
   });
 
   testWidgets('a wide window gets a side rail instead of a bottom bar', (tester) async {

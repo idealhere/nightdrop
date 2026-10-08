@@ -219,7 +219,7 @@ impl Node {
         if kind != "image" && kind != "video" {
             anyhow::bail!("only photos and videos can be sent to a group");
         }
-        if !self.groups.get(group_id).is_some_and(|g| !g.left) {
+        if self.groups.get(group_id).is_none_or(|g| g.left) {
             anyhow::bail!("unknown group, or you left it");
         }
         let me = self.identity_key();

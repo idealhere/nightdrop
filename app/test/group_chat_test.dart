@@ -60,6 +60,23 @@ void main() {
     expect(find.text('hello all'), findsOneWidget);
   });
 
+  testWidgets('our own message can be deleted for everyone', (tester) async {
+    final core = await _coreWithContact(tester);
+    final id = await core.createGroup('Crew', [core.contacts.first.id]);
+    await core.sendGroupMessage(id, 'oops');
+    await tester.pumpWidget(_host(core, GroupChatScreen(groupId: id)));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('oops'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('group-delete-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(core.groupMessagesFor(id).single.isDeleted, isTrue);
+    expect(find.text('oops'), findsNothing);
+    expect(find.text('Message deleted'), findsOneWidget);
+  });
+
   testWidgets('after leaving, the composer is replaced by a notice', (tester) async {
     final core = await _coreWithContact(tester);
     final id = await core.createGroup('Crew', [core.contacts.first.id]);

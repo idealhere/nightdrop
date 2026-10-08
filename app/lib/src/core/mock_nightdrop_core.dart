@@ -77,8 +77,28 @@ class MockNightdropCore extends NightdropCore {
       text: text,
       fromMe: true,
       at: DateTime.now(),
+      msgId: 'g-msg-${list.length}',
       delivery: 'sent',
     ));
+    notifyListeners();
+  }
+
+  @override
+  Future<void> unsendGroupMessage(String groupId, String id) async {
+    final list = _groupMessages[groupId];
+    if (list == null) return;
+    final i = list.indexWhere((m) => m.fromMe && m.unsendId == id);
+    if (i < 0) return;
+    final old = list[i];
+    list[i] = Message(
+      id: old.id,
+      contactId: old.contactId,
+      text: '',
+      fromMe: true,
+      at: old.at,
+      msgId: old.msgId,
+      kind: 'deleted',
+    );
     notifyListeners();
   }
 

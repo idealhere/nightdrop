@@ -189,6 +189,12 @@ abstract class NightdropCore extends ChangeNotifier {
 
   Future<void> sendGroupMessage(String groupId, String text) async {}
 
+  /// Send a photo ([kind] "image") or video ("video") to a group.
+  Future<void> sendGroupMedia(String groupId, List<int> data, String mime, String kind) async {}
+
+  /// Delete one of our own group messages for everyone ([Message.unsendId]).
+  Future<void> unsendGroupMessage(String groupId, String id) async {}
+
   /// Leave a group. It stays on this device, read-only, until deleted.
   Future<void> leaveGroup(String groupId) async {}
 

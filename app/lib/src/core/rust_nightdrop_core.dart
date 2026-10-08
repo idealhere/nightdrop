@@ -681,6 +681,24 @@ class RustNightdropCore extends NightdropCore {
   }
 
   @override
+  Future<void> sendGroupMedia(String groupId, List<int> data, String mime, String kind) async {
+    try {
+      await _core!.sendGroupMedia(groupId: groupId, data: data, mime: mime, kind: kind);
+    } finally {
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> unsendGroupMessage(String groupId, String id) async {
+    try {
+      await _core!.unsendGroupMessage(groupId: groupId, id: id);
+    } finally {
+      await _refresh();
+    }
+  }
+
+  @override
   Future<void> leaveGroup(String groupId) async {
     await _core!.leaveGroup(groupId: groupId);
     await _refresh();
@@ -701,6 +719,11 @@ class RustNightdropCore extends NightdropCore {
         Group(id: g.id, name: g.name, members: g.members, creator: g.creator, left: g.left),
     ];
     final live = _groups.map((g) => g.id).toSet();
+    final before = {
+      for (final history in _groupMessages.values)
+        for (final m in history)
+          if (m.mediaId.isNotEmpty) m.mediaId,
+    };
     for (final id in live) {
       var i = 0;
       _groupMessages[id] = [
@@ -717,6 +740,10 @@ class RustNightdropCore extends NightdropCore {
             msgId: gm.message.msgId,
             system: gm.message.system,
             kind: gm.message.kind,
+            mime: gm.message.mime,
+            mediaId: gm.message.mediaId,
+            mediaSize: gm.message.mediaSize.toInt(),
+            transferId: gm.message.transferId,
             delivery: gm.message.delivery,
           ),
       ];
@@ -724,6 +751,14 @@ class RustNightdropCore extends NightdropCore {
           _groupMessages[id]!.where((m) => !m.fromMe && !m.system).length;
     }
     _groupMessages.removeWhere((id, _) => !live.contains(id));
+    final after = {
+      for (final history in _groupMessages.values)
+        for (final m in history) m.mediaId,
+    };
+    for (final gone in before.difference(after)) {
+      MediaCache.bytes.remove(gone);
+      MediaCache.files.remove(gone);
+    }
     _groupReceived.removeWhere((id, _) => !live.contains(id));
     _groupRead.removeWhere((id, _) => !live.contains(id));
     if (!_unreadReady) {

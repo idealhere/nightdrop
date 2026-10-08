@@ -1,11 +1,17 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
+import '../../core/media_cache.dart';
 import '../../core/models.dart';
 import '../../core/nightdrop_core.dart';
 import '../../core/system_notices.dart';
 import '../../theme/cyberdog.dart';
+import '../chat/chat_screen.dart' show compressImage, formatBytes, kMaxMediaBytes;
 
 /// The name to show for a group member: "You" for us, the contact's name for someone we have a
 /// chat with, and a neutral word for a member we are not connected to.
@@ -167,6 +173,64 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     }
   }
 
+  /// Pick a photo and send it to the group, recompressed like a photo in a 1:1 chat.
+  Future<void> _attachPhoto() async {
+    final l10n = AppLocalizations.of(context)!;
+    final core = NightdropScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final picked = (await FilePicker.pickFiles(type: FileType.image))?.files.single;
+    final path = picked?.path;
+    if (picked == null || path == null) return;
+    if (picked.size > kMaxMediaBytes) {
+      messenger.showSnackBar(SnackBar(
+          content: Text(l10n.fileTooLarge(formatBytes(picked.size), formatBytes(kMaxMediaBytes)))));
+      return;
+    }
+    try {
+      var bytes = await File(path).readAsBytes();
+      var mime = 'image/gif';
+      // Animated GIFs are left alone; everything else becomes a smaller JPEG off the UI thread.
+      if ((picked.extension ?? '').toLowerCase() != 'gif') {
+        bytes = await compute(compressImage, bytes);
+        mime = 'image/jpeg';
+      }
+      await core.sendGroupMedia(widget.groupId, bytes, mime, 'image');
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.groupCouldNotSend(e.toString()))));
+    }
+  }
+
+  /// Long-press on our own recent message: delete it for everyone.
+  Future<void> _offerDelete(Message message) async {
+    final l10n = AppLocalizations.of(context)!;
+    final core = NightdropScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.deleteForEveryoneTitle),
+        content: Text(l10n.groupUnsendBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            key: const ValueKey('group-delete-confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await core.unsendGroupMessage(widget.groupId, message.unsendId);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.couldNotDelete(e.toString()))));
+    }
+  }
+
   /// Keep the newest message in view when the history grows.
   void _followNewMessages(int count) {
     if (count == _shown) return;
@@ -306,9 +370,12 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   itemBuilder: (context, i) {
                     final m = messages[i];
                     if (m.system) return _Notice(text: m.text);
-                    return _GroupBubble(
-                      message: m,
-                      sender: m.fromMe ? '' : groupMemberName(context, core, m.senderId),
+                    return GestureDetector(
+                      onLongPress: m.canUnsend && !group.left ? () => _offerDelete(m) : null,
+                      child: _GroupBubble(
+                        message: m,
+                        sender: m.fromMe ? '' : groupMemberName(context, core, m.senderId),
+                      ),
                     );
                   },
                 ),
@@ -328,9 +395,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 SafeArea(
                   top: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
+                    padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
                     child: Row(
                       children: [
+                        IconButton(
+                          tooltip: l10n.groupAttachPhoto,
+                          onPressed: _attachPhoto,
+                          icon: const Icon(Icons.image_outlined),
+                        ),
                         Expanded(
                           child: TextField(
                             key: const ValueKey('group-input'),
@@ -441,13 +513,71 @@ class _GroupBubble extends StatelessWidget {
                   ),
                 ),
               ),
-            Text(
-              message.text,
-              style: TextStyle(color: mine ? Colors.white : scheme.onSurface),
-            ),
+            if (message.isDeleted)
+              Text(
+                AppLocalizations.of(context)!.messageDeleted,
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: (mine ? Colors.white : scheme.onSurface).withValues(alpha: 0.6),
+                ),
+              )
+            else if (message.isImage && message.mediaId.isNotEmpty)
+              _GroupPhoto(mediaId: message.mediaId)
+            else
+              Text(
+                message.text,
+                style: TextStyle(color: mine ? Colors.white : scheme.onSurface),
+              ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A photo in a group bubble: decrypted once, kept in the shared [MediaCache], and opened full
+/// screen on tap.
+class _GroupPhoto extends StatelessWidget {
+  const _GroupPhoto({required this.mediaId});
+
+  final String mediaId;
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final bytes = MediaCache.bytes.putIfAbsent(
+      mediaId,
+      () async => Uint8List.fromList(await core.mediaBytes(mediaId)),
+    );
+    return FutureBuilder<Uint8List>(
+      future: bytes,
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        if (data == null) {
+          return SizedBox(
+            width: 220,
+            height: 160,
+            child: Center(
+              child: snapshot.hasError
+                  ? const Icon(Icons.broken_image_outlined)
+                  : const CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        return GestureDetector(
+          onTap: () => showDialog<void>(
+            context: context,
+            builder: (context) => GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: InteractiveViewer(child: Image.memory(data)),
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(data, width: 220, fit: BoxFit.cover, gaplessPlayback: true),
+          ),
+        );
+      },
     );
   }
 }

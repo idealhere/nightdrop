@@ -576,6 +576,13 @@ abstract class NightdropCore implements RustOpaqueInterface {
       required String text,
       required BigInt burnSecs});
 
+  /// Send a photo or video to a group. `kind` is "image"/"video", `mime` like "image/jpeg".
+  Future<void> sendGroupMedia(
+      {required String groupId,
+      required List<int> data,
+      required String mime,
+      required String kind});
+
   /// Send a text message to a group: one separately encrypted copy per member.
   Future<void> sendGroupMessage(
       {required String groupId, required String text});
@@ -680,6 +687,11 @@ abstract class NightdropCore implements RustOpaqueInterface {
   /// [`RelayClient`]: crate::relay_client::RelayClient
   /// [`TorTransport::make_relay_dialer`]: crate::transport::tor::TorTransport::make_relay_dialer
   Future<void> shutdown();
+
+  /// Unsend ("delete for everyone") one of our own group messages: `id` is a text message's
+  /// `msg_id` or an attachment's `transfer_id`. Same 15-minute rule as a 1:1 chat.
+  Future<void> unsendGroupMessage(
+      {required String groupId, required String id});
 
   /// Unsend ("delete for both") one of our own messages (`msg_id` from [`ChatMessage`]).
   /// Same eligibility as [`edit_message`](Self::edit_message): within 15 minutes, or while

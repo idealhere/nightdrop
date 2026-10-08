@@ -6,7 +6,7 @@ name: Preview Android APK (HTTPS-first)
 # to every push. The APKs are signed with the project's permanent key (repository secrets
 # ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD), so a later build installs over an earlier
 # one. Builds up to 30 were signed with a throwaway key and must be uninstalled once.
-# Edit the line below to request a fresh build: preview 41
+# Edit the line below to request a fresh build: preview 42
 on:
   push:
     branches: [feature/https-primary-transport]

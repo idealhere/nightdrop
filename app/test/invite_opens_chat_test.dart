@@ -19,10 +19,10 @@ void main() {
     await tester.pumpWidget(
       NightdropScope(
         core: core,
-        child: MaterialApp(
+        child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          home: const PairingScreen(),
+          home: PairingScreen(),
         ),
       ),
     );

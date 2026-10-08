@@ -225,6 +225,12 @@ class _VoiceBubbleState extends State<VoiceBubble> {
   Duration _length = Duration.zero;
   bool _playing = false;
   bool _loaded = false;
+
+  /// Stopped part-way by the user, as opposed to not started or finished.
+  bool _paused = false;
+
+  /// The decrypted file, once it has been asked for.
+  String? _path;
   bool _failed = false;
 
   @override
@@ -244,6 +250,7 @@ class _VoiceBubbleState extends State<VoiceBubble> {
       if (mounted) {
         setState(() {
           _playing = false;
+          _paused = false;
           _position = Duration.zero;
         });
       }
@@ -277,18 +284,24 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     try {
       if (_playing) {
         await _player.pause();
+        _paused = true;
         return;
       }
-      if (!_loaded) {
-        final path = await MediaCache.files.putIfAbsent(
-          widget.mediaId,
-          () => core.mediaToFile(widget.mediaId, 'm4a'),
-        );
-        await _player.setSource(DeviceFileSource(path));
-        _loaded = true;
+      final path = _path ??= await MediaCache.files.putIfAbsent(
+        widget.mediaId,
+        () => core.mediaToFile(widget.mediaId, 'm4a'),
+      );
+      if (_paused) {
+        await _player.resume();
+      } else {
+        // The first play, and every play after the message has run to its end: a player that
+        // has finished does not start again on resume(), so it is given the file afresh.
+        await _player.stop();
+        await _player.play(DeviceFileSource(path));
       }
-      await _player.resume();
-      // After resume: some platforms reset the rate when playback (re)starts.
+      _paused = false;
+      _loaded = true;
+      // After starting: some platforms reset the rate when playback (re)starts.
       await _player.setPlaybackRate(voiceSpeed.value);
     } catch (_) {
       if (mounted) setState(() => _failed = true);

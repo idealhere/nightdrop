@@ -374,3 +374,181 @@ fn only_the_creator_can_pass_an_introduction_on() {
     );
     assert!(!bob.chats.contains_key(&dave.identity_key()));
 }
+
+/// Give each node a media store of its own; returns the directories, in the same order.
+fn media_stores(test: &str, nodes: &mut [&mut Node]) -> Vec<String> {
+    let key: StoreKey = [9u8; 32];
+    let base = std::env::temp_dir().join(format!("nightdrop-grp-{test}-{}", std::process::id()));
+    let mut dirs = Vec::new();
+    for (i, node) in nodes.iter_mut().enumerate() {
+        let dir = format!("{}-{i}", base.display());
+        node.set_media_store(dir.clone(), key);
+        dirs.push(dir);
+    }
+    dirs
+}
+
+fn remove_stores(dirs: &[String]) {
+    for dir in dirs {
+        std::fs::remove_dir_all(dir).ok();
+    }
+}
+
+fn last_of(node: &Node, group_id: &str) -> ChatMessage {
+    node.group_messages(group_id)
+        .into_iter()
+        .last()
+        .unwrap()
+        .message
+}
+
+fn sealed(dir: &str, media_id: &str) -> bool {
+    std::path::Path::new(&format!("{dir}/{media_id}.bin")).exists()
+}
+
+#[test]
+fn a_group_photo_reaches_every_member() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let dirs = media_stores("photo", &mut [&mut alice, &mut bob, &mut carol]);
+    let gid = alice
+        .create_group("photo", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice
+        .send_group_media(&gid, &[1, 2, 3, 4], "image/png", "image")
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    for node in [&bob, &carol] {
+        let last = node.group_messages(&gid).into_iter().last().unwrap();
+        assert_eq!(last.sender, alice.identity_key());
+        assert_eq!(last.message.kind, "image");
+        assert_eq!(
+            node.media_bytes(&last.message.media_id).unwrap(),
+            vec![1u8, 2, 3, 4]
+        );
+    }
+    remove_stores(&dirs);
+}
+
+#[test]
+fn a_group_photo_arriving_twice_is_stored_once() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let dirs = media_stores("twice", &mut [&mut alice, &mut bob, &mut carol]);
+    let gid = alice
+        .create_group("twice", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    let before = bob.group_messages(&gid).len();
+
+    let copy = pack_group(
+        &gid,
+        "media",
+        &pack_media("transfer-1", "image", "image/png", &[1, 2, 3]),
+    );
+    assert!(bob
+        .on_group_frame(&alice.identity_key(), &copy)
+        .unwrap()
+        .is_some());
+    assert_eq!(
+        bob.on_group_frame(&alice.identity_key(), &copy).unwrap(),
+        None
+    );
+    assert_eq!(bob.group_messages(&gid).len(), before + 1);
+    remove_stores(&dirs);
+}
+
+#[test]
+fn unsending_a_group_message_removes_it_for_everyone() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let gid = alice
+        .create_group("unsend", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice.send_group(&gid, "delete me").unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    assert_eq!(last_of(&bob, &gid).text, "delete me");
+
+    let msg_id = last_of(&alice, &gid).msg_id;
+    alice.unsend_group_message(&gid, &msg_id).unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    for node in [&alice, &bob, &carol] {
+        let last = last_of(node, &gid);
+        assert_eq!(last.kind, "deleted");
+        assert_eq!(last.text, "");
+    }
+}
+
+#[test]
+fn unsending_a_group_photo_deletes_the_files_everywhere() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let dirs = media_stores("unsend-photo", &mut [&mut alice, &mut bob, &mut carol]);
+    let gid = alice
+        .create_group("unsend-photo", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice
+        .send_group_media(&gid, &[5, 6, 7], "image/jpeg", "image")
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    let media_ids = [
+        last_of(&alice, &gid).media_id,
+        last_of(&bob, &gid).media_id,
+        last_of(&carol, &gid).media_id,
+    ];
+    for (dir, media_id) in dirs.iter().zip(&media_ids) {
+        assert!(sealed(dir, media_id));
+    }
+
+    let transfer_id = last_of(&alice, &gid).transfer_id;
+    alice.unsend_group_message(&gid, &transfer_id).unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    for node in [&alice, &bob, &carol] {
+        let last = last_of(node, &gid);
+        assert_eq!(last.kind, "deleted");
+        assert!(last.media_id.is_empty());
+    }
+    for (dir, media_id) in dirs.iter().zip(&media_ids) {
+        assert!(!sealed(dir, media_id), "the sealed file is gone");
+    }
+
+    // A late second copy of the photo must not bring it back.
+    let before = bob.group_messages(&gid).len();
+    let late = pack_group(
+        &gid,
+        "media",
+        &pack_media(&transfer_id, "image", "image/jpeg", &[5, 6, 7]),
+    );
+    assert_eq!(
+        bob.on_group_frame(&alice.identity_key(), &late).unwrap(),
+        None
+    );
+    assert_eq!(bob.group_messages(&gid).len(), before);
+    remove_stores(&dirs);
+}
+
+#[test]
+fn a_member_cannot_unsend_someone_elses_message() {
+    let (mut alice, mut bob, mut carol) = trio();
+    let gid = alice
+        .create_group("not-yours", &[bob.identity_key(), carol.identity_key()])
+        .unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+    alice.send_group(&gid, "not yours").unwrap();
+    pump_all(&mut [&mut alice, &mut bob, &mut carol]);
+
+    // Carol names Alice's message; on Bob it arrives as Carol's request.
+    let msg_id = last_of(&alice, &gid).msg_id;
+    let envelope = pack_group(&gid, "unsend", msg_id.as_bytes());
+    assert_eq!(
+        bob.on_group_frame(&carol.identity_key(), &envelope)
+            .unwrap(),
+        None
+    );
+    assert_eq!(last_of(&bob, &gid).text, "not yours");
+    // …and Carol's own app refuses to send it in the first place.
+    assert!(carol.unsend_group_message(&gid, &msg_id).is_err());
+}

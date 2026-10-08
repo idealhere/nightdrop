@@ -2196,6 +2196,29 @@ impl NightdropCore {
         sent
     }
 
+    /// Send a photo or video to a group. `kind` is "image"/"video", `mime` like "image/jpeg".
+    pub fn send_group_media(
+        &self,
+        group_id: &str,
+        data: Vec<u8>,
+        mime: String,
+        kind: String,
+    ) -> Result<()> {
+        let mut g = self.lock();
+        let sent = g.me.send_group_media(group_id, &data, &mime, &kind);
+        g.save();
+        sent
+    }
+
+    /// Unsend ("delete for everyone") one of our own group messages: `id` is a text message's
+    /// `msg_id` or an attachment's `transfer_id`. Same 15-minute rule as a 1:1 chat.
+    pub fn unsend_group_message(&self, group_id: &str, id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.unsend_group_message(group_id, id)?;
+        g.save();
+        Ok(())
+    }
+
     /// Leave a group. It stays on this device, read-only, until deleted.
     pub fn leave_group(&self, group_id: &str) -> Result<()> {
         let mut g = self.lock();

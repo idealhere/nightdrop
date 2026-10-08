@@ -34,7 +34,8 @@ pub(crate) struct Group {
 const MAX_INTRO_PAYLOAD: usize = 4096;
 
 /// Pack a group envelope: `[group_id][op][body…]`. `op` names what the frame does (`create`,
-/// `msg`, `leave`, `intro`); a build that does not know an `op` ignores the frame.
+/// `msg`, `media`, `unsend`, `leave`, `intro`); a build that does not know an `op` ignores the
+/// frame.
 pub(super) fn pack_group(group_id: &str, op: &str, body: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     put_field(&mut out, group_id.as_bytes());
@@ -49,6 +50,25 @@ pub(super) fn unpack_group(buf: &[u8]) -> Result<(String, String, Vec<u8>)> {
     let group_id = String::from_utf8(take_field(buf, &mut p)?)?;
     let op = String::from_utf8(take_field(buf, &mut p)?)?;
     Ok((group_id, op, buf[p..].to_vec()))
+}
+
+/// Whether `id` names this message for an unsend: a text message by its `msg_id`, a photo or
+/// video by its `transfer_id`. Notices and tombstones are named by nothing.
+fn names_message(msg: &ChatMessage, id: &str) -> bool {
+    !msg.system
+        && ((msg.kind == "text" && !msg.msg_id.is_empty() && msg.msg_id == id)
+            || is_attachment_named(msg, id))
+}
+
+/// Turn a message into a "deleted" tombstone in place; returns the ids of the sealed files an
+/// attachment leaves behind, for the caller to delete.
+fn tombstone(msg: &mut ChatMessage) -> Vec<String> {
+    if msg.kind == "text" {
+        make_tombstone(msg);
+        Vec::new()
+    } else {
+        make_attachment_tombstone(msg)
+    }
 }
 
 impl Node {
@@ -176,6 +196,108 @@ impl Node {
         body.extend_from_slice(text.as_bytes());
         let envelope = pack_group(group_id, "msg", &body);
         self.fan_out(&recipients, &envelope)
+    }
+
+    /// Send a photo or video to a group: one separately encrypted copy per member, and a sealed
+    /// copy kept here. The body is the ordinary attachment envelope (`pack_media`).
+    pub fn send_group_media(
+        &mut self,
+        group_id: &str,
+        data: &[u8],
+        mime: &str,
+        kind: &str,
+    ) -> Result<()> {
+        if data.is_empty() {
+            anyhow::bail!("attachment is empty");
+        }
+        if data.len() as u64 > MAX_MEDIA_BYTES {
+            anyhow::bail!(
+                "attachment too large (max {} MB)",
+                MAX_MEDIA_BYTES / (1024 * 1024)
+            );
+        }
+        if kind != "image" && kind != "video" {
+            anyhow::bail!("only photos and videos can be sent to a group");
+        }
+        if !self.groups.get(group_id).is_some_and(|g| !g.left) {
+            anyhow::bail!("unknown group, or you left it");
+        }
+        let me = self.identity_key();
+        let transfer_id = crate::storage::random_password();
+        let media_id = self.store_media(data)?;
+        let recipients: Vec<String> = {
+            let group = self
+                .groups
+                .get_mut(group_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown group"))?;
+            let mut message = ChatMessage::media(
+                true,
+                kind.to_string(),
+                mime.to_string(),
+                media_id,
+                data.len() as u64,
+                transfer_id.clone(),
+                String::new(),
+            );
+            message.delivery = "sent".to_string();
+            group.history.push(GroupMessage {
+                sender: String::new(),
+                message,
+            });
+            group
+                .members
+                .iter()
+                .filter(|m| m.as_str() != me.as_str())
+                .cloned()
+                .collect()
+        };
+        self.dirty = true;
+        let envelope = pack_group(
+            group_id,
+            "media",
+            &pack_media(&transfer_id, kind, mime, data),
+        );
+        self.fan_out(&recipients, &envelope)
+    }
+
+    /// Unsend ("delete for everyone") one of our own group messages, under the same 15-minute
+    /// rule as a 1:1 chat. Text is named by its `msg_id`, a photo or video by its `transfer_id`;
+    /// an attachment's sealed files are deleted on every member's device.
+    pub fn unsend_group_message(&mut self, group_id: &str, id: &str) -> Result<()> {
+        let me = self.identity_key();
+        let now = crate::api::now_secs();
+        let recipients: Vec<String> = {
+            let group = self
+                .groups
+                .get_mut(group_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown group"))?;
+            if group.left {
+                anyhow::bail!("you left this group");
+            }
+            let index = group
+                .history
+                .iter()
+                .position(|gm| gm.message.from_me && names_message(&gm.message, id))
+                .ok_or_else(|| anyhow::anyhow!("message not found or not deletable"))?;
+            let at = group.history[index].message.at;
+            if at == 0 || now.saturating_sub(at) > EDIT_WINDOW.as_secs() {
+                anyhow::bail!("messages can only be unsent within 15 minutes of sending");
+            }
+            let dead_files = tombstone(&mut group.history[index].message);
+            if let Some((dir, _)) = &self.media_store {
+                remove_attachment_files(dir, &dead_files);
+            }
+            group
+                .members
+                .iter()
+                .filter(|m| m.as_str() != me.as_str())
+                .cloned()
+                .collect()
+        };
+        self.dirty = true;
+        // Already deleted here; a member we could not reach keeps their copy.
+        let _ = self.fan_out(&recipients, &pack_group(group_id, "unsend", id.as_bytes()));
+        Ok(())
     }
 
     /// Leave a group: tell the other members (best effort) and keep it locally as read-only.
@@ -367,6 +489,68 @@ impl Node {
                 });
                 self.dirty = true;
                 Ok(Some((from.to_string(), text)))
+            }
+            "media" => {
+                let (transfer_id, kind, mime, data) = unpack_media(&body)?;
+                // Decided before the payload is stored: storing first would strand a sealed file.
+                // A copy of something already here — or since unsent, whose tombstone keeps its
+                // transfer id — is dropped.
+                let wanted = self.groups.get(&group_id).is_some_and(|group| {
+                    !group.left
+                        && group.members.iter().any(|m| m.as_str() == from)
+                        && (kind == "image" || kind == "video")
+                        && !transfer_id.is_empty()
+                        && !group.history.iter().any(|gm| {
+                            gm.sender.as_str() == from && gm.message.transfer_id == transfer_id
+                        })
+                });
+                if !wanted {
+                    return Ok(None);
+                }
+                let media_id = self.store_media(&data)?;
+                let Some(group) = self.groups.get_mut(&group_id) else {
+                    return Ok(None);
+                };
+                group.history.push(GroupMessage {
+                    sender: from.to_string(),
+                    message: ChatMessage::media(
+                        false,
+                        kind,
+                        mime,
+                        media_id,
+                        data.len() as u64,
+                        transfer_id,
+                        String::new(),
+                    ),
+                });
+                self.dirty = true;
+                Ok(Some((from.to_string(), String::new())))
+            }
+            "unsend" => {
+                let target = unpack_unsend(&body)?;
+                let now = crate::api::now_secs();
+                let Some(group) = self.groups.get_mut(&group_id) else {
+                    return Ok(None);
+                };
+                if group.left || !group.members.iter().any(|m| m.as_str() == from) {
+                    return Ok(None);
+                }
+                // `sender == from`: a member can delete only what they sent themselves.
+                let Some(gm) = group.history.iter_mut().find(|gm| {
+                    gm.sender.as_str() == from
+                        && !gm.message.from_me
+                        && names_message(&gm.message, &target)
+                        && gm.message.at != 0
+                        && now.saturating_sub(gm.message.at) <= EDIT_WINDOW.as_secs()
+                }) else {
+                    return Ok(None);
+                };
+                let dead_files = tombstone(&mut gm.message);
+                if let Some((dir, _)) = &self.media_store {
+                    remove_attachment_files(dir, &dead_files);
+                }
+                self.dirty = true;
+                Ok(Some((from.to_string(), String::new())))
             }
             "leave" => {
                 let Some(group) = self.groups.get_mut(&group_id) else {

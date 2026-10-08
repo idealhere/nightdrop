@@ -778,7 +778,7 @@
   "@backgroundStoppedBySystem": {
     "description": "Shown when the system (not the user) ended the foreground service, e.g. a foreground-service-type time budget running out. The point is that the user could not otherwise tell."
   },
-  "peerCapturesSilentSummary": "Their screenshots aren't reported to you",
+  "peerCapturesSilentSummary": "Their screenshots are not shown to you",
   "@peerCapturesSilentSummary": {
     "description": "One-line form of peerCapturesSilentBanner; tapping it shows the full text."
   },

@@ -23,14 +23,16 @@ void main() {
 
   test('Russian translates the disappearing-messages timer', () {
     AppLocale.current.value = AppLocale.russian;
-    expect(
-      localizeSystemNotice('⏱️ You set disappearing messages to 1 hour(s).'),
-      '⏱️ Вы установили исчезающие сообщения: 1 ч.',
-    );
-    expect(
-      localizeSystemNotice('⏱️ The other person set disappearing messages to off.'),
-      '⏱️ Собеседник установил исчезающие сообщения: выкл.',
-    );
+    // In the stream: what the timer is now. Who set it is the detail, one tap away.
+    const mine = '⏱️ You set disappearing messages to 1 hour(s).';
+    const theirs = '⏱️ The other person set disappearing messages to off.';
+    expect(localizeSystemNotice(mine), '⏱️ Исчезающие сообщения · 1 ч');
+    expect(localizeSystemNotice(theirs), '⏱️ Исчезающие сообщения · выкл');
+    expect(noticeDetail(mine), 'Вы установили исчезающие сообщения: 1 ч.');
+    expect(noticeDetail(theirs), 'Собеседник установил исчезающие сообщения: выкл.');
+    AppLocale.current.value = AppLocale.english;
+    expect(localizeSystemNotice(mine), '⏱️ Disappearing messages · 1 h');
+    expect(noticeDetail(mine), 'You set disappearing messages to 1 hour(s).');
   });
 
   test('marker and body are available separately', () {
@@ -45,10 +47,17 @@ void main() {
     const stored = '☁️ The other person enabled 24h server storage for this chat. Messages are held.';
     AppLocale.current.value = AppLocale.english;
     expect(localizeSystemNotice(repaired), '🔄 Safety code changed');
-    expect(localizeSystemNotice(stored), '☁️ Undelivered messages are kept on the server for 24 h');
+    expect(localizeSystemNotice(stored), '☁️ Undelivered kept on server · 24 h');
+    expect(noticeDetail(stored), contains('enabled 24h server storage'));
     AppLocale.current.value = AppLocale.russian;
     expect(localizeSystemNotice(repaired), '🔄 Код безопасности изменён');
-    expect(localizeSystemNotice(stored), '☁️ Хранение недоставленных сообщений: 24 ч');
+    expect(localizeSystemNotice(stored), '☁️ Хранение недоставленных · 24 ч');
+    expect(
+      localizeSystemNotice('✅ Your chat request was approved. You can start talking.'),
+      '✅ Запрос принят · можно общаться',
+    );
+    // A notice with nothing more to say has no detail to open.
+    expect(noticeDetail(screenshot), isNull);
     expect(noticeAsksToVerify(repaired), isTrue);
     expect(noticeAsksToVerify(stored), isFalse);
   });

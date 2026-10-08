@@ -881,7 +881,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       child: Text(contact.headerName, overflow: TextOverflow.ellipsis),
                     ),
                     const SizedBox(width: 8),
-                    UserRankBadge(rank: contact.rank),
+                    Transform.scale(
+                      scale: 0.82,
+                      alignment: Alignment.centerLeft,
+                      child: UserRankBadge(rank: contact.rank),
+                    ),
                   ],
                 ),
                 Row(
@@ -1302,7 +1306,7 @@ class _PeerBackupBanner extends StatelessWidget {
 }
 
 /// A centered, unobtrusive system notice (chat deleted / approved / code reused).
-class _SystemNotice extends StatelessWidget {
+class _SystemNotice extends StatefulWidget {
   const _SystemNotice({required this.text, this.onVerify});
 
   final String text;
@@ -1311,46 +1315,65 @@ class _SystemNotice extends StatelessWidget {
   final VoidCallback? onVerify;
 
   @override
+  State<_SystemNotice> createState() => _SystemNoticeState();
+}
+
+/// A small pill in the stream. Where the core's sentence is longer than what the pill shows, a
+/// tap opens it in place.
+class _SystemNoticeState extends State<_SystemNotice> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final icon = _noticeIcons[noticeMarker(text).runes.firstOrNull];
+    final icon = _noticeIcons[noticeMarker(widget.text).runes.firstOrNull];
+    final detail = noticeDetail(widget.text);
+    final ink = scheme.onSurfaceVariant;
     return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
+        child: Material(
           color: CyberDog.panel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: CyberDog.hairline),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 15, color: scheme.secondary),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Text(
-                noticeBody(text),
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_open ? 12 : 20),
+            side: const BorderSide(color: CyberDog.hairline),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: detail == null ? null : () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 13, color: scheme.secondary),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      _open && detail != null ? detail : noticeBody(widget.text),
+                      style: TextStyle(color: ink, fontSize: 11.5),
+                    ),
+                  ),
+                  if (widget.onVerify != null) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: widget.onVerify,
+                      child: Text(
+                        AppLocalizations.of(context)!.verify,
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (onVerify != null) ...[
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: onVerify,
-                child: Text(
-                  AppLocalizations.of(context)!.verify,
-                  style: TextStyle(
-                    color: scheme.primary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -1360,6 +1383,7 @@ class _SystemNotice extends StatelessWidget {
 /// The core marks each system notice with a pictogram; shown here as a small outline icon.
 const _noticeIcons = <int, IconData>{
   0x1F4F8: Icons.photo_camera_outlined,
+  0x1F465: Icons.group_outlined,
   0x2705: Icons.verified_outlined,
   0x1F511: Icons.key_outlined,
   0x2601: Icons.cloud_outlined,
@@ -1413,7 +1437,7 @@ class _Bubble extends StatelessWidget {
               color: mine ? null : scheme.surfaceContainerHighest,
               gradient: mine ? CyberDog.outgoing : null,
               border: mine ? null : Border.all(color: CyberDog.hairline),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
               crossAxisAlignment:

@@ -11,11 +11,10 @@ import 'app_locale.dart';
 const _compact = <(String, String, String)>[
   ('re-paired', 'Safety code changed', 'Код безопасности изменён'),
   ('Re-paired with a new secure session', 'Safety code changed', 'Код безопасности изменён'),
-  (
-    'enabled 24h server storage',
-    'Undelivered messages are kept on the server for 24 h',
-    'Хранение недоставленных сообщений: 24 ч',
-  ),
+  ('enabled 24h server storage', 'Undelivered kept on server · 24 h', 'Хранение недоставленных · 24 ч'),
+  ('Your chat request was approved', 'Request accepted · you can chat', 'Запрос принят · можно общаться'),
+  ('safety number verified', 'They verified the safety code', 'Собеседник проверил код безопасности'),
+  ('cleared their verification', 'They cleared their verification', 'Собеседник снял проверку кода'),
   ('disabled server storage', 'Server storage is off', 'Хранение на сервере выключено'),
 ];
 
@@ -114,11 +113,24 @@ String noticeBody(String text) {
 
 /// The notice as it should be shown in the current language.
 String localizeSystemNotice(String text) {
-  for (final (fragment, english, russian) in _compact) {
-    if (text.contains(fragment)) {
-      return '${_marker(text)}${AppLocale.current.value == AppLocale.russian ? russian : english}';
-    }
+  final russian = AppLocale.current.value == AppLocale.russian;
+  for (final (fragment, en, ru) in _compact) {
+    if (text.contains(fragment)) return '${_marker(text)}${russian ? ru : en}';
   }
+  // Who set the timer is in the detail; the stream only needs what it is now.
+  final timer = _timer.firstMatch(text);
+  if (timer != null) {
+    final span = timer.group(3)!;
+    return '${timer.group(1) ?? ''}'
+        '${russian ? 'Исчезающие сообщения' : 'Disappearing messages'} · '
+        '${russian ? _duration(span) : _durationEn(span)}';
+  }
+  return systemNoticeDetail(text);
+}
+
+/// The notice in full, in the current language: what the stream's short form expands to when it
+/// is tapped. Equal to [localizeSystemNotice] for a notice that has no shorter form.
+String systemNoticeDetail(String text) {
   if (AppLocale.current.value != AppLocale.russian) {
     // One notice is shortened in English too, so it stays a single compact line.
     return text.contains('You took a screenshot')
@@ -139,6 +151,22 @@ String localizeSystemNotice(String text) {
     if (text.contains(fragment)) return '${_marker(text)}$russian';
   }
   return text;
+}
+
+/// The full sentence behind a shortened notice, without its pictogram; null when the stream
+/// already shows all there is.
+String? noticeDetail(String text) {
+  final full = systemNoticeDetail(text);
+  if (full == localizeSystemNotice(text)) return null;
+  final marker = _marker(full);
+  return marker.isEmpty ? full : full.substring(marker.length);
+}
+
+String _durationEn(String label) {
+  if (label == 'off') return 'off';
+  final span = _span.firstMatch(label);
+  const units = {'week': 'wk', 'day': 'd', 'hour': 'h', 'minute': 'min', 'second': 's'};
+  return span == null ? label : '${span.group(1)} ${units[span.group(2)]}';
 }
 
 String _duration(String label) {

@@ -174,18 +174,18 @@ class _CyberDogSendButtonState extends State<CyberDogSendButton> {
         onTap: widget.onPressed,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          width: 48,
-          height: 48,
+          width: 46,
+          height: 42,
           decoration: BoxDecoration(
             gradient: CyberDog.outgoing,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             boxShadow: _down ? CyberDog.glowPressed : CyberDog.glow,
           ),
           alignment: Alignment.center,
           child: AnimatedSlide(
             duration: const Duration(milliseconds: 120),
             offset: _down ? const Offset(.1, 0) : Offset.zero,
-            child: const CyberDogMark(size: 31, color: Color(0xFFF5F2FF)),
+            child: const CyberDogMark(size: 28, color: Color(0xFFF5F2FF)),
           ),
         ),
       ),

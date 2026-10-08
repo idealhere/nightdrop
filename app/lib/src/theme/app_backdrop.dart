@@ -18,7 +18,19 @@ class AppBackdrop extends StatelessWidget {
           opacity: .38,
         ),
       ),
-      child: child,
+      // The curves are brightest in the lower half, which is where chat lists and the composer
+      // are: a shade that deepens towards the bottom keeps them behind the content.
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x00050816), Color(0x8C050816)],
+            stops: [0.35, 1],
+          ),
+        ),
+        child: child,
+      ),
     );
   }
 }

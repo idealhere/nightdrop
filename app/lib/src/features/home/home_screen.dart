@@ -177,6 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 48,
         titleSpacing: 16,
         title: const Row(
           mainAxisSize: MainAxisSize.min,
@@ -189,7 +190,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       // Beside an open chat the button belongs to the list, not to the corner of the window,
       // where it would sit on top of the chat's send button.
-      floatingActionButton: _tab < 2 && !threePane ? actionButton : null,
+      // Lifted a little, so that it floats over the list rather than sitting on the bar.
+      floatingActionButton: _tab < 2 && !threePane
+          ? Padding(padding: const EdgeInsets.only(bottom: 10), child: actionButton)
+          : null,
       body: wide
           ? Row(
               children: [
@@ -236,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: wide
           ? null
           : NavigationBar(
-              height: 64,
+              height: 56,
               backgroundColor: CyberDog.panel,
               indicatorColor: CyberDog.accent.withValues(alpha: 0.22),
               selectedIndex: _tab,
@@ -418,16 +422,16 @@ class _ChatTile extends StatelessWidget {
       onLongPress: contact != null ? remove : null,
       onSecondaryTap: contact != null ? remove : null,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(
           children: [
             ExcludeSemantics(
               child: CircleAvatar(
-                radius: 24,
+                radius: 26,
                 backgroundColor: CyberDog.panel,
                 child: group != null
                     ? const Icon(Icons.groups_outlined, color: CyberDog.accentLight)
-                    : const CyberDogMark(size: 24),
+                    : const CyberDogMark(size: 26),
               ),
             ),
             const SizedBox(width: 12),
@@ -451,12 +455,15 @@ class _ChatTile extends StatelessWidget {
                       ],
                       if (contact != null && contact.verified) ...[
                         const SizedBox(width: 6),
+                        // Present, not prominent: the name is what the row is for.
                         Icon(Icons.verified_user,
-                            semanticLabel: l10n.verified, size: 15, color: scheme.primary),
+                            semanticLabel: l10n.verified,
+                            size: 12,
+                            color: scheme.onSurfaceVariant),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 1),
                   Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
                 ],
               ),

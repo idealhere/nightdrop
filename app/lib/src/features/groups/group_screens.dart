@@ -713,22 +713,26 @@ class _Notice extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        margin: const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: CyberDog.panel,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: CyberDog.hairline),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.group_outlined, size: 15, color: scheme.secondary),
-            const SizedBox(width: 8),
+            Icon(
+              noticeMarker(text).startsWith('⏱') ? Icons.timer_outlined : Icons.group_outlined,
+              size: 13,
+              color: scheme.secondary,
+            ),
+            const SizedBox(width: 6),
             Flexible(
               child: Text(
                 noticeBody(text),
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11.5),
               ),
             ),
           ],

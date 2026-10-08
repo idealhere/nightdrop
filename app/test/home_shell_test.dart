@@ -74,7 +74,8 @@ void main() {
   testWidgets('settings and profile are sections, not a long menu', (tester) async {
     await _home(tester);
     await tester.tap(find.text('Settings'));
-    await tester.pump();
+    // The action button leaves with an animation; wait it out before looking for it.
+    await tester.pumpAndSettle();
     expect(find.text('Privacy'), findsOneWidget);
     expect(find.byKey(const ValueKey('new-action')), findsNothing);
 

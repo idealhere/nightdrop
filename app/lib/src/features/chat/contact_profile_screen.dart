@@ -26,7 +26,7 @@ class ContactProfileScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Center(child: CyberDogMark(size: 64)),
+          Center(child: CyberDogAvatar(seed: contact.id, label: contact.headerName, radius: 40)),
           const SizedBox(height: 16),
           Text(
             contact.displayName,

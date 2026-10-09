@@ -10,6 +10,7 @@ import '../../core/app_locale.dart';
 import '../../core/backup_files.dart';
 import '../../core/nightdrop_core.dart';
 import '../../theme/brand.dart';
+import '../../theme/cyberdog.dart';
 
 /// First-run screen. No sign-up — just generate an anonymous, device-held identity.
 class OnboardingScreen extends StatefulWidget {
@@ -306,7 +307,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset('assets/icons/icon-512.png', width: 96, height: 96),
+              const CyberDogLogo(size: 112),
               const SizedBox(height: 20),
               const BrandTitle(fontSize: 32),
               const SizedBox(height: 8),

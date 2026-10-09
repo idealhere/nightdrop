@@ -162,8 +162,10 @@ class _HomeScreenState extends State<HomeScreen> {
       key: const ValueKey('new-action'),
       tooltip: l10n.newChat,
       backgroundColor: CyberDog.accent,
+      foregroundColor: Colors.white,
+      shape: const CircleBorder(),
       onPressed: _newAction,
-      child: const CyberDogMark(size: 30, color: Color(0xFFFFFFFF)),
+      child: const Icon(Icons.add_rounded, size: 32),
     );
     return Scaffold(
       appBar: AppBar(
@@ -172,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CyberDogMark(size: 24),
+            CyberDogLogo(size: 32),
             SizedBox(width: 10),
             BrandTitle(fontSize: 18),
           ],
@@ -400,12 +402,10 @@ class _ChatTile extends StatelessWidget {
         child: Row(
           children: [
             ExcludeSemantics(
-              child: CircleAvatar(
-                radius: 26,
-                backgroundColor: CyberDog.panel,
-                child: group != null
-                    ? const Icon(Icons.groups_outlined, color: CyberDog.accentLight)
-                    : const CyberDogMark(size: 26),
+              child: CyberDogAvatar(
+                seed: contact?.id ?? group!.id,
+                label: contact?.headerName ?? group!.name,
+                group: group != null,
               ),
             ),
             const SizedBox(width: 12),
@@ -626,9 +626,9 @@ class _ProfileTab extends StatelessWidget {
         const SizedBox(height: 28),
         const Center(
           child: CircleAvatar(
-            radius: 40,
+            radius: 44,
             backgroundColor: CyberDog.panel,
-            child: CyberDogMark(size: 44),
+            child: CyberDogLogo(size: 64),
           ),
         ),
         const SizedBox(height: 14),

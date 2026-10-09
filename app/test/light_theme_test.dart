@@ -33,4 +33,22 @@ void main() {
     expect(_contrast(CyberDog.accentLight, CyberDog.panel), greaterThan(3));
     expect(_contrast(CyberDog.rankInk, CyberDog.panel), greaterThan(2.5));
   });
+
+  test('a chat keeps its avatar colour, and different chats differ', () {
+    expect(CyberDogAvatar.paletteFor('abc'), CyberDogAvatar.paletteFor('abc'));
+    final seen = {for (final id in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) CyberDogAvatar.paletteFor(id)};
+    expect(seen.length, greaterThan(4));
+  });
+
+  testWidgets('an avatar shows the first letter, a group its sign', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: nightdropTheme(),
+      home: const Row(children: [
+        CyberDogAvatar(seed: 'x', label: 'karlson'),
+        CyberDogAvatar(seed: 'y', label: 'New', group: true),
+      ]),
+    ));
+    expect(find.text('K'), findsOneWidget);
+    expect(find.byIcon(Icons.groups_rounded), findsOneWidget);
+  });
 }

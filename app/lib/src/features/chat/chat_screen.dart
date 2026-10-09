@@ -868,7 +868,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                     ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const CyberDogMark(size: 26),
+              CyberDogAvatar(seed: contact.id, label: contact.headerName, radius: 17),
               const SizedBox(width: 10),
               Flexible(
                   child: Column(

@@ -53,6 +53,7 @@ flutter:
     - assets/app_config.json
     - assets/icons/icon-512.png
     - assets/brand/backdrop-light.jpg
+    - assets/brand/logo-icon.png
   fonts:
     # Color-emoji fallback so emoji render on desktop (Flutter's Linux/Windows builds don't
     # ship one; Android/iOS have a system emoji font but this is a harmless fallback there).

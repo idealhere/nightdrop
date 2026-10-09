@@ -99,6 +99,96 @@ class _MarkPainter extends CustomPainter {
   bool shouldRepaint(covariant _MarkPainter oldDelegate) => oldDelegate.color != color;
 }
 
+/// The CyberDog logo: the brand's dog head, as a picture. Falls back to the drawn mark if the
+/// image cannot be loaded.
+class CyberDogLogo extends StatelessWidget {
+  const CyberDogLogo({super.key, this.size = 32});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/brand/logo-icon.png',
+      width: size,
+      height: size,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, __, ___) => CyberDogMark(size: size),
+    );
+  }
+}
+
+/// A round avatar for a person or a group: a soft gradient picked from the name or id, so each
+/// chat keeps its own colour, with the first letter of the name — or the group sign — in white.
+class CyberDogAvatar extends StatelessWidget {
+  const CyberDogAvatar({
+    super.key,
+    required this.seed,
+    required this.label,
+    this.group = false,
+    this.radius = 26,
+  });
+
+  /// What the colour is picked from: stays the same for the same chat.
+  final String seed;
+
+  /// The name; its first letter is shown.
+  final String label;
+  final bool group;
+  final double radius;
+
+  static const _palettes = <List<Color>>[
+    [Color(0xFF7A5CFF), Color(0xFF2B2A6B)],
+    [Color(0xFF6FB6FF), Color(0xFF1F6FFF)],
+    [Color(0xFFFF8FB8), Color(0xFF8A6BD1)],
+    [Color(0xFF3F7BD6), Color(0xFF0B1630)],
+    [Color(0xFF5AD1C0), Color(0xFF2C8E86)],
+    [Color(0xFF8FA3BF), Color(0xFF51627A)],
+    [Color(0xFF6BC48A), Color(0xFF1D5A3A)],
+    [Color(0xFF2AA8FF), Color(0xFF5A5CFF)],
+  ];
+
+  /// The gradient for [seed]: a plain sum of its characters, so it does not change between runs.
+  static List<Color> paletteFor(String seed) {
+    var sum = 0;
+    for (final unit in seed.codeUnits) {
+      sum = (sum + unit) & 0x7fffffff;
+    }
+    return _palettes[sum % _palettes.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final letter = label.trim().isEmpty ? '' : String.fromCharCode(label.trim().runes.first).toUpperCase();
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: paletteFor(seed),
+        ),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(color: Color(0x2E1C3E78), blurRadius: 8, offset: Offset(0, 3))],
+      ),
+      child: group || letter.isEmpty
+          ? Icon(group ? Icons.groups_rounded : Icons.person_rounded, color: Colors.white, size: radius)
+          : Text(
+              letter,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: radius * .82,
+                height: 1,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+    );
+  }
+}
+
 /// A user's rank inside CyberDog, shown as a small, deliberately quiet badge. CyberDog is the
 /// app; a rank such as NightDog is a status within it. The rank arrives as an id so new ranks can
 /// be added to [_labels] without touching the screens that show the badge.
@@ -145,8 +235,8 @@ class UserRankBadge extends StatelessWidget {
   }
 }
 
-/// The send button: a blue rounded square carrying the mark. On press the mark nudges right
-/// and the glow strengthens slightly.
+/// The send button: a round blue button with an arrow. On press the arrow nudges up and the glow
+/// strengthens slightly.
 class CyberDogSendButton extends StatefulWidget {
   const CyberDogSendButton({super.key, required this.onPressed, this.semanticLabel});
 
@@ -177,18 +267,18 @@ class _CyberDogSendButtonState extends State<CyberDogSendButton> {
         onTap: widget.onPressed,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          width: 46,
-          height: 42,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             gradient: CyberDog.outgoing,
-            borderRadius: BorderRadius.circular(12),
+            shape: BoxShape.circle,
             boxShadow: _down ? CyberDog.glowPressed : CyberDog.glow,
           ),
           alignment: Alignment.center,
           child: AnimatedSlide(
             duration: const Duration(milliseconds: 120),
-            offset: _down ? const Offset(.1, 0) : Offset.zero,
-            child: const CyberDogMark(size: 28, color: Color(0xFFFFFFFF)),
+            offset: _down ? const Offset(0, -.1) : Offset.zero,
+            child: const Icon(Icons.arrow_upward_rounded, size: 24, color: Colors.white),
           ),
         ),
       ),

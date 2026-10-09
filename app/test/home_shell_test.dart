@@ -89,7 +89,7 @@ void main() {
 
   testWidgets('on a wide window a chat opens in the pane, and back returns to the list',
       (tester) async {
-    final core = await _home(tester, size: const Size(1400, 900));
+    final core = await _home(tester, size: const Size(1000, 900));
     final person = core.contacts.first.headerName;
 
     await tester.tap(find.text(person));
@@ -109,6 +109,24 @@ void main() {
     expect(find.byType(ChatScreen), findsNothing);
     expect(find.byKey(const ValueKey('new-action')), findsOneWidget);
     expect(find.text(person), findsOneWidget);
+  });
+
+  testWidgets('on a large window the chat opens beside its list, which marks it',
+      (tester) async {
+    final core = await _home(tester, size: const Size(1500, 900));
+    final person = core.contacts.first.headerName;
+    expect(find.text('Select a chat'), findsOneWidget);
+    expect(find.byKey(const ValueKey('new-action')), findsOneWidget);
+
+    await tester.tap(find.text(person).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(ChatScreen), findsOneWidget);
+    expect(find.text('Select a chat'), findsNothing);
+    expect(find.byType(NavigationRail), findsOneWidget, reason: 'the sidebar stays');
+    expect(find.byKey(const ValueKey('new-action')), findsOneWidget,
+        reason: 'the list, and its button, stay beside the chat');
+    expect(find.byType(BackButton), findsNothing, reason: 'nothing to go back to');
   });
 
   testWidgets('a wide window gets a side rail instead of a bottom bar', (tester) async {

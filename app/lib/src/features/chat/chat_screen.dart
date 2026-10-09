@@ -1437,7 +1437,10 @@ class _Bubble extends StatelessWidget {
               color: mine ? null : scheme.surfaceContainerHighest,
               gradient: mine ? CyberDog.outgoing : null,
               border: mine ? null : Border.all(color: CyberDog.hairline),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: mine
+                  ? null
+                  : const [BoxShadow(color: Color(0x141C3E78), blurRadius: 10, offset: Offset(0, 3))],
             ),
             child: Column(
               crossAxisAlignment:
@@ -2117,15 +2120,15 @@ class _Composer extends StatelessWidget {
                   filled: true,
                   fillColor: CyberDog.panel,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(24),
                     borderSide: const BorderSide(color: CyberDog.hairline),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(24),
                     borderSide: const BorderSide(color: CyberDog.hairline),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(24),
                     borderSide: const BorderSide(color: CyberDog.hairlineBright, width: 1.4),
                   ),
                   contentPadding:

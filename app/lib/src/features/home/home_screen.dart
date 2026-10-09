@@ -35,6 +35,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static const _wide = 900.0;
 
+  /// From this width there is room for the list and the open chat side by side.
+  static const _desk = 1200.0;
+
   int _tab = 0;
 
   /// The chat open in the pane beside the rail on a wide window: its id and whether it is a
@@ -42,6 +45,42 @@ class _HomeScreenState extends State<HomeScreen> {
   (String, bool)? _open;
 
   final _paneKey = GlobalKey<NavigatorState>();
+  final _detailKey = GlobalKey<NavigatorState>();
+
+  /// On a large window the open chat sits beside the list. It has a navigator of its own, so a
+  /// chat that closes itself — deleted or left — falls back to the empty state, and whatever the
+  /// chat opens (a profile, the verify screen) stays inside the message area.
+  Widget _detail(NightdropCore core) {
+    return ListenableBuilder(
+      listenable: core,
+      builder: (context, _) {
+        final open = _open;
+        final exists = open != null &&
+            (open.$2
+                ? core.groups.any((g) => g.id == open.$1)
+                : core.contacts.any((c) => c.id == open.$1));
+        return Navigator(
+          key: _detailKey,
+          pages: [
+            const _DetailPage(key: ValueKey('empty'), child: _EmptyDetail()),
+            if (open != null && exists)
+              _DetailPage(
+                key: ValueKey('chat-${open.$1}'),
+                child: open.$2
+                    ? GroupChatScreen(groupId: open.$1)
+                    : ChatScreen(contactId: open.$1),
+              ),
+          ],
+          onDidRemovePage: (page) {
+            if (page.key == const ValueKey('empty')) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _open == open) setState(() => _open = null);
+            });
+          },
+        );
+      },
+    );
+  }
 
   /// On a wide window the rail stays put and everything else happens in the pane beside it, which
   /// has a navigator of its own: a chat opens over the list, and its back arrow — or a chat that
@@ -134,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final wide = width >= _wide;
     // Beside the rail, a chat opens in the pane rather than over the whole window.
     void openInPane(String id, bool group) => setState(() => _open = (id, group));
+    final desk = width >= _desk;
     final chatOpen = wide && _open != null;
     final sections = [
       (Icons.chat_bubble_outline, Icons.chat_bubble, l10n.chats),
@@ -142,8 +182,16 @@ class _HomeScreenState extends State<HomeScreen> {
       (Icons.person_outline, Icons.person, l10n.tabProfile),
     ];
     final page = switch (_tab) {
-      0 => _ChatList(groupsOnly: false, onOpen: wide ? openInPane : null),
-      1 => _ChatList(groupsOnly: true, onOpen: wide ? openInPane : null),
+      0 => _ChatList(
+          groupsOnly: false,
+          onOpen: wide ? openInPane : null,
+          selected: desk ? _open?.$1 : null,
+        ),
+      1 => _ChatList(
+          groupsOnly: true,
+          onOpen: wide ? openInPane : null,
+          selected: desk ? _open?.$1 : null,
+        ),
       2 => const _SettingsTab(),
       _ => const _ProfileTab(),
     };
@@ -167,6 +215,112 @@ class _HomeScreenState extends State<HomeScreen> {
       onPressed: _newAction,
       child: const Icon(Icons.add_rounded, size: 32),
     );
+    if (desk) {
+      final rail = NavigationRail(
+        backgroundColor: Colors.transparent,
+        extended: true,
+        minExtendedWidth: 212,
+        indicatorColor: CyberDog.accent.withValues(alpha: 0.12),
+        selectedIconTheme: const IconThemeData(color: CyberDog.accent),
+        selectedLabelTextStyle: const TextStyle(
+          color: CyberDog.accentDark,
+          fontWeight: FontWeight.w700,
+          fontSize: 14.5,
+        ),
+        unselectedLabelTextStyle: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+          fontSize: 14.5,
+        ),
+        leading: const Padding(
+          padding: EdgeInsets.fromLTRB(4, 14, 4, 18),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CyberDogLogo(size: 40),
+              SizedBox(width: 10),
+              BrandTitle(fontSize: 17),
+            ],
+          ),
+        ),
+        selectedIndex: _tab,
+        // Choosing a section leaves whatever chat was open.
+        onDestinationSelected: (i) => setState(() {
+          _tab = i;
+          _open = null;
+        }),
+        destinations: [
+          for (final (icon, selected, label) in sections)
+            NavigationRailDestination(
+              icon: Icon(icon),
+              selectedIcon: Icon(selected),
+              label: Text(label),
+            ),
+        ],
+      );
+      return Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Surface(child: rail),
+                const SizedBox(width: 12),
+                if (_tab < 2) ...[
+                  SizedBox(
+                    width: 380,
+                    child: _Surface(
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(22, 18, 14, 10),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    sections[_tab].$3,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -.5,
+                                    ),
+                                  ),
+                                ),
+                                IconButton.filled(
+                                  key: const ValueKey('new-action'),
+                                  tooltip: l10n.newChat,
+                                  onPressed: _newAction,
+                                  icon: const Icon(Icons.add_rounded),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(child: content),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: _Surface(child: _detail(core))),
+                ] else
+                  Expanded(
+                    child: _Surface(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 760),
+                          child: content,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 48,
@@ -284,13 +438,16 @@ String _listTime(DateTime at) {
 
 /// The chats, newest activity first: everything, or only the groups.
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.groupsOnly, this.onOpen});
+  const _ChatList({required this.groupsOnly, this.onOpen, this.selected});
 
   final bool groupsOnly;
 
   /// On a wide window: open the chat in the pane beside the rail (its id, whether it is a group)
   /// instead of over the whole window. Null on a phone.
   final void Function(String id, bool group)? onOpen;
+
+  /// The chat open beside the list on a large window, to mark its row.
+  final String? selected;
 
   @override
   Widget build(BuildContext context) {
@@ -327,9 +484,17 @@ class _ChatList extends StatelessWidget {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
-              child: Text(
-                groupsOnly ? l10n.noGroupsYet : l10n.noChatsYet,
-                textAlign: TextAlign.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Opacity(opacity: .9, child: CyberDogLogo(size: 88)),
+                  const SizedBox(height: 16),
+                  Text(
+                    groupsOnly ? l10n.noGroupsYet : l10n.noChatsYet,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
               ),
             ),
           );
@@ -339,7 +504,12 @@ class _ChatList extends StatelessWidget {
           children: [
             for (final r in requests) _RequestTile(request: r, core: core),
             for (final row in rows)
-              _ChatTile(row: row, core: core, onOpen: onOpen),
+              _ChatTile(
+                row: row,
+                core: core,
+                onOpen: onOpen,
+                selected: selected != null && selected == (row.contact?.id ?? row.group?.id),
+              ),
           ],
         );
       },
@@ -350,11 +520,12 @@ class _ChatList extends StatelessWidget {
 /// A chat in the list: avatar, name, the last line, and on the right the time with either the
 /// unread count or, for our own last message, whether it was delivered.
 class _ChatTile extends StatelessWidget {
-  const _ChatTile({required this.row, required this.core, this.onOpen});
+  const _ChatTile({required this.row, required this.core, this.onOpen, this.selected = false});
 
   final _Row row;
   final NightdropCore core;
   final void Function(String id, bool group)? onOpen;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -391,14 +562,18 @@ class _ChatTile extends StatelessWidget {
       if (contact != null) _confirmDeleteChat(context, core, contact);
     }
 
-    return Material(
-      color: Colors.transparent,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Material(
+      color: selected ? CyberDog.accent.withValues(alpha: 0.10) : Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
       onTap: open,
       onLongPress: contact != null ? remove : null,
       onSecondaryTap: contact != null ? remove : null,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
             ExcludeSemantics(
@@ -420,7 +595,11 @@ class _ChatTile extends StatelessWidget {
                           contact?.headerName ?? group!.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            letterSpacing: -.1,
+                            fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w600,
+                          ),
                         ),
                       ),
                       if (contact != null && contact.showIdentityTag) ...[
@@ -438,7 +617,15 @@ class _ChatTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 1),
-                  Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    // An unread chat's last line is in ink, a read one's is muted.
+                    style: unread > 0
+                        ? muted.copyWith(color: scheme.onSurface, fontWeight: FontWeight.w500)
+                        : muted,
+                  ),
                 ],
               ),
             ),
@@ -446,7 +633,14 @@ class _ChatTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(last != null ? _listTime(last.at) : '', style: muted.copyWith(fontSize: 12)),
+                Text(
+                  last != null ? _listTime(last.at) : '',
+                  style: muted.copyWith(
+                    fontSize: 12,
+                    color: unread > 0 ? CyberDog.accent : null,
+                    fontWeight: unread > 0 ? FontWeight.w600 : null,
+                  ),
+                ),
                 const SizedBox(height: 5),
                 if (unread > 0)
                   Badge(label: Text('$unread'), backgroundColor: CyberDog.accent)
@@ -459,7 +653,8 @@ class _ChatTile extends StatelessWidget {
                       _ => group != null ? Icons.done : Icons.schedule,
                     },
                     size: 15,
-                    color: scheme.onSurfaceVariant,
+                    // Delivered ticks are in the accent, anything still on its way is muted.
+                    color: last.delivery == 'delivered' ? CyberDog.accent : scheme.onSurfaceVariant,
                   )
                 else
                   const SizedBox(height: 15),
@@ -469,8 +664,93 @@ class _ChatTile extends StatelessWidget {
         ),
       ),
       ),
+      ),
     );
   }
+}
+
+/// A white glass panel: the sidebar, the list and the message area of a large window.
+class _Surface extends StatelessWidget {
+  const _Surface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: CyberDog.panel.withValues(alpha: 0.82),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: CyberDog.hairline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+}
+
+/// The message area before a chat is chosen.
+class _EmptyDetail extends StatelessWidget {
+  const _EmptyDetail();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      type: MaterialType.transparency,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CyberDogLogo(size: 132),
+            const SizedBox(height: 18),
+            Text(
+              AppLocale.pick('Select a chat', 'Выберите чат'),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -.4),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              AppLocale.pick('Your messages are end-to-end encrypted.',
+                  'Ваши сообщения защищены сквозным шифрованием.'),
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A page of the message area. Unlike an ordinary page it brings no back arrow and no slide:
+/// the chat is beside its list, not on top of it.
+class _DetailPage extends Page<void> {
+  const _DetailPage({required LocalKey super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Route<void> createRoute(BuildContext context) => _DetailRoute(this);
+}
+
+class _DetailRoute extends PageRoute<void> {
+  _DetailRoute(_DetailPage page) : super(settings: page);
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  bool get impliesAppBarDismissal => false;
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> a, Animation<double> b) =>
+      (settings as _DetailPage).child;
 }
 
 /// A small heading between groups of settings.

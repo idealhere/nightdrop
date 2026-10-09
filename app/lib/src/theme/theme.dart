@@ -56,8 +56,9 @@ ThemeData nightdropTheme() {
     // as missing-glyph boxes. Not on Windows: the bundled font is COLRv1, which Flutter's
     // DirectWrite path there draws as nothing (every emoji was blank), while the system's
     // Segoe UI Emoji is found by the normal fallback.
+    fontFamily: 'Inter',
     fontFamilyFallback: defaultTargetPlatform == TargetPlatform.windows
-        ? null
-        : const ['NotoColorEmoji'],
+        ? const ['InterCyrillic']
+        : const ['InterCyrillic', 'NotoColorEmoji'],
   );
 }

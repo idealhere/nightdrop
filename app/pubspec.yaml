@@ -55,6 +55,28 @@ flutter:
     - assets/brand/backdrop-light.jpg
     - assets/brand/logo-icon.png
   fonts:
+    # The UI typeface. The Latin and Cyrillic cuts are separate small files; the Cyrillic one
+    # is used as a fallback family (see theme.dart).
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter-latin-400.ttf
+          weight: 400
+        - asset: assets/fonts/inter-latin-500.ttf
+          weight: 500
+        - asset: assets/fonts/inter-latin-600.ttf
+          weight: 600
+        - asset: assets/fonts/inter-latin-700.ttf
+          weight: 700
+    - family: InterCyrillic
+      fonts:
+        - asset: assets/fonts/inter-cyrillic-400.ttf
+          weight: 400
+        - asset: assets/fonts/inter-cyrillic-500.ttf
+          weight: 500
+        - asset: assets/fonts/inter-cyrillic-600.ttf
+          weight: 600
+        - asset: assets/fonts/inter-cyrillic-700.ttf
+          weight: 700
     # Color-emoji fallback so emoji render on desktop (Flutter's Linux/Windows builds don't
     # ship one; Android/iOS have a system emoji font but this is a harmless fallback there).
     - family: NotoColorEmoji

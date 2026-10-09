@@ -262,7 +262,9 @@ void main() {
     core.receiveBurnMedia(contact.id, 30);
     await tester.pump();
 
-    expect(find.byType(Image), findsNothing,
+    // The contact's avatar in the header is a bundled picture; anything else would be the
+    // attachment.
+    expect(find.byWidgetPredicate((w) => w is Image && w.image is! AssetImage), findsNothing,
         reason: 'no attachment may be rendered before it is revealed');
     expect(find.text('Tap to reveal'), findsOneWidget);
     expect(find.byIcon(Icons.image_outlined), findsOneWidget,

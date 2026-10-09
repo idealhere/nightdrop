@@ -492,12 +492,18 @@ class _TopTabs extends StatelessWidget {
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: CyberDog.hairline)),
           ),
-          child: Row(
-            children: [
-              tab(AppLocale.pick('Chats', 'Чаты'), active == 0),
-              tab(AppLocale.pick('Contacts', 'Контакты'), active == 1),
-              tab(AppLocale.pick('Requests', 'Запросы'), false, count: requests),
-            ],
+          // Scaled down rather than cut off, should a narrow screen or a large font not fit it.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.bottomLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                tab(AppLocale.pick('Chats', 'Чаты'), active == 0),
+                tab(AppLocale.pick('Contacts', 'Контакты'), active == 1),
+                tab(AppLocale.pick('Requests', 'Запросы'), false, count: requests),
+              ],
+            ),
           ),
         ),
       ),

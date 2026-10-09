@@ -426,31 +426,59 @@ class _HomeScreenState extends State<HomeScreen> {
               minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(34),
+                  border: Border.all(color: Colors.white, width: 1.5),
                   boxShadow: const [
-                    BoxShadow(color: Color(0x241C3E78), blurRadius: 24, offset: Offset(0, 8)),
+                    BoxShadow(color: Color(0x2E1C3E78), blurRadius: 28, offset: Offset(0, 10)),
+                    BoxShadow(color: Color(0x1F1F6FFF), blurRadius: 18, spreadRadius: -6),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(30),
-                  child: NavigationBar(
-                    height: 62,
-                    backgroundColor: CyberDog.panel,
-                    indicatorColor: CyberDog.accent.withValues(alpha: 0.12),
-                    // The profile is not along the bottom: shown from a rail, it marks nothing.
-                    selectedIndex: _tab > 2 ? 2 : _tab,
-                    onDestinationSelected: (i) => setState(() {
-                      _tab = i;
-                      _requestsOnly = false;
-                    }),
-                    destinations: [
-                      for (final (icon, selected, label) in sections.take(3))
-                        NavigationDestination(
-                          icon: Icon(icon),
-                          selectedIcon: Icon(selected, color: CyberDog.accent),
-                          label: label,
+                  borderRadius: BorderRadius.circular(34),
+                  child: NavigationBarTheme(
+                    data: NavigationBarThemeData(
+                      // The chosen section: a white icon on a solid blue pill, its name in blue.
+                      iconTheme: WidgetStateProperty.resolveWith(
+                        (states) => IconThemeData(
+                          size: 27,
+                          color: states.contains(WidgetState.selected)
+                              ? Colors.white
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                    ],
+                      ),
+                      labelTextStyle: WidgetStateProperty.resolveWith(
+                        (states) => TextStyle(
+                          fontSize: 12.5,
+                          letterSpacing: .1,
+                          fontWeight: states.contains(WidgetState.selected)
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: states.contains(WidgetState.selected)
+                              ? CyberDog.accent
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    child: NavigationBar(
+                      height: 78,
+                      backgroundColor: CyberDog.panel,
+                      indicatorColor: CyberDog.accent,
+                      indicatorShape: const StadiumBorder(),
+                      // The profile is not along the bottom: shown from a rail, it marks nothing.
+                      selectedIndex: _tab > 2 ? 2 : _tab,
+                      onDestinationSelected: (i) => setState(() {
+                        _tab = i;
+                        _requestsOnly = false;
+                      }),
+                      destinations: [
+                        for (final (icon, selected, label) in sections.take(3))
+                          NavigationDestination(
+                            icon: Icon(icon),
+                            selectedIcon: Icon(selected),
+                            label: label,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

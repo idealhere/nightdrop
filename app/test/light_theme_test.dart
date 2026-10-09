@@ -40,7 +40,7 @@ void main() {
     expect(seen.length, greaterThan(4));
   });
 
-  testWidgets('an avatar shows the first letter, a group its sign', (tester) async {
+  testWidgets('a person has the dog for an avatar, a group its sign', (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: nightdropTheme(),
       home: const Row(children: [
@@ -48,7 +48,7 @@ void main() {
         CyberDogAvatar(seed: 'y', label: 'New', group: true),
       ]),
     ));
-    expect(find.text('K'), findsOneWidget);
+    expect(find.byType(CyberDogLogo), findsOneWidget);
     expect(find.byIcon(Icons.groups_rounded), findsOneWidget);
   });
 }

@@ -118,8 +118,9 @@ class CyberDogLogo extends StatelessWidget {
   }
 }
 
-/// A round avatar for a person or a group: a soft gradient picked from the name or id, so each
-/// chat keeps its own colour, with the first letter of the name — or the group sign — in white.
+/// A round avatar for a person or a group: the CyberDog head — or the group sign — on a soft
+/// gradient. The colour is picked from the chat's id, so each chat keeps its own, or given
+/// outright by [palette] (one's own avatar, chosen in the profile).
 class CyberDogAvatar extends StatelessWidget {
   const CyberDogAvatar({
     super.key,
@@ -127,7 +128,13 @@ class CyberDogAvatar extends StatelessWidget {
     required this.label,
     this.group = false,
     this.radius = 26,
+    this.palette,
   });
+
+  /// One of [paletteCount] colours, instead of the one picked from [seed].
+  final int? palette;
+
+  static int get paletteCount => _palettes.length;
 
   /// What the colour is picked from: stays the same for the same chat.
   final String seed;
@@ -159,7 +166,6 @@ class CyberDogAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final letter = label.trim().isEmpty ? '' : String.fromCharCode(label.trim().runes.first).toUpperCase();
     return Container(
       width: radius * 2,
       height: radius * 2,
@@ -169,20 +175,17 @@ class CyberDogAvatar extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: paletteFor(seed),
+          colors: palette != null ? _palettes[palette! % _palettes.length] : paletteFor(seed),
         ),
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [BoxShadow(color: Color(0x2E1C3E78), blurRadius: 8, offset: Offset(0, 3))],
       ),
-      child: group || letter.isEmpty
-          ? Icon(group ? Icons.groups_rounded : Icons.person_rounded, color: Colors.white, size: radius)
-          : Text(
-              letter,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: radius * .82,
-                height: 1,
-                fontWeight: FontWeight.w700,
+      child: group
+          ? Icon(Icons.groups_rounded, color: Colors.white, size: radius)
+          : ClipOval(
+              child: Padding(
+                padding: EdgeInsets.only(top: radius * .16),
+                child: CyberDogLogo(size: radius * 1.62),
               ),
             ),
     );

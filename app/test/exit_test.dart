@@ -41,7 +41,7 @@ void main() {
   }
 
   Future<void> openExit(WidgetTester tester) async {
-    await tester.tap(find.text('Profile'));
+    await tester.tap(find.byKey(const ValueKey('profile-button')));
     await tester.pumpAndSettle();
     // Exit lives under Profile, below the fold of the 600 px test screen: bring it into view.
     await tester.ensureVisible(find.text('Exit'));

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The CyberDog wordmark, with "Dog" in the accent colour.
+/// The CyberDog wordmark: mixed case, with "Dog" in the light cyan of the logo.
 class BrandTitle extends StatelessWidget {
   const BrandTitle({super.key, this.fontSize = 20});
 
@@ -10,16 +10,16 @@ class BrandTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Text.rich(
-      TextSpan(
-        text: 'CYBER',
+      const TextSpan(
+        text: 'Cyber',
         children: [
-          TextSpan(text: 'DOG', style: TextStyle(color: scheme.secondary)),
+          TextSpan(text: 'Dog', style: TextStyle(color: Color(0xFF22B4F2))),
         ],
       ),
       style: TextStyle(
         fontSize: fontSize,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 2,
+        fontWeight: FontWeight.w700,
+        letterSpacing: .2,
         color: scheme.onSurface,
       ),
     );

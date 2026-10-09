@@ -26,6 +26,15 @@ class PrivacyPrefs {
   static final ValueNotifier<NotificationDetail> notificationDetail =
       ValueNotifier<NotificationDetail>(NotificationDetail.private);
 
+  /// The colour of the user's own avatar, as an index into the avatar palettes. Local to this
+  /// device: it is not sent to anyone.
+  static final ValueNotifier<int> avatarStyle = ValueNotifier<int>(1);
+
+  static Future<void> setAvatarStyle(int style) async {
+    avatarStyle.value = style;
+    await _save();
+  }
+
   /// Photos the user chose to look at, by media id. Kept in memory only: after a restart they
   /// are concealed again, which is the safer side to err on.
   static final Set<String> _revealed = <String>{};
@@ -65,6 +74,9 @@ class PrivacyPrefs {
       }
       for (final line in saved.split('\n')) {
         if (line.startsWith('dismissed=')) _dismissedNotices.add(line.substring(10));
+        if (line.startsWith('avatar=')) {
+          avatarStyle.value = int.tryParse(line.substring(7)) ?? avatarStyle.value;
+        }
       }
     } catch (_) {}
   }
@@ -74,6 +86,7 @@ class PrivacyPrefs {
       await (await _file()).writeAsString(
         'hide_incoming_photos=${hideIncomingPhotos.value ? 1 : 0}\n'
         'notification_detail=${notificationDetail.value.name}\n'
+        'avatar=${avatarStyle.value}\n'
         '${_dismissedNotices.map((k) => 'dismissed=$k\n').join()}',
       );
     } catch (_) {}

@@ -10,6 +10,7 @@ import '../../core/app_version.dart';
 import '../../core/background_delivery.dart';
 import '../../core/nightdrop_core.dart';
 import '../../core/models.dart';
+import '../../core/privacy_prefs.dart';
 import '../../core/profile_name.dart';
 import '../backup/backup_actions.dart';
 import '../bridges/bridges_screen.dart';
@@ -174,10 +175,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // Beside the rail, a chat opens in the pane rather than over the whole window.
     void openInPane(String id, bool group) => setState(() => _open = (id, group));
     final desk = width >= _desk;
-    final chatOpen = wide && _open != null;
+    // A phone's bottom bar carries the first three; the profile is in its top bar. A side rail
+    // has room for all four.
     final sections = [
       (Icons.chat_bubble_outline, Icons.chat_bubble, l10n.chats),
-      (Icons.groups_outlined, Icons.groups, l10n.tabGroups),
+      (Icons.people_outline, Icons.people, AppLocale.pick('Contacts', 'Контакты')),
       (Icons.settings_outlined, Icons.settings, l10n.tabSettings),
       (Icons.person_outline, Icons.person, l10n.tabProfile),
     ];
@@ -188,7 +190,8 @@ class _HomeScreenState extends State<HomeScreen> {
           selected: desk ? _open?.$1 : null,
         ),
       1 => _ChatList(
-          groupsOnly: true,
+          groupsOnly: false,
+          peopleOnly: true,
           onOpen: wide ? openInPane : null,
           selected: desk ? _open?.$1 : null,
         ),
@@ -206,14 +209,37 @@ class _HomeScreenState extends State<HomeScreen> {
         Expanded(child: page),
       ],
     );
-    final actionButton = FloatingActionButton(
-      key: const ValueKey('new-action'),
-      tooltip: l10n.newChat,
-      backgroundColor: CyberDog.accent,
-      foregroundColor: Colors.white,
-      shape: const CircleBorder(),
-      onPressed: _newAction,
-      child: const Icon(Icons.add_rounded, size: 32),
+    // The one button for starting something sits in the top bar, next to the profile.
+    final actionButton = Padding(
+      padding: const EdgeInsets.only(right: 12, left: 6),
+      child: Semantics(
+        button: true,
+        label: l10n.newChat,
+        child: Tooltip(
+          message: l10n.newChat,
+          child: InkResponse(
+            key: const ValueKey('new-action'),
+            onTap: _newAction,
+            radius: 26,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: CyberDog.outgoing,
+                boxShadow: CyberDog.glow,
+              ),
+              child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+            ),
+          ),
+        ),
+      ),
+    );
+    final profileButton = IconButton(
+      key: const ValueKey('profile-button'),
+      tooltip: l10n.tabProfile,
+      onPressed: () => _push(const _ProfileScreen()),
+      icon: const _OwnAvatar(radius: 17),
     );
     if (desk) {
       final rail = NavigationRail(
@@ -323,22 +349,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 48,
+        toolbarHeight: 58,
+        centerTitle: false,
         titleSpacing: 16,
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CyberDogLogo(size: 32),
-            SizedBox(width: 10),
-            BrandTitle(fontSize: 18),
+            CyberDogLogo(size: 36),
+            SizedBox(width: 8),
+            BrandTitle(fontSize: 21),
           ],
         ),
+        actions: [if (!wide) profileButton, actionButton],
+        // What the lists hold, as a line under the brand. For show: the sections are chosen
+        // along the bottom.
+        bottom: !wide && _tab < 2
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(40),
+                child: _TopTabs(active: _tab, requests: core.incomingRequests.length),
+              )
+            : null,
       ),
-      // Lifted a little, so that it floats over the list rather than sitting on the bar. Gone
-      // while a chat fills the pane: it would sit on top of the chat's send button.
-      floatingActionButton: _tab < 2 && !chatOpen
-          ? Padding(padding: const EdgeInsets.only(bottom: 10), child: actionButton)
-          : null,
       body: wide
           ? Row(
               children: [
@@ -376,25 +407,187 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             )
           : content,
+      // A floating bar: lifted off the edge, rounded, with a soft shadow.
       bottomNavigationBar: wide
           ? null
-          : NavigationBar(
-              height: 56,
-              backgroundColor: CyberDog.panel,
-              indicatorColor: CyberDog.accent.withValues(alpha: 0.14),
-              selectedIndex: _tab,
-              onDestinationSelected: (i) => setState(() => _tab = i),
-              destinations: [
-                for (final (icon, selected, label) in sections)
-                  NavigationDestination(
-                    icon: Icon(icon),
-                    selectedIcon: Icon(selected, color: CyberDog.accentLight),
-                    label: label,
+          : SafeArea(
+              minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x241C3E78), blurRadius: 24, offset: Offset(0, 8)),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(30),
+                  child: NavigationBar(
+                    height: 62,
+                    backgroundColor: CyberDog.panel,
+                    indicatorColor: CyberDog.accent.withValues(alpha: 0.12),
+                    // The profile is not along the bottom: shown from a rail, it marks nothing.
+                    selectedIndex: _tab > 2 ? 2 : _tab,
+                    onDestinationSelected: (i) => setState(() => _tab = i),
+                    destinations: [
+                      for (final (icon, selected, label) in sections.take(3))
+                        NavigationDestination(
+                          icon: Icon(icon),
+                          selectedIcon: Icon(selected, color: CyberDog.accent),
+                          label: label,
+                        ),
+                    ],
                   ),
-              ],
+                ),
+              ),
             ),
     );
   }
+}
+
+/// The line under the brand on a phone: Chats, Contacts, Requests. It shows where one is and how
+/// many requests wait; it is not a control.
+class _TopTabs extends StatelessWidget {
+  const _TopTabs({required this.active, required this.requests});
+
+  final int active;
+  final int requests;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget tab(String text, bool on, {int count = 0}) => Padding(
+          padding: const EdgeInsets.only(right: 26),
+          child: Container(
+            padding: const EdgeInsets.only(bottom: 8, top: 6),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: on ? CyberDog.accent : Colors.transparent, width: 2),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                    color: on ? CyberDog.accent : scheme.onSurfaceVariant,
+                  ),
+                ),
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Badge(label: Text('$count'), backgroundColor: CyberDog.accent),
+                ],
+              ],
+            ),
+          ),
+        );
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: Container(
+          height: 40,
+          alignment: Alignment.bottomLeft,
+          padding: const EdgeInsets.only(left: 18),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: CyberDog.hairline)),
+          ),
+          child: Row(
+            children: [
+              tab(AppLocale.pick('Chats', 'Чаты'), active == 0),
+              tab(AppLocale.pick('Contacts', 'Контакты'), active == 1),
+              tab(AppLocale.pick('Requests', 'Запросы'), false, count: requests),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The user's own avatar, in the colour chosen in the profile.
+class _OwnAvatar extends StatelessWidget {
+  const _OwnAvatar({required this.radius});
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: PrivacyPrefs.avatarStyle,
+        builder: (context, style, _) =>
+            CyberDogAvatar(seed: 'me', label: '', radius: radius, palette: style),
+      );
+}
+
+/// The avatar at the top of the profile: tap it to choose another colour.
+class _AvatarChoice extends StatelessWidget {
+  const _AvatarChoice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: InkResponse(
+        key: const ValueKey('change-avatar'),
+        radius: 56,
+        onTap: () => showModalBottomSheet<void>(
+          context: context,
+          builder: (context) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (var i = 0; i < CyberDogAvatar.paletteCount; i++)
+                    InkResponse(
+                      key: ValueKey('avatar-$i'),
+                      radius: 36,
+                      onTap: () {
+                        PrivacyPrefs.setAvatarStyle(i);
+                        Navigator.pop(context);
+                      },
+                      child: CyberDogAvatar(seed: 'me', label: '', radius: 30, palette: i),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const _OwnAvatar(radius: 46),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: CyberDog.panel,
+                  border: Border.all(color: CyberDog.hairline),
+                ),
+                child: const Icon(Icons.edit_outlined, size: 16, color: CyberDog.accent),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The profile as a screen of its own, opened from the top bar of a phone.
+class _ProfileScreen extends StatelessWidget {
+  const _ProfileScreen();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text(AppLocalizations.of(context)!.tabProfile)),
+        body: const _ProfileTab(),
+      );
 }
 
 /// One row of the chat list: a contact or a group, with the last thing said in it.
@@ -438,7 +631,10 @@ String _listTime(DateTime at) {
 
 /// The chats, newest activity first: everything, or only the groups.
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.groupsOnly, this.onOpen, this.selected});
+  const _ChatList({required this.groupsOnly, this.peopleOnly = false, this.onOpen, this.selected});
+
+  /// People without the groups: the Contacts section.
+  final bool peopleOnly;
 
   final bool groupsOnly;
 
@@ -458,11 +654,12 @@ class _ChatList extends StatelessWidget {
       builder: (context, _) {
         final requests = groupsOnly ? const <Contact>[] : core.incomingRequests;
         final rows = <_Row>[
-          for (final g in core.groups)
-            _Row(
-              group: g,
-              last: core.groupMessagesFor(g.id).where((m) => !m.system).lastOrNull,
-            ),
+          if (!peopleOnly)
+            for (final g in core.groups)
+              _Row(
+                group: g,
+                last: core.groupMessagesFor(g.id).where((m) => !m.system).lastOrNull,
+              ),
           if (!groupsOnly)
             for (final c in core.contacts)
               _Row(
@@ -487,10 +684,28 @@ class _ChatList extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Opacity(opacity: .9, child: CyberDogLogo(size: 88)),
-                  const SizedBox(height: 16),
+                  Container(
+                    width: 168,
+                    height: 168,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [Color(0x5522B4F2), Color(0x1F1F6FFF), Color(0x001F6FFF)],
+                        stops: [0, .6, 1],
+                      ),
+                    ),
+                    child: const CyberDogLogo(size: 112),
+                  ),
+                  const SizedBox(height: 14),
                   Text(
                     groupsOnly ? l10n.noGroupsYet : l10n.noChatsYet,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -.2),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    AppLocale.pick('Tap + to start a private chat.', 'Нажмите +, чтобы начать приватный чат.'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
@@ -904,13 +1119,7 @@ class _ProfileTab extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 24),
       children: [
         const SizedBox(height: 28),
-        const Center(
-          child: CircleAvatar(
-            radius: 44,
-            backgroundColor: CyberDog.panel,
-            child: CyberDogLogo(size: 64),
-          ),
-        ),
+        const _AvatarChoice(),
         const SizedBox(height: 14),
         ValueListenableBuilder<String>(
           valueListenable: ProfileName.current,

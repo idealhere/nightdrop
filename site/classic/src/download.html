@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Скачать CYBERDOG — Android и Windows</title>
+<meta name="description" content="Скачать CYBERDOG для Android и Windows. Пошаговая инструкция по установке и первому запуску.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#050816">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=3">
+<link rel="icon" href="favicon.ico?v=3" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #050816; --surface: #0d1225; --border: rgba(130,120,255,.18); --border-on: rgba(130,90,255,.5);
+    --text: #f4f5fa; --text2: #a8aec5; --muted: #707892; --accent: #7657ff; --accent-l: #9b7bff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--text); -webkit-font-smoothing: antialiased;
+    font: 15.5px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: linear-gradient(rgba(5,8,22,.3), rgba(5,8,22,.3)), url(backdrop.jpg) center / cover fixed no-repeat, var(--bg); }
+  a { color: inherit; text-decoration: none; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px clamp(16px, 6.5vw, 110px); border-bottom: 1px solid var(--border); }
+  .brand img { display: block; height: 40px; width: auto; }
+  nav { display: flex; align-items: center; gap: clamp(14px, 2.6vw, 44px); font-size: 14px; }
+  .pill { padding: 8px 22px; border: 1px solid var(--border-on); border-radius: 999px; }
+  nav a:hover, nav .on { color: var(--accent-l); }
+
+  main { max-width: 1180px; margin: 0 auto; padding: clamp(12px, 2.4vh, 26px) 20px 20px; }
+  .top { text-align: center; }
+  .top img.icon { width: 70px; height: 70px; border-radius: 22%; box-shadow: 0 0 46px rgba(118,87,255,.35); }
+  .top img.word { display: block; width: min(330px, 74vw); height: auto; margin: 10px auto 0; }
+  .tag { margin: 8px 0 0; color: var(--accent-l); font-size: 12px; letter-spacing: .5em; text-indent: .5em; }
+  .lead { margin: 8px auto 0; color: var(--text2); max-width: 40em; font-size: 16px; }
+
+  .platforms { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; margin-top: clamp(14px, 2.6vh, 26px); }
+  .card { position: relative; padding: 22px 26px; border-radius: 22px; border: 1px solid var(--border);
+    background: linear-gradient(160deg, rgba(23,26,64,.72), rgba(9,12,30,.9) 55%); scroll-margin-top: 20px; }
+  .card:target, .card.first { border-color: var(--border-on); box-shadow: 0 0 60px rgba(118,87,255,.14); }
+  .who { display: flex; align-items: center; gap: 16px; }
+  .glyph { flex: none; display: grid; place-items: center; width: 50px; height: 50px; border-radius: 14px;
+    background: #171a40; border: 1px solid var(--border); color: var(--accent-l); }
+  .who small { display: block; color: var(--accent-l); font-size: 10.5px; letter-spacing: .34em; }
+  h2 { margin: 1px 0 0; font-size: 21px; font-weight: 650; letter-spacing: -0.01em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .chips li { padding: 3px 11px; border-radius: 999px; border: 1px solid var(--border); color: var(--text2); font-size: 13px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 14px; padding: 13px 24px;
+    border-radius: 14px; font-weight: 600; font-size: 17px; border: 1px solid var(--border-on); background: #0a0d22;
+    transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .btn.main { border-color: transparent; background: linear-gradient(135deg, #7556ff, #5d37ee); box-shadow: 0 8px 34px rgba(118,87,255,.32); }
+  .btn:hover, .btn:focus-visible { transform: translateY(-1px); border-color: var(--accent-l); }
+  .btn:focus-visible { outline: 2px solid var(--accent-l); outline-offset: 3px; }
+
+  .steps { margin: 16px 0 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li { position: relative; padding: 0 0 8px 40px; color: var(--text2); counter-increment: s; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: -1px; width: 25px; height: 25px; border-radius: 50%;
+    display: grid; place-items: center; border: 1px solid var(--border-on); color: var(--accent-l); font-size: 13px; font-weight: 600; }
+  .steps li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 27px; bottom: 2px; width: 1px; background: var(--border); }
+  .steps b, .flow b { color: var(--text); font-weight: 600; }
+  .old { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
+  .old a { color: var(--accent-l); }
+  .note { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  details { margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+  summary { cursor: pointer; } summary:hover { color: var(--text2); }
+  code { display: block; margin-top: 6px; word-break: break-all; font-family: Consolas, ui-monospace, monospace; }
+
+  .start { margin-top: clamp(14px, 2.6vh, 28px); text-align: center; }
+  .start small { color: var(--accent-l); font-size: 10.5px; letter-spacing: .34em; }
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 12px 0 0; padding: 0; list-style: none; text-align: left; }
+  .flow li { padding: 13px 15px; border-radius: 16px; border: 1px solid var(--border); background: rgba(13,18,37,.82); color: var(--text2); font-size: 14px; }
+  .flow span { display: block; margin-bottom: 4px; color: var(--accent-l); font-size: 19px; font-weight: 700; letter-spacing: .04em; }
+  .hint { margin: 10px auto 0; max-width: 46em; color: var(--muted); font-size: 14px; }
+  .legal { margin: 14px 0 0; text-align: center; font-size: 12px; color: #515a78; }
+  .legal a { text-decoration: underline; }
+
+  @media (max-width: 1020px) { .flow { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 820px) {
+    nav { gap: 14px; font-size: 13px; } nav a:first-child { display: none; } .brand img { height: 32px; } .pill { padding: 6px 14px; }
+    .platforms { grid-template-columns: 1fr; } .card { padding: 24px 20px; } .flow { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="./"><img src="logo-horizontal.webp" width="185" height="40" alt="CYBERDOG"></a>
+  <nav>
+    <a href="./#features">Возможности</a>
+    <a href="security.html">Безопасность</a>
+    <a class="pill on" href="download.html">Скачать</a>
+  </nav>
+</header>
+
+<main>
+  <div class="top">
+    <img class="icon" src="app-icon.png" alt="">
+    <img class="word" src="wordmark.webp" width="1120" height="157" alt="CYBERDOG">
+    <p class="tag">PRIVATE • ANONYMOUS • ENCRYPTED</p>
+    <p class="lead">Бесплатно и без регистрации. Выберите устройство — установка занимает пару минут.</p>
+  </div>
+
+  <div class="platforms">
+    <section class="card first" id="android">
+      <div class="who">
+        <div class="glyph"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.2 3.1 8.6 5.4A7 7 0 0 1 12 4.6c1.2 0 2.4.3 3.4.8l1.4-2.3.9.5-1.4 2.3A6 6 0 0 1 19 10H5a6 6 0 0 1 2.7-4.1L6.3 3.6zM5 11h14v7a1.5 1.5 0 0 1-1.5 1.5H16V22a1.3 1.3 0 0 1-2.6 0v-2.5h-2.8V22A1.3 1.3 0 0 1 8 22v-2.5H6.5A1.5 1.5 0 0 1 5 18zM2.3 11.2a1.3 1.3 0 0 1 1.3 1.3v4a1.3 1.3 0 0 1-2.6 0v-4a1.3 1.3 0 0 1 1.3-1.3zm19.4 0a1.3 1.3 0 0 1 1.3 1.3v4a1.3 1.3 0 0 1-2.6 0v-4a1.3 1.3 0 0 1 1.3-1.3z"/></svg></div>
+        <div><small>ANDROID</small><h2>Телефон или планшет</h2></div>
+      </div>
+      <ul class="chips"><li data-ver="android">Версия 0.1.27 · сборка 68</li><li>APK · 39 МБ</li><li>arm64</li></ul>
+      <a class="btn main" data-file="android" href="cyberdog-0.1.27-b68.apk" download>Скачать для Android</a>
+      <ol class="steps">
+        <li>Нажмите <b>«Скачать для Android»</b> и дождитесь окончания загрузки.</li>
+        <li>Откройте файл из уведомления или из папки «Загрузки».</li>
+        <li>Если Android спросит, разрешите браузеру <b>установку из этого источника</b> и вернитесь назад.</li>
+        <li>Нажмите <b>«Установить»</b>, затем <b>«Открыть»</b>.</li>
+      </ol>
+      <p class="note">Начиная со сборки 31 обновления ставятся поверх установленной версии. Если у вас сборка 30 или старше, один раз удалите её перед установкой — вместе с ней удаляются личность и переписка на этом устройстве.</p>
+      <details><summary>Контрольная сумма SHA-256</summary><code data-sum="android">7129584d932bdef46bf7cd655eef2185577ae8c9f54c11d13b553c89263734c4</code></details>
+      <details><summary>Для старых телефонов (32-бит)</summary><p class="old">Если основной файл не устанавливается, телефон, скорее всего, 32-битный. <a data-file="android-armv7" href="cyberdog-0.1.27-b68-armv7.apk" download>Скачать версию для старых телефонов · 32 МБ</a></p><code data-sum="android-armv7">b1d9fff0af3b8b553934b356b8cc80844a2f0d9bfe25ba02ce26be38afe58551</code></details>
+    </section>
+
+    <section class="card" id="windows">
+      <div class="who">
+        <div class="glyph"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.3 10.8 4.2v7.3H3zM11.9 4.1 21 2.8v8.7h-9.1zM3 12.6h7.8v7.3L3 18.8zM11.9 12.6H21v8.7l-9.1-1.3z"/></svg></div>
+        <div><small>WINDOWS</small><h2>Компьютер</h2></div>
+      </div>
+      <ul class="chips"><li data-ver="windows">Версия 0.1.27 · сборка 53</li><li>Установщик · 20 МБ</li><li>Windows 10 и 11</li></ul>
+      <a class="btn" data-file="windows" href="CyberDogSetup-0.1.27-b53.exe" download>Скачать для Windows</a>
+      <ol class="steps">
+        <li>Нажмите <b>«Скачать для Windows»</b>.</li>
+        <li>Браузер может предупредить, что файл скачивают редко, — выберите <b>«Сохранить»</b>. В Microsoft Edge эта кнопка спрятана: стрелка рядом с «Удалить» → <b>«Сохранить всё равно»</b>.</li>
+        <li>Запустите файл. В синем окне Windows нажмите <b>«Подробнее»</b>, затем <b>«Выполнить в любом случае»</b>.</li>
+        <li>Пройдите установщик — права администратора не нужны. Приложение появится в меню «Пуск».</li>
+      </ol>
+      <p class="note">Установщик пока не подписан, поэтому Windows показывает предупреждения. Если включено «Интеллектуальное управление приложениями» (Smart App Control), Windows 11 не даст запустить программу. Выключить его можно так: <b>Безопасность Windows → Управление приложениями и браузером → Параметры интеллектуального управления приложениями → Выкл.</b> Включить обратно получится только переустановкой Windows, поэтому решайте сами — либо пользуйтесь версией для Android.</p>
+      <details><summary>Контрольная сумма SHA-256</summary><code data-sum="windows">f44626b10cf79f93d7cb7827a4b6a3df5db16e697b289702037f2ce7296d2cf9</code></details>
+    </section>
+  </div>
+
+  <div class="start" id="start">
+    <small>ПЕРВЫЙ ЗАПУСК</small>
+    <h2>Как начать переписку</h2>
+    <ol class="flow">
+      <li><span>01</span>Нажмите <b>«Создать мою личность»</b>. Ни регистрации, ни телефона, ни почты.</li>
+      <li><span>02</span>Один из вас открывает <b>«Новый чат» → «Пригласить»</b>: появится QR и короткий код.</li>
+      <li><span>03</span>Второй открывает <b>«Новый чат» → «Присоединиться»</b> и сканирует QR или вводит код.</li>
+      <li><span>04</span>Чат устанавливается сам. Можно писать и отправлять фото и видео.</li>
+      <li><span>05</span>Откройте <b>«Проверить код безопасности»</b>, сверьте цифры и отметьте чат проверенным.</li>
+    </ol>
+    <p class="hint">Передавайте код приглашения только тому, с кем хотите общаться, и по каналу, которому доверяете: тот, кто введёт код, сразу попадёт в чат.</p>
+  </div>
+
+  <p class="legal">Открытый код, AGPL-3.0 · основано на Night Drop · <a href="https://github.com/idealhere/nightdrop">исходники</a></p>
+</main>
+</body>
+</html>

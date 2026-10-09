@@ -48,20 +48,27 @@ void main() {
     expect(find.byType(FloatingActionButton), findsNothing);
   });
 
-  testWidgets('the line under the brand shows the sections but is not a control',
+  testWidgets('the line under the brand switches between chats, contacts and requests',
       (tester) async {
-    await _home(tester);
-    expect(find.text('Requests'), findsOneWidget);
-    // "Contacts" is there twice: on the line and along the bottom. Tapping the line does nothing.
-    await tester.tap(
-        find.descendant(of: find.byType(AppBar), matching: find.text('Contacts')),
-        warnIfMissed: false);
+    final core = await _home(tester);
+    final person = core.contacts.first.headerName;
+    int bottom() => tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
+
+    await tester.tap(find.byKey(const ValueKey('top-tab-1')));
     await tester.pump();
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
-    await tester.tap(find.descendant(
-        of: find.byType(NavigationBar), matching: find.text('Contacts')));
+    expect(bottom(), 1, reason: 'the bottom bar follows');
+    expect(find.text(person), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('top-tab-2')));
     await tester.pump();
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+    expect(bottom(), 0, reason: 'requests belong to the chats');
+    expect(find.text('No requests'), findsOneWidget);
+    expect(find.text(person), findsNothing, reason: 'only requests are listed');
+
+    await tester.tap(find.byKey(const ValueKey('top-tab-0')));
+    await tester.pump();
+    expect(find.text(person), findsOneWidget);
+    expect(find.text('No requests'), findsNothing);
   });
 
   testWidgets('groups are listed with the chats, people alone under Contacts', (tester) async {

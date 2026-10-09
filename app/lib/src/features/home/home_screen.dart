@@ -41,6 +41,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _tab = 0;
 
+  /// The Requests line of the top bar: the chat list narrowed to the requests waiting for an
+  /// answer. It belongs to the Chats section.
+  bool _requestsOnly = false;
+
   /// The chat open in the pane beside the rail on a wide window: its id and whether it is a
   /// group. Null while the pane shows the section itself.
   (String, bool)? _open;
@@ -186,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final page = switch (_tab) {
       0 => _ChatList(
           groupsOnly: false,
+          requestsOnly: _requestsOnly,
           onOpen: wide ? openInPane : null,
           selected: desk ? _open?.$1 : null,
         ),
@@ -361,12 +366,19 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [if (!wide) profileButton, actionButton],
-        // What the lists hold, as a line under the brand. For show: the sections are chosen
-        // along the bottom.
+        // What the lists hold, as a line under the brand: chats, contacts, and the requests
+        // waiting for an answer.
         bottom: !wide && _tab < 2
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(40),
-                child: _TopTabs(active: _tab, requests: core.incomingRequests.length),
+                child: _TopTabs(
+                  active: _requestsOnly && _tab == 0 ? 2 : _tab,
+                  requests: core.incomingRequests.length,
+                  onSelect: (i) => setState(() {
+                    _tab = i == 1 ? 1 : 0;
+                    _requestsOnly = i == 2;
+                  }),
+                ),
               )
             : null,
       ),
@@ -427,7 +439,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     indicatorColor: CyberDog.accent.withValues(alpha: 0.12),
                     // The profile is not along the bottom: shown from a rail, it marks nothing.
                     selectedIndex: _tab > 2 ? 2 : _tab,
-                    onDestinationSelected: (i) => setState(() => _tab = i),
+                    onDestinationSelected: (i) => setState(() {
+                      _tab = i;
+                      _requestsOnly = false;
+                    }),
                     destinations: [
                       for (final (icon, selected, label) in sections.take(3))
                         NavigationDestination(
@@ -445,19 +460,28 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// The line under the brand on a phone: Chats, Contacts, Requests. It shows where one is and how
-/// many requests wait; it is not a control.
+/// many requests wait, and a tap goes there.
 class _TopTabs extends StatelessWidget {
-  const _TopTabs({required this.active, required this.requests});
+  const _TopTabs({required this.active, required this.requests, required this.onSelect});
 
+  /// 0 chats, 1 contacts, 2 requests.
   final int active;
   final int requests;
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    Widget tab(String text, bool on, {int count = 0}) => Padding(
-          padding: const EdgeInsets.only(right: 26),
-          child: Container(
+    Widget tab(int index, String text, {int count = 0}) {
+      final on = active == index;
+      return Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: InkWell(
+            key: ValueKey('top-tab-$index'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => onSelect(index),
+            child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8),
             padding: const EdgeInsets.only(bottom: 8, top: 6),
             decoration: BoxDecoration(
               border: Border(
@@ -482,13 +506,14 @@ class _TopTabs extends StatelessWidget {
               ],
             ),
           ),
+          ),
         );
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: Container(
+    }
+
+    return Container(
           height: 40,
           alignment: Alignment.bottomLeft,
-          padding: const EdgeInsets.only(left: 18),
+          padding: const EdgeInsets.only(left: 10),
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: CyberDog.hairline)),
           ),
@@ -499,14 +524,12 @@ class _TopTabs extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                tab(AppLocale.pick('Chats', 'Чаты'), active == 0),
-                tab(AppLocale.pick('Contacts', 'Контакты'), active == 1),
-                tab(AppLocale.pick('Requests', 'Запросы'), false, count: requests),
+                tab(0, AppLocale.pick('Chats', 'Чаты')),
+                tab(1, AppLocale.pick('Contacts', 'Контакты')),
+                tab(2, AppLocale.pick('Requests', 'Запросы'), count: requests),
               ],
             ),
           ),
-        ),
-      ),
     );
   }
 }
@@ -637,10 +660,17 @@ String _listTime(DateTime at) {
 
 /// The chats, newest activity first: everything, or only the groups.
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.groupsOnly, this.peopleOnly = false, this.onOpen, this.selected});
+  const _ChatList({required this.groupsOnly, this.peopleOnly = false,
+    this.requestsOnly = false,
+    this.onOpen,
+    this.selected,
+  });
 
   /// People without the groups: the Contacts section.
   final bool peopleOnly;
+
+  /// Only the requests waiting for an answer.
+  final bool requestsOnly;
 
   final bool groupsOnly;
 
@@ -659,7 +689,7 @@ class _ChatList extends StatelessWidget {
       listenable: core,
       builder: (context, _) {
         final requests = groupsOnly ? const <Contact>[] : core.incomingRequests;
-        final rows = <_Row>[
+        final rows = requestsOnly ? <_Row>[] : <_Row>[
           if (!peopleOnly)
             for (final g in core.groups)
               _Row(
@@ -705,13 +735,21 @@ class _ChatList extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    groupsOnly ? l10n.noGroupsYet : l10n.noChatsYet,
+                    requestsOnly
+                        ? AppLocale.pick('No requests', 'Запросов нет')
+                        : groupsOnly
+                            ? l10n.noGroupsYet
+                            : l10n.noChatsYet,
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -.2),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    AppLocale.pick('Tap + to start a private chat.', 'Нажмите +, чтобы начать приватный чат.'),
+                    requestsOnly
+                        ? AppLocale.pick('Someone who writes to your address appears here.',
+                            'Здесь появится тот, кто напишет на ваш адрес.')
+                        : AppLocale.pick(
+                            'Tap + to start a private chat.', 'Нажмите +, чтобы начать приватный чат.'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),

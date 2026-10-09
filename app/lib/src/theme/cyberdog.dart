@@ -201,7 +201,7 @@ class UserRankBadge extends StatelessWidget {
   /// The rank every user has until more ranks exist.
   static const defaultRank = 'nightdog';
 
-  static const _labels = {'nightdog': 'NIGHTDOG', 'cyberdog': 'CYBERDOG'};
+  static const _labels = {'nightdog': 'NightDog', 'cyberdog': 'CyberDog'};
 
   /// Ranks that have been earned are drawn in the brand blue; the starting rank stays muted.
   static const _earned = {'cyberdog'};
@@ -223,11 +223,11 @@ class UserRankBadge extends StatelessWidget {
           CyberDogMark(size: 9, color: ink),
           const SizedBox(width: 3),
           Text(
-            _labels[rank] ?? rank.toUpperCase(),
+            _labels[rank] ?? rank,
             style: TextStyle(
               fontSize: 9,
               height: 1.2,
-              letterSpacing: .8,
+              letterSpacing: .3,
               fontWeight: FontWeight.w600,
               color: ink,
             ),

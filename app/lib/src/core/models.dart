@@ -6,7 +6,36 @@
 library;
 
 /// Default per-chat display name for both parties (ARCHITECTURE.md §4).
-const String kDefaultName = 'Anon';
+const String kDefaultName = 'NightDog';
+
+/// The burn timer value that means "view once" (mirrors the core's `VIEW_ONCE_SECS`).
+const int kViewOnceSecs = 1;
+
+/// What a default-named user is called once the chat's safety number has been verified.
+const String kVerifiedName = 'CyberDog';
+
+/// How a user is shown in a chat: the rank is always there — NightDog until the chat's safety
+/// number is verified, CyberDog after — and a name the user chose goes in front of it
+/// ("Max NightDog"). Someone who chose no name is shown by rank alone.
+/// The name someone chose, without a rank word; "Anon" when they chose none. For places that
+/// show the rank separately, as a badge.
+String plainName(String name) {
+  final own = name
+      .split(' ')
+      .where((word) => word.isNotEmpty && word != kDefaultName && word != kVerifiedName)
+      .join(' ');
+  return own.isEmpty ? 'Anon' : own;
+}
+
+String rankedName(String name, {required bool verified}) {
+  final rank = verified ? kVerifiedName : kDefaultName;
+  // A stored name that is itself a rank word (the default, or one typed by hand) is not a name.
+  final own = name
+      .split(' ')
+      .where((word) => word.isNotEmpty && word != kDefaultName && word != kVerifiedName)
+      .join(' ');
+  return own.isEmpty ? rank : '$own $rank';
+}
 
 /// A compact, readable form of a long base64 identity id for display (e.g. in chat headers
 /// and request tiles). Full ids remain available via "view identity" surfaces.
@@ -53,6 +82,33 @@ class PairingInvite {
   final String qrPayload;
 }
 
+/// A group chat: a named set of members who each also have a 1:1 chat with one another.
+class Group {
+  const Group({
+    required this.id,
+    required this.name,
+    required this.members,
+    required this.creator,
+    this.left = false,
+    this.disappearingSecs = 0,
+  });
+
+  /// The group's disappearing-messages timer in seconds; 0 = off. Any member may set it.
+  final int disappearingSecs;
+
+  final String id;
+  final String name;
+
+  /// Every member by identity key — the same string as a [Contact.id] — us included.
+  final List<String> members;
+
+  /// The member who created the group.
+  final String creator;
+
+  /// We left: the group is read-only.
+  final bool left;
+}
+
 /// A 1:1 conversation partner.
 class Contact {
   Contact({
@@ -78,7 +134,7 @@ class Contact {
 
   final String id;
 
-  /// The other party's display name in this chat (default "Anon").
+  /// The other party's display name in this chat (default "NightDog").
   String theirName;
 
   /// Your own display name in this chat — you can rename yourself per-chat (§4).
@@ -152,7 +208,7 @@ class Contact {
   bool peerOnOldVersion;
 
   /// A nickname **you** gave this contact. Local only — never sent, never announced. Takes
-  /// precedence over [theirName], which is whatever the peer chose (or "Anon" forever).
+  /// precedence over [theirName], which is whatever the peer chose (or "NightDog" forever).
   String localName;
 
   /// Six characters derived from the contact's identity key, so two unnamed contacts are still
@@ -162,11 +218,25 @@ class Contact {
 
   /// What to call this contact in a list or title: your nickname if you set one, else the name
   /// they chose. Never empty.
-  String get displayName => localName.isNotEmpty ? localName : theirName;
+  String get displayName => localName.isNotEmpty ? localName : shownTheirName;
+
+  /// The contact's name for the chat header and their bubbles: what you call them, else the
+  /// name they chose, else "Anon". The rank is shown beside it as a badge, not as part of it.
+  String get headerName => localName.isNotEmpty ? localName : plainName(theirName);
+
+  /// Their name as shown in this chat: the name they chose followed by the rank (see
+  /// [rankedName]).
+  String get shownTheirName => rankedName(theirName, verified: verified);
+
+  /// Our own name as shown in this chat, by the same rule.
+  String get shownMyName => rankedName(myName, verified: verified);
+
+  /// The rank this chat currently gives its two users.
+  String get rank => verified ? 'cyberdog' : 'nightdog';
 
   /// Whether the identity tag should be shown alongside [displayName]. Suppressed once you have
   /// named them yourself — that is the point at which you have vouched for who this is; until
-  /// then, two contacts can both call themselves "Anon", or both call themselves "Alex".
+  /// then, two contacts can both call themselves "NightDog", or both call themselves "Alex".
   bool get showIdentityTag => localName.isEmpty && identityTag.isNotEmpty;
 }
 
@@ -203,10 +273,17 @@ class Message {
     this.localBytes,
     this.burnSecs = 0,
     this.viewedAt,
+    this.senderId = '',
   });
 
   final String id;
+
+  /// The chat this message belongs to: a contact id, or a group id for a group message.
   final String contactId;
+
+  /// In a group, the member who sent it (their contact id). Empty in a 1:1 chat, and for our
+  /// own messages and local notices.
+  final String senderId;
   final String text;
   final bool fromMe;
   final DateTime at;
@@ -263,7 +340,15 @@ class Message {
         localBytes: localBytes,
         burnSecs: burnSecs,
         viewedAt: at,
+        senderId: senderId,
       );
+
+  /// A photo sent to be opened a single time (the core's reserved burn timer, [kViewOnceSecs]).
+  bool get isViewOnce => burnSecs == kViewOnceSecs;
+
+  /// A view-once photo that has been opened: only a marker is shown from then on. True as soon
+  /// as the recipient opens it, without waiting for the core to delete the file.
+  bool get isViewedOnce => kind == 'viewed_once' || (isViewOnce && !fromMe && viewedAt != null);
 
   /// A burn message that is still hidden: shown blurred, with no countdown running yet.
   bool get isBurnHidden => burnSecs > 0 && viewedAt == null;
@@ -330,6 +415,9 @@ class Message {
   bool get isImage => kind == 'image';
   bool get isVideo => kind == 'video';
 
+  /// A voice message.
+  bool get isAudio => kind == 'audio';
+
   /// An "unsent" (deleted-for-both) message: rendered as a tombstone, not editable.
   bool get isDeleted => kind == 'deleted';
 
@@ -337,9 +425,25 @@ class Message {
   /// place instead of deleting it without a trace (`burn-messages.md` §6); it carries no content.
   bool get isBurnExpired => kind == 'burn_expired';
 
-  /// Whether we can unsend this message — identical eligibility to [canEdit] (our own
-  /// recent/queued text). Kept separate so the bubble menu can label the action distinctly.
-  bool get canUnsend => canEdit;
+  /// Whether we can unsend this message: anything we could edit, and also our own recent or
+  /// still-queued photo or video. Mirrors the rule enforced by the Rust core.
+  bool get canUnsend =>
+      canEdit ||
+      (fromMe &&
+          (isImage || isVideo || isAudio) &&
+          !system &&
+          !sending &&
+          transferId.isNotEmpty &&
+          (delivery == 'queued' ||
+              DateTime.now().difference(at) < const Duration(minutes: 15)));
+
+  /// Whether this message has text that may be copied: ordinary text, ours or theirs. A burn
+  /// message is left out — it exists to not be kept.
+  bool get canCopy => isText && !system && !sending && burnSecs == 0 && text.isNotEmpty;
+
+  /// The id that names this message to the core for an unsend: text carries [msgId], an
+  /// attachment has none and is named by [transferId].
+  String get unsendId => msgId.isNotEmpty ? msgId : transferId;
 
   /// A received video whose payload hasn't arrived yet (only the incoming placeholder).
   bool get receiving => isVideo && mediaId.isEmpty && !sending;

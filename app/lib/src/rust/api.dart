@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `apply_tick`, `check_bridge_line`, `decode_store_key`, `drive`, `drop_superseded_keystore`, `emit_chats`, `emit_progress`, `emit`, `flush_pending`, `lock`, `maybe_flush`, `media`, `new`, `next_cover_delay`, `now_secs_ceil`, `now_secs`, `onion_key_for_start`, `parse_invite`, `random_secret_words`, `random_short_code`, `random_slot`, `read_onion_key`, `save_soon`, `save`, `shutdown_core`, `spawn_poller`, `system_tagged`, `system`, `text`, `try_close_transport`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Inner`, `Persist`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `drop`, `drop`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `drop`, `drop`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `address`, `new_with_transport`, `poll_once`
 
 /// Subscribe to push events from the core (flutter_rust_bridge stream). Call once at
@@ -196,6 +196,14 @@ Future<String> clearStorePassphrase(
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<NightdropCore>>
 abstract class NightdropCore implements RustOpaqueInterface {
+  /// Add contacts to a group we created.
+  Future<void> addGroupMembers(
+      {required String groupId, required List<String> memberIds});
+
+  /// The pending requests that came through the standing address, by contact id. Unlike a
+  /// request from someone we showed a code to, these are for the user to accept or decline.
+  Future<List<String>> addressRequests();
+
   /// Approve or decline a pending inbound request. On approval it becomes a contact.
   Future<void> authorize({required String contactId, required bool accept});
 
@@ -244,6 +252,11 @@ abstract class NightdropCore implements RustOpaqueInterface {
   Future<String> createChatBackup(
       {required String contactId, required bool full});
 
+  /// Create a group of us plus `member_ids` (contact ids) and tell each member. Returns the
+  /// new group's id. Errors if a member is not an open chat or their build predates groups.
+  Future<String> createGroup(
+      {required String name, required List<String> memberIds});
+
   /// Create a pairing invite: a `slot-secret-words` short code plus a QR payload that
   /// embeds our address and a real pre-key bundle (§5a). In demo mode it also simulates
   /// a peer joining, producing a request to approve.
@@ -277,6 +290,9 @@ abstract class NightdropCore implements RustOpaqueInterface {
   /// Delete a chat (TODO #1): signal the peer (who then sees a "chat deleted" notice) and
   /// remove it locally. Creating a new chat is required to talk again.
   Future<void> deleteChat({required String contactId});
+
+  /// Remove a group from this device, leaving it first if we had not already.
+  Future<void> deleteGroup({required String groupId});
 
   /// Whether the **direct** onion-to-onion path looks wedged: several sends in a row have failed
   /// to reach a peer and none has ever succeeded this run.
@@ -321,6 +337,15 @@ abstract class NightdropCore implements RustOpaqueInterface {
   Future<void> editMessage(
       {required String contactId, required String msgId, required String text});
 
+  /// The contacts that can be added to a group: their build has announced group support.
+  Future<List<String>> groupCapableContacts();
+
+  /// One group's history, oldest first.
+  Future<List<GroupMessage>> groupMessages({required String groupId});
+
+  /// Every group chat, sorted by name.
+  Future<List<GroupInfo>> groups();
+
   /// This device's public identity handle.
   Future<Identity> identity();
 
@@ -332,6 +357,9 @@ abstract class NightdropCore implements RustOpaqueInterface {
   /// blocks on relay round-trips, so it runs **without** the core lock held; only the brief
   /// identity-mutating steps (relay lookup, session open) take the lock.
   Future<Contact> joinViaShortCode({required String code});
+
+  /// Leave a group. It stays on this device, read-only, until deleted.
+  Future<void> leaveGroup({required String groupId});
 
   /// Peer-facing logout (#7 / §11.6): tell the peer of every **un-backed** chat that it's
   /// closed (so their mail isn't lost to a since-deleted identity), leave backed-up chats
@@ -366,6 +394,14 @@ abstract class NightdropCore implements RustOpaqueInterface {
 
   /// Messages for a contact, oldest first.
   Future<List<ChatMessage>> messages({required String contactId});
+
+  /// Our standing address: a link that does not expire. Anyone who has it can send a chat
+  /// request ([`connect_via_qr`](Self::connect_via_qr) takes it like any invite), which then
+  /// waits for us to accept it.
+  Future<String> myAddress();
+
+  /// Our own identity key — how we appear in a group's member list.
+  Future<String> myIdentityKey();
 
   /// Our advertised **extra** relay addresses (#17) — relays that also host our mailbox, on top
   /// of the built-in default. Empty by default.
@@ -449,6 +485,10 @@ abstract class NightdropCore implements RustOpaqueInterface {
   Future<Contact> openChat({String? code});
 
   Future<List<RelayHealth>> relayHealth();
+
+  /// Remove a member from a group we created.
+  Future<void> removeGroupMember(
+      {required String groupId, required String memberId});
 
   /// Report a **screenshot** of this chat (#1) — log it locally and tell the peer.
   ///
@@ -553,6 +593,17 @@ abstract class NightdropCore implements RustOpaqueInterface {
       required String text,
       required BigInt burnSecs});
 
+  /// Send a photo or video to a group. `kind` is "image"/"video", `mime` like "image/jpeg".
+  Future<void> sendGroupMedia(
+      {required String groupId,
+      required List<int> data,
+      required String mime,
+      required String kind});
+
+  /// Send a text message to a group: one separately encrypted copy per member.
+  Future<void> sendGroupMessage(
+      {required String groupId, required String text});
+
   /// Send an image/video attachment (E2E-encrypted, sealed at rest). `kind` is
   /// "image"/"video", `mime` like "image/jpeg". Capped at 100 MB.
   Future<void> sendMedia(
@@ -604,9 +655,13 @@ abstract class NightdropCore implements RustOpaqueInterface {
   Future<void> setDisappearing(
       {required String contactId, required BigInt secs});
 
+  /// Set a group's disappearing-messages timer in seconds (0 = off). Any member may.
+  Future<void> setGroupDisappearing(
+      {required String groupId, required BigInt secs});
+
   /// Give a contact a nickname that only you see (`contact-naming.md`). Never sent, so a peer
   /// can neither read it nor set it; empty clears it. This is the answer to a contact list of
-  /// identical "Anon"s — the peer's own name is their choice, and may be missing or duplicated.
+  /// identical "NightDog"s — the peer's own name is their choice, and may be missing or duplicated.
   Future<void> setLocalName({required String contactId, required String name});
 
   /// Set the local user's display name within one chat (§4).
@@ -653,6 +708,11 @@ abstract class NightdropCore implements RustOpaqueInterface {
   /// [`RelayClient`]: crate::relay_client::RelayClient
   /// [`TorTransport::make_relay_dialer`]: crate::transport::tor::TorTransport::make_relay_dialer
   Future<void> shutdown();
+
+  /// Unsend ("delete for everyone") one of our own group messages: `id` is a text message's
+  /// `msg_id` or an attachment's `transfer_id`. Same 15-minute rule as a 1:1 chat.
+  Future<void> unsendGroupMessage(
+      {required String groupId, required String id});
 
   /// Unsend ("delete for both") one of our own messages (`msg_id` from [`ChatMessage`]).
   /// Same eligibility as [`edit_message`](Self::edit_message): within 15 minutes, or while
@@ -880,7 +940,7 @@ class ChatMessage {
           viewedAt == other.viewedAt;
 }
 
-/// A 1:1 conversation partner. Names default to "Anon" and are per-chat (§4).
+/// A 1:1 conversation partner. Names default to "NightDog" and are per-chat (§4).
 class Contact {
   final String id;
   final String theirName;
@@ -1030,6 +1090,76 @@ class Contact {
           identityTag == other.identityTag &&
           lastSeenSecs == other.lastSeenSecs &&
           peerOnOldVersion == other.peerOnOldVersion;
+}
+
+/// A group chat (UI-facing). Members are named by identity key — the same string as a
+/// [`Contact::id`] — and include the local user.
+class GroupInfo {
+  final String id;
+  final String name;
+  final List<String> members;
+
+  /// Identity key of the member who created the group.
+  final String creator;
+
+  /// We left this group, or were removed from it: it is read-only.
+  final bool left;
+
+  /// The group's disappearing-messages timer in seconds; 0 = off.
+  final BigInt disappearingSecs;
+
+  const GroupInfo({
+    required this.id,
+    required this.name,
+    required this.members,
+    required this.creator,
+    required this.left,
+    required this.disappearingSecs,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      members.hashCode ^
+      creator.hashCode ^
+      left.hashCode ^
+      disappearingSecs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GroupInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          members == other.members &&
+          creator == other.creator &&
+          left == other.left &&
+          disappearingSecs == other.disappearingSecs;
+}
+
+/// One entry in a group's history (UI-facing).
+class GroupMessage {
+  /// Identity key of the member who sent it; empty for our own messages and local notices.
+  final String sender;
+  final ChatMessage message;
+
+  const GroupMessage({
+    required this.sender,
+    required this.message,
+  });
+
+  @override
+  int get hashCode => sender.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GroupMessage &&
+          runtimeType == other.runtimeType &&
+          sender == other.sender &&
+          message == other.message;
 }
 
 /// An anonymous, device-held identity handle (just its public id for the UI).

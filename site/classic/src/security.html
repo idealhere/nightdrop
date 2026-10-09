@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Безопасность CYBERDOG</title>
+<meta name="description" content="Как CYBERDOG защищает переписку: сквозное шифрование, без телефона и почты, проверка собеседника, исчезающие сообщения.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#050816">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=3">
+<link rel="icon" href="favicon.ico?v=3" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #050816; --surface: #0d1225; --border: rgba(130,120,255,.18); --border-on: rgba(130,90,255,.5);
+    --text: #f4f5fa; --text2: #a8aec5; --muted: #707892; --accent-l: #9b7bff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--text); -webkit-font-smoothing: antialiased;
+    font: 16px/1.55 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: linear-gradient(rgba(5,8,22,.55), rgba(5,8,22,.55)), url(backdrop.jpg) center / cover fixed no-repeat, var(--bg); }
+  a { color: inherit; text-decoration: none; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px clamp(16px, 6.5vw, 110px); border-bottom: 1px solid var(--border); }
+  .brand img { display: block; height: 40px; width: auto; }
+  nav { display: flex; align-items: center; gap: clamp(14px, 2.6vw, 44px); font-size: 14px; }
+  .pill { padding: 8px 22px; border: 1px solid var(--border-on); border-radius: 999px; }
+  nav a:hover, nav .on { color: var(--accent-l); }
+
+  main { max-width: 1120px; margin: 0 auto; padding: clamp(24px, 5vh, 52px) 20px 40px; }
+  h1 { margin: 0; font-size: clamp(28px, 4.4vw, 40px); font-weight: 700; letter-spacing: -0.01em; }
+  .lead { margin: 10px 0 0; color: var(--text2); max-width: 46em; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; margin-top: 30px; }
+  .box { padding: 28px; border-radius: 18px; background: rgba(13,18,37,.86); border: 1px solid var(--border); scroll-margin-top: 20px; }
+  .box:target { border-color: var(--border-on); }
+  .box small { color: var(--accent-l); font-size: 10.5px; letter-spacing: .32em; }
+  h2 { margin: 6px 0 4px; font-size: 23px; font-weight: 650; }
+  .ver { margin: 0; color: var(--muted); font-size: 14px; }
+  .btn { display: inline-flex; align-items: center; gap: 12px; margin: 20px 0 6px; padding: 15px 30px; border-radius: 14px;
+    font-weight: 600; font-size: 17px; border: 1px solid var(--border-on); background: #0a0d22;
+    transition: transform .15s, border-color .15s; }
+  .btn.main { border-color: transparent; background: linear-gradient(135deg, #7556ff, #5d37ee); box-shadow: 0 6px 30px rgba(118,87,255,.28); }
+  .btn:hover, .btn:focus-visible { transform: translateY(-1px); border-color: var(--accent-l); }
+  .btn:focus-visible { outline: 2px solid var(--accent-l); outline-offset: 3px; }
+  h3 { margin: 22px 0 8px; font-size: 16px; font-weight: 650; }
+  ol { margin: 0; padding-left: 1.3em; color: var(--text2); }
+  li { margin-bottom: 7px; } li b { color: var(--text); font-weight: 600; }
+  .note { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(5,8,22,.5);
+    color: var(--text2); font-size: 14.5px; }
+  .sum { margin: 14px 0 0; color: var(--muted); font-size: 12px; word-break: break-all; }
+  .sum code { font-family: Consolas, ui-monospace, monospace; }
+  .wide { grid-column: 1 / -1; }
+  .legal { margin: 26px 0 0; text-align: center; font-size: 12px; color: #515a78; }
+  .legal a { text-decoration: underline; }
+  @media (max-width: 820px) { nav { gap: 14px; font-size: 13px; } nav a:first-child { display: none; } .brand img { height: 32px; } .pill { padding: 6px 14px; } .grid { grid-template-columns: 1fr; } .box { padding: 22px 18px; } }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+  .head { display: flex; align-items: center; gap: 14px; } .head img { width: 46px; height: 46px; border-radius: 22%; }
+  .sub2 { margin: 14px 0 0; font-size: clamp(18px, 2.4vw, 22px); }
+  .six { grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .item { display: flex; gap: 16px; padding: 22px; border-radius: 16px; background: rgba(13,18,37,.86); border: 1px solid var(--border); }
+  .tile { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: #171a40; }
+  .tile svg { fill: none; stroke: var(--accent-l); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .item h2 { margin: 2px 0 4px; font-size: 17px; }
+  .item p { margin: 0; color: var(--text2); font-size: 14.5px; }
+  .soon { margin-left: 8px; padding: 1px 7px; border: 1px solid var(--border-on); border-radius: 6px; color: var(--accent-l);
+    font-size: 10px; letter-spacing: .12em; font-weight: 600; vertical-align: 2px; }
+  .motto { margin: 30px 0 0; text-align: center; color: var(--text2); font-size: 17px; }
+  .limits { margin-top: 22px; padding: 22px; border-radius: 16px; border: 1px solid var(--border); background: rgba(5,8,22,.45); }
+  .limits h2 { margin: 0 0 6px; font-size: 16px; color: var(--text2); }
+  .limits p { margin: 0 0 6px; color: var(--muted); font-size: 14.5px; }
+  .more { display: inline-block; margin-top: 12px; color: var(--accent-l); font-size: 14px; text-decoration: underline; }
+  @media (max-width: 980px) { .six { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px) { .six { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="./"><img src="logo-horizontal.webp" width="185" height="40" alt="CYBERDOG"></a>
+  <nav>
+    <a href="./#features">Возможности</a>
+    <a class="on" href="security.html">Безопасность</a>
+    <a class="pill" href="download.html">Скачать</a>
+  </nav>
+</header>
+
+<main>
+  <div class="head"><img src="app-icon.png" alt=""><h1>Безопасность CyberDog</h1></div>
+  <p class="sub2">Приватность должна работать автоматически.</p>
+  <p class="lead">CyberDog защищает переписку без номера телефона, почты и публичного профиля.</p>
+
+  <div class="grid six">
+    <section class="item"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div><div><h2>Сквозное шифрование</h2><p>Сообщения шифруются на вашем устройстве и расшифровываются только у собеседника.</p></div></section>
+    <section class="item"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5"/></svg></div><div><h2>Без телефона и email</h2><p>Для общения не требуется привязывать номер телефона, почту или настоящее имя.</p></div></section>
+    <section class="item"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.2 2.9 7.7 7 9.5 4.1-1.8 7-5.3 7-9.500V6z"/><path d="m9 12 2.2 2.200L15.2 10"/></svg></div><div><h2>Проверка собеседника</h2><p>Сравните код безопасности или QR-код, чтобы убедиться, что разговариваете именно с нужным человеком.</p></div></section>
+    <section class="item"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/><path d="m4 4 16 16"/></svg></div><div><h2>Приватные уведомления</h2><p>В уведомлениях нет текста сообщений: на экране блокировки видно только то, что пришло новое сообщение.</p></div></section>
+    <section class="item"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/></svg></div><div><h2>Исчезающие сообщения</h2><p>Сообщения можно автоматически удалять после просмотра или через выбранное время.</p></div></section>
+    <section class="item"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m5 17 4.5-4 3.5 3 2.5-2 3.5 3"/></svg></div><div><h2>Фото под защитой</h2><p>Входящие изображения скрыты до открытия, а своё фото можно отправить в режиме «Посмотреть один раз».</p></div></section>
+    <section class="item wide"><div class="tile"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M7.5 7h.01M7.5 17h.01"/></svg></div><div><h2>Минимум данных на сервере</h2><p>Сервер только доставляет зашифрованные сообщения и хранит их не дольше суток, пока собеседник не выйдет на связь. Прочитать их он не может: ключи есть только на ваших устройствах. Как любой сервер в интернете, он видит адрес подключения и время.</p></div></section>
+  </div>
+
+  <p class="motto">Ваш разговор принадлежит вам, а не сервису.</p>
+
+  <div class="limits">
+    <h2>Что CyberDog не может контролировать</h2>
+    <p>CyberDog не может запретить собеседнику сфотографировать экран другим устройством или сохранить уже увиденную информацию.</p>
+    <p>Защита работает внутри приложения и при передаче данных, но не может контролировать действия человека после просмотра сообщения.</p>
+    <a class="more" href="https://github.com/idealhere/nightdrop/blob/feature/https-primary-transport/SECURITY.md">Технические подробности</a>
+  </div>
+
+  <p class="legal">Открытый код, AGPL-3.0 · основано на Night Drop · <a href="https://github.com/idealhere/nightdrop">исходники</a></p>
+</main>
+</body>
+</html>

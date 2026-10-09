@@ -1,0 +1,71 @@
+name: Regenerate Dart-Rust bridge
+
+# Runs flutter_rust_bridge_codegen for whoever cannot run it locally and hands the result back
+# as an artifact (`bridge`): the regenerated files plus `bridge.patch` against the commit. It
+# never pushes. On a tree whose bindings are current the patch is empty, which is the check that
+# this job reproduces the committed bindings before anyone relies on it for a real change.
+# It runs only when this file changes (or manually).
+# Edit the line below to request a fresh run: bridge 5
+on:
+  push:
+    branches: [feature/https-primary-transport]
+    paths: [.github/workflows/gen-bridge.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gen-bridge
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: flutter_rust_bridge_codegen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: app/.fvmrc
+
+      - name: Sync generated config
+        run: make config
+
+      - name: Resolve Dart dependencies
+        run: cd app && flutter pub get && flutter gen-l10n
+
+      # The codegen, the Rust crate and the Dart package must all be the same version
+      # (MAINTENANCE.md §6), so the version comes from the pin in pubspec.yaml.
+      - name: Install the codegen
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^ *flutter_rust_bridge: *\([0-9.]*\).*/\1/p' app/pubspec.yaml)"
+          test -n "$version"
+          cargo install flutter_rust_bridge_codegen --version "$version" --locked
+
+      - name: Generate
+        run: |
+          set -euo pipefail
+          flutter_rust_bridge_codegen generate
+          git status --short
+          git diff --stat
+          git diff > bridge.patch
+          echo "patch bytes: $(wc -c < bridge.patch)"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bridge
+          path: |
+            bridge.patch
+            core/src/frb_generated.rs
+            app/lib/src/rust/
+          if-no-files-found: error

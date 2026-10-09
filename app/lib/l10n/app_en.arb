@@ -1,8 +1,16 @@
 {
   "@@locale": "en",
-  "appTitle": "Night Drop",
+  "appTitle": "CyberDog",
   "@appTitle": {
     "description": "The application name, shown as the window/app title."
+  },
+  "encryptedBanner": "Messages are protected by end-to-end encryption.",
+  "@encryptedBanner": {
+    "description": "Calm reassurance at the top of a verified chat."
+  },
+  "switchLanguage": "Русский",
+  "@switchLanguage": {
+    "description": "Language switch. Shows the name of the OTHER language, in that language, so someone who cannot read the current one can still find it."
   },
   "newChat": "New chat",
   "@newChat": {
@@ -67,10 +75,6 @@
   "secretWordsExplanation": "The first number is just a meeting slot. The words are your shared secret — say them in person or over a trusted channel. They are never sent to any server, and they’re what stops an imposter.",
   "@secretWordsExplanation": {
     "description": "Explanation of the short code's slot vs. secret words."
-  },
-  "supportNightDrop": "Support Night Drop",
-  "@supportNightDrop": {
-    "description": "Title of the donations screen."
   },
   "copyAddress": "Copy address",
   "@copyAddress": {
@@ -187,11 +191,11 @@
   "@cameraErrorFallback": {
     "description": "Fallback hint shown under the camera-error retry button."
   },
-  "cameraPermissionPermanent": "Night Drop needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for Night Drop in Settings.",
+  "cameraPermissionPermanent": "CyberDog needs camera access to scan an invite QR, but it’s been turned off. Enable Camera for CyberDog in Settings.",
   "@cameraPermissionPermanent": {
     "description": "Shown when camera permission is permanently denied / restricted."
   },
-  "cameraPermissionNeeded": "Night Drop needs camera access to scan an invite QR.",
+  "cameraPermissionNeeded": "CyberDog needs camera access to scan an invite QR.",
   "@cameraPermissionNeeded": {
     "description": "Shown when camera permission has not yet been granted."
   },
@@ -215,7 +219,7 @@
   "@pointCameraHint": {
     "description": "Hint overlaid on the live camera preview while scanning."
   },
-  "qrNotRecognised": "That QR isn’t a Night Drop invite. Ask them to open New chat → Invite.",
+  "qrNotRecognised": "That QR isn’t a CyberDog invite. Ask them to open New chat → Invite.",
   "@qrNotRecognised": {
     "description": "Toast when a QR decodes cleanly but is not a pairing payload."
   },
@@ -235,7 +239,7 @@
   "@restore": {
     "description": "Confirm button in a restore-from-backup dialog."
   },
-  "onboardingTagline": "Anonymous, end-to-end encrypted, no accounts.\nYour identity lives only on this device.",
+  "onboardingTagline": "End-to-end encrypted. No accounts.\nYour identity lives only on this device.",
   "@onboardingTagline": {
     "description": "Subtitle on the first-run onboarding screen."
   },
@@ -313,15 +317,15 @@
   "@stageGeneratingIdentity": {
     "description": "Bootstrap progress line."
   },
-  "stageConnectingTor": "Connecting to the Tor network…",
+  "stageConnectingTor": "Connecting…",
   "@stageConnectingTor": {
     "description": "Bootstrap progress line."
   },
-  "stageBuildingCircuit": "Building a private circuit…",
+  "stageBuildingCircuit": "Setting up a secure connection…",
   "@stageBuildingCircuit": {
     "description": "Bootstrap progress line."
   },
-  "stagePublishingOnion": "Publishing your onion address…",
+  "stagePublishingOnion": "Preparing your address…",
   "@stagePublishingOnion": {
     "description": "Bootstrap progress line."
   },
@@ -333,11 +337,11 @@
   "@splashRestoringSession": {
     "description": "Launch splash progress line."
   },
-  "splashReconnectingTor": "Reconnecting to the Tor network…",
+  "splashReconnectingTor": "Connecting…",
   "@splashReconnectingTor": {
     "description": "Launch splash progress line."
   },
-  "splashRebuildingCircuit": "Rebuilding your private circuit…",
+  "splashRebuildingCircuit": "Setting up a secure connection…",
   "@splashRebuildingCircuit": {
     "description": "Launch splash progress line."
   },
@@ -349,11 +353,11 @@
   "@loadErrorTitle": {
     "description": "Title of the launch-time load-failure recovery screen."
   },
-  "loadErrorBody": "Night Drop found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.",
+  "loadErrorBody": "CyberDog found data saved on this device but couldn’t open it. Two common, fixable causes: Tor hasn’t connected yet, or your system keyring/wallet (e.g. KDE Wallet or GNOME Keyring) is locked — unlock it, then tap Try again. Your existing data is preserved and won’t be overwritten automatically.",
   "@loadErrorBody": {
     "description": "Body text of the load-failure recovery screen."
   },
-  "loadErrorBodyMobile": "Night Drop found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.",
+  "loadErrorBodyMobile": "CyberDog found data saved on this device but couldn’t open it. Usually Tor simply hasn’t connected yet — tap Try again. If it keeps failing, the key that unlocks this data is no longer on the device, which can happen after clearing the app’s storage or moving to a new phone; in that case only a backup can bring it back. Your existing data is preserved and won’t be overwritten automatically.",
   "@loadErrorBodyMobile": {
     "description": "Android/iOS wording for the same screen. No mention of desktop keyrings; the phone equivalent is not something the user can unlock by hand."
   },
@@ -535,6 +539,102 @@
     "description": "Backup menu: merge a single-chat backup."
   },
   "myIdentity": "My identity",
+  "viewOnce": "View once",
+  "@viewOnce": {
+    "description": "Checkbox on the photo preview before sending."
+  },
+  "photoViewed": "Photo viewed",
+  "@photoViewed": {
+    "description": "Shown in place of a view-once photo after it was opened, on both sides."
+  },
+  "viewOnceSenderNote": "Sent to be viewed once. Removed from your device after 24 hours.",
+  "@viewOnceSenderNote": {
+    "description": "Under the sender's own copy of a view-once photo."
+  },
+  "sendAction": "Send",
+  "@sendAction": {
+    "description": "Confirm button on the photo preview."
+  },
+  "notifyTitle": "Text in notifications",
+  "@notifyTitle": {
+    "description": "Privacy row: how much a notification shows."
+  },
+  "notifyQuestion": "What should notifications show?",
+  "@notifyQuestion": {
+    "description": "Title of the notification-detail chooser."
+  },
+  "notifyFull": "The message text",
+  "@notifyFull": {
+    "description": "Notification detail: sender and text."
+  },
+  "notifyPrivate": "Only “New message”",
+  "@notifyPrivate": {
+    "description": "Notification detail: a generic line. The default."
+  },
+  "notifyHidden": "Nothing",
+  "@notifyHidden": {
+    "description": "Notification detail: only the app name."
+  },
+  "privacyDisappearingHint": "Set for each chat separately — the timer icon at the top of the chat.",
+  "@privacyDisappearingHint": {
+    "description": "Explains where the per-chat timer lives."
+  },
+  "activityTitle": "Activity",
+  "@activityTitle": {
+    "description": "Privacy row: activity signals."
+  },
+  "activityNotSent": "Not shared",
+  "@activityNotSent": {
+    "description": "Value of the activity row."
+  },
+  "activityBody": "CyberDog never shows the other person when you are online, when you were last here, that you are typing, or that you have read a message.",
+  "@activityBody": {
+    "description": "Explains the activity row."
+  },
+  "profileTitle": "Profile",
+  "@profileTitle": {
+    "description": "Title of the contact profile screen."
+  },
+  "encryptionOn": "End-to-end encryption is on",
+  "@encryptionOn": {
+    "description": "Fact row on the contact profile."
+  },
+  "contactVerified": "Verified",
+  "@contactVerified": {
+    "description": "Fact row: the safety number has been checked."
+  },
+  "contactNotVerified": "Not verified yet",
+  "@contactNotVerified": {
+    "description": "Fact row: the safety number has not been checked."
+  },
+  "verifyContact": "Verify this person",
+  "@verifyContact": {
+    "description": "Button on the contact profile that opens the safety-number screen."
+  },
+  "privacyMenu": "Privacy",
+  "@privacyMenu": {
+    "description": "Menu item and title of the privacy screen."
+  },
+  "hidePhotosTitle": "Hide received photos",
+  "@hidePhotosTitle": {
+    "description": "Switch: received images stay concealed until tapped."
+  },
+  "hidePhotosBody": "Pictures you receive stay hidden until you tap them.",
+  "@hidePhotosBody": {
+    "description": "Explains the switch above."
+  },
+  "tapToShowPhoto": "Tap to show",
+  "@tapToShowPhoto": {
+    "description": "Caption under a concealed received photo."
+  },
+  "myNameMenu": "Nickname",
+  "@myNameMenu": {
+    "description": "Menu item and dialog title: the name new chats start with."
+  },
+  "myNameBody": "Your nickname is shown in front of your rank, for example “Max NightDog”. Leave it empty to be shown by rank alone. New chats use it automatically; you can still set a different one inside any chat.",
+  "@myNameBody": {
+    "description": "Explains the global name setting and that per-chat names still exist."
+  },
   "@myIdentity": {
     "description": "Menu item / dialog title showing the device identity."
   },
@@ -566,11 +666,7 @@
   "@resetTorRunning": {
     "description": "Snackbar shown while the Tor connection is being reset."
   },
-  "aboutUpdateChecks": "Update checks: this build asks the Night Drop onion site, over Tor, at most once a day whether a newer version exists, and only ever tells you — it never installs anything. Copies installed from F-Droid don’t do this at all, because F-Droid updates them.",
-  "@aboutUpdateChecks": {
-    "description": "Shown in the About dialog. Discloses the one outbound connection the app makes on its own behalf, so it is stated somewhere durable rather than only in a banner nobody is looking at."
-  },
-  "aboutMenu": "About Night Drop",
+  "aboutMenu": "About CyberDog",
   "@aboutMenu": {
     "description": "Menu item opening the about dialog (app name, version, license)."
   },
@@ -578,11 +674,11 @@
   "@exitMenu": {
     "description": "Menu item that disconnects from Tor and closes the app, keeping the identity (issue #15)."
   },
-  "exitTitle": "Exit Night Drop?",
+  "exitTitle": "Exit CyberDog?",
   "@exitTitle": {
     "description": "Title of the Exit confirmation."
   },
-  "exitBody": "Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open Night Drop within that time to receive them — after that they expire, and the sender sees them as not delivered.",
+  "exitBody": "Disconnects from Tor and closes the app. Your identity and chats stay on this device.\n\nMessages sent to you while it’s closed wait on the relay for up to 24 hours. Open CyberDog within that time to receive them — after that they expire, and the sender sees them as not delivered.",
   "@exitBody": {
     "description": "Body of the Exit confirmation: what stops, and what is kept."
   },
@@ -602,11 +698,11 @@
   "@noChatsYet": {
     "description": "Empty-state text on the conversation list."
   },
-  "storedOnServer24h": "Stored on server (24h)",
+  "storedOnServer24h": "On the server · 24 h",
   "@storedOnServer24h": {
     "description": "Chat subtitle when remote storage is on."
   },
-  "storedOnThisDevice": "Stored on this device",
+  "storedOnThisDevice": "On this device",
   "@storedOnThisDevice": {
     "description": "Chat subtitle when messages are local-only."
   },
@@ -644,10 +740,6 @@
   "@backupReminderBody": {
     "description": "Body of the dismissible backup-reminder banner."
   },
-  "protocolBreakNotice": "Night Drop 0.2 is coming, and it won’t be able to message 0.1 apps. Update when it arrives, and ask your contacts to update too.",
-  "@protocolBreakNotice": {
-    "description": "Home-screen notice shown in the last 0.1.x releases: 0.2 changes the protocol, so 0.1.x and 0.2 apps cannot message each other."
-  },
   "gotIt": "Got it",
   "@gotIt": {
     "description": "Button that dismisses an informational notice."
@@ -670,7 +762,7 @@
   "@updateCheckFailed": {
     "description": "Shown when the on-demand update check could not reach the onion site — deliberately distinct from being up to date."
   },
-  "updateUpToDate": "Night Drop is up to date.",
+  "updateUpToDate": "CyberDog is up to date.",
   "@updateUpToDate": {
     "description": "Shown when the on-demand check finds no newer release."
   },
@@ -682,11 +774,11 @@
   "@updateHide": {
     "description": "Button that hides the update banner until a newer version exists."
   },
-  "backgroundStoppedBySystem": "Android stopped background delivery, so messages may not have arrived. Reopen Night Drop to start it again.",
+  "backgroundStoppedBySystem": "Android stopped background delivery, so messages may not have arrived. Reopen CyberDog to start it again.",
   "@backgroundStoppedBySystem": {
     "description": "Shown when the system (not the user) ended the foreground service, e.g. a foreground-service-type time budget running out. The point is that the user could not otherwise tell."
   },
-  "peerCapturesSilentSummary": "Their screenshots aren't reported to you",
+  "peerCapturesSilentSummary": "Their screenshots are not shown to you",
   "@peerCapturesSilentSummary": {
     "description": "One-line form of peerCapturesSilentBanner; tapping it shows the full text."
   },
@@ -698,7 +790,7 @@
   "@peerOnOldVersionSummary": {
     "description": "One-line form of peerOnOldVersionBanner; tapping it shows the full text."
   },
-  "peerOnOldVersionBanner": "This person is using an older version of Night Drop, so messages that wait on a relay for either of you are addressed less privately. Their app can't tell them — ask them to update. Support for their version will end in a future release.",
+  "peerOnOldVersionBanner": "This person is using an older version of CyberDog, so messages that wait on a relay for either of you are addressed less privately. Their app can't tell them — ask them to update. Support for their version will end in a future release.",
   "@peerOnOldVersionBanner": {
     "description": "Shown when the peer's app predates private mailbox addressing. The peer's older app cannot display this, so the text asks the reader to tell them."
   },
@@ -752,7 +844,7 @@
   "@backgroundDelivery": {
     "description": "Title of the background-delivery settings dialog."
   },
-  "backgroundDeliveryBody": "Keep receiving messages while Night Drop is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.",
+  "backgroundDeliveryBody": "Keep receiving messages while CyberDog is in the background. This runs a foreground service with a persistent notification and checks for messages over Tor — no push provider, nothing leaves your device to a server.",
   "@backgroundDeliveryBody": {
     "description": "Explanation in the background-delivery dialog."
   },
@@ -760,7 +852,7 @@
   "@onboardingBackgroundTitle": {
     "description": "Title of the background-delivery offer shown during onboarding."
   },
-  "onboardingBackgroundBody": "Android suspends Night Drop whenever it is not on screen, so without this, messages only arrive once you open the app.\n\nTurning it on keeps Night Drop running with a permanent notification and checks for messages over Tor. There is no push service — nothing is registered with Google, and nothing about you leaves your device.\n\nIt uses some battery. If you set an app lock later, your key stays in memory while locked so messages can still be decrypted.\n\nYou can change this any time under Background delivery in the menu.",
+  "onboardingBackgroundBody": "CyberDog will receive messages even when it is closed. A permanent notification will show while it does.",
   "@onboardingBackgroundBody": {
     "description": "Explanation of what background delivery does, its privacy properties and its costs, shown during onboarding."
   },
@@ -924,7 +1016,7 @@
   "@more": {
     "description": "Tooltip for the chat overflow menu."
   },
-  "cantSendUntilAccepted": "They haven’t accepted the chat yet. Your message hasn’t been sent — it’s still in the box, so you can send it once they accept.",
+  "cantSendUntilAccepted": "The chat is still being set up: the other person hasn't been online yet. Your message is still in the box — send it again in a moment.",
   "@cantSendUntilAccepted": {
     "description": "Send refused while short-code pairing is still waiting on the other person to accept."
   },
@@ -987,6 +1079,10 @@
   "@deleteForEveryoneTitle": {
     "description": "Title of the unsend confirmation."
   },
+  "unsendMediaBody": "This removes it from both devices, files included. If the other person has an older version of the app, their copy stays.",
+  "@unsendMediaBody": {
+    "description": "Body of the unsend confirmation for a photo or video."
+  },
   "unsendBody": "This removes the message from both devices. If it hasn’t been delivered yet, the other person never receives it.",
   "@unsendBody": {
     "description": "Body of the unsend confirmation."
@@ -1000,11 +1096,15 @@
       }
     }
   },
-  "yourNameInChat": "Your name in this chat",
+  "yourNameInChat": "Your nickname in this chat",
   "@yourNameInChat": {
     "description": "Title of the rename-self dialog."
   },
   "disappearingOff": "Off",
+  "disappearing5Minutes": "5 minutes",
+  "@disappearing5Minutes": {
+    "description": "Disappearing-messages timer option."
+  },
   "@disappearingOff": {
     "description": "Disappearing-messages option: off."
   },
@@ -1012,7 +1112,7 @@
   "@disappearing1Hour": {
     "description": "Disappearing-messages option: 1 hour."
   },
-  "disappearing1Day": "1 day",
+  "disappearing1Day": "24 hours",
   "@disappearing1Day": {
     "description": "Disappearing-messages option: 1 day."
   },
@@ -1074,7 +1174,7 @@
   "@backUpThisChat": {
     "description": "Overflow-menu item to back up a single chat."
   },
-  "sayHi": "Say hi 👻",
+  "sayHi": "Say hi",
   "@sayHi": {
     "description": "Empty-state text for a new chat with no messages."
   },
@@ -1186,12 +1286,301 @@
   "@pasteText": {
     "description": "Tooltip for the composer paste button."
   },
+  "newGroup": "New group",
+  "@newGroup": {
+    "description": "Menu entry and title of the create-group screen."
+  },
+  "groupLabel": "Group",
+  "@groupLabel": {
+    "description": "Subtitle of a group in the chat list; also the default group name."
+  },
+  "groupName": "Group name",
+  "@groupName": {
+    "description": "Label of the group name field."
+  },
+  "groupCreate": "Create group",
+  "@groupCreate": {
+    "description": "Button that creates the group."
+  },
+  "groupEveryoneConnected": "Pick people you already chat with — up to 9. Members who have not met are connected to each other automatically: each of them gets a new chat with the others.",
+  "@groupEveryoneConnected": {
+    "description": "Explains who can be added to a group and the current limitation."
+  },
+  "groupNeedsNewer": "Needs a newer version of the app",
+  "@groupNeedsNewer": {
+    "description": "Shown under a contact whose app cannot do groups."
+  },
+  "groupNoContacts": "Start a chat with someone first — a group is made of people you already talk to.",
+  "@groupNoContacts": {
+    "description": "Create-group screen when there are no contacts."
+  },
+  "groupMembersCount": "Members: {count}",
+  "@groupMembersCount": {
+    "description": "Line under the group name.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupMembersTitle": "Members",
+  "@groupMembersTitle": {
+    "description": "Title of the member list."
+  },
+  "groupYou": "You",
+  "@groupYou": {
+    "description": "How the local user is named in a member list."
+  },
+  "groupUnknownMember": "Member",
+  "@groupUnknownMember": {
+    "description": "Name for a group member who is not one of our contacts."
+  },
+  "groupCreatorTag": "Created the group",
+  "@groupCreatorTag": {
+    "description": "Shown under the creator in the member list."
+  },
+  "groupAttachPhoto": "Send a photo",
+  "@groupAttachPhoto": {
+    "description": "Tooltip of the attach button in a group chat."
+  },
+  "groupUnsendBody": "This removes it from every member’s device. A member who is offline keeps their copy until they are back.",
+  "@groupUnsendBody": {
+    "description": "Body of the delete-for-everyone confirmation in a group."
+  },
+  "groupTimerHint": "Applies to everyone in the group. Any member can change it.",
+  "@groupTimerHint": {
+    "description": "Subtitle of the group timer chooser."
+  },
+  "groupAddMember": "Add a member",
+  "@groupAddMember": {
+    "description": "Entry in the member list, creator only."
+  },
+  "groupNobodyToAdd": "Everyone you can add is already in the group.",
+  "@groupNobodyToAdd": {
+    "description": "Shown when there is no contact left to add."
+  },
+  "groupRemoveMember": "Remove from group",
+  "@groupRemoveMember": {
+    "description": "Tooltip and confirmation title, creator only."
+  },
+  "groupRemoveBody": "{name} will stop receiving messages from this group and will see that they were removed.",
+  "@groupRemoveBody": {
+    "description": "Body of the remove-member confirmation.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "groupCouldNotChange": "Could not change the group: {error}",
+  "@groupCouldNotChange": {
+    "description": "Snackbar when a group change fails.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "groupOnlyCreatorManages": "Only the person who created the group can add or remove members.",
+  "@groupOnlyCreatorManages": {
+    "description": "Shown in the member list to someone who did not create the group."
+  },
+  "groupInviteByCode": "Invite with a code",
+  "@groupInviteByCode": {
+    "description": "Entry in the add-member sheet: show a QR code and secret words for someone who is not a contact yet."
+  },
+  "groupInviteByCodeHint": "For someone you do not have a chat with yet",
+  "@groupInviteByCodeHint": {
+    "description": "Subtitle of the invite-with-a-code entry."
+  },
+  "groupInviteTitle": "Invite to the group",
+  "@groupInviteTitle": {
+    "description": "Title of the group invitation screen."
+  },
+  "groupInviteJoining": "Connected. Adding them to the group…",
+  "@groupInviteJoining": {
+    "description": "Shown after someone used a group invitation, while they are being added."
+  },
+  "groupDeliveredToAll": "Delivered to everyone",
+  "@groupDeliveredToAll": {
+    "description": "Tooltip of the double tick on our own group message."
+  },
+  "groupLeave": "Leave group",
+  "@groupLeave": {
+    "description": "Menu entry and confirmation title."
+  },
+  "groupLeaveBody": "You will stop receiving messages from this group. The other members will see that you left.",
+  "@groupLeaveBody": {
+    "description": "Body of the leave confirmation."
+  },
+  "groupDelete": "Delete group",
+  "@groupDelete": {
+    "description": "Menu entry and confirmation title."
+  },
+  "groupDeleteBody": "The group and its messages are removed from this device. The other members will see that you left.",
+  "@groupDeleteBody": {
+    "description": "Body of the delete confirmation."
+  },
+  "groupLeftBanner": "You left this group",
+  "@groupLeftBanner": {
+    "description": "Shown in place of the composer after leaving."
+  },
+  "groupCouldNotCreate": "Could not create the group: {error}",
+  "@groupCouldNotCreate": {
+    "description": "Snackbar when creating a group fails.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "groupCouldNotSend": "Could not send: {error}",
+  "@groupCouldNotSend": {
+    "description": "Snackbar when a group message could not be sent to anyone.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceRecord": "Record a voice message",
+  "@voiceRecord": {
+    "description": "Tooltip of the microphone button."
+  },
+  "voiceRecording": "Recording",
+  "@voiceRecording": {
+    "description": "Label beside the timer while recording."
+  },
+  "voiceSend": "Send voice message",
+  "@voiceSend": {
+    "description": "Tooltip of the send button while recording."
+  },
+  "voiceSpeed": "Playback speed",
+  "@voiceSpeed": {
+    "description": "Tooltip of the speed button on a voice message."
+  },
+  "voicePlay": "Play",
+  "@voicePlay": {
+    "description": "Tooltip of the play button on a voice message."
+  },
+  "voicePause": "Pause",
+  "@voicePause": {
+    "description": "Tooltip of the pause button on a voice message."
+  },
+  "voiceNoPermission": "CyberDog needs access to the microphone to record a voice message.",
+  "@voiceNoPermission": {
+    "description": "Shown when the microphone permission is refused."
+  },
+  "copyText": "Copy",
+  "@copyText": {
+    "description": "Entry in the message menu: copy the message text."
+  },
+  "textCopied": "Copied",
+  "@textCopied": {
+    "description": "Snackbar after copying a message."
+  },
+  "securityLineUnverified": "Secure chat · Not verified",
+  "@securityLineUnverified": {
+    "description": "The one-line security summary above an unverified chat."
+  },
+  "securityLineVerified": "Secure chat · Verified",
+  "@securityLineVerified": {
+    "description": "The one-line security summary above a verified chat."
+  },
+  "unverifiedBannerDetail": "Compare this contact’s safety number with them to be sure no one is in the middle.",
+  "@unverifiedBannerDetail": {
+    "description": "Explanation shown when the unverified security line is tapped."
+  },
+  "menuServerStorageOn": "Server storage: on (24 h)",
+  "@menuServerStorageOn": {
+    "description": "Chat menu entry that turns server storage off."
+  },
+  "menuServerStorageOff": "Server storage: off",
+  "@menuServerStorageOff": {
+    "description": "Chat menu entry that turns server storage on."
+  },
+  "myAddressTitle": "My address",
+  "@myAddressTitle": {
+    "description": "Menu entry and title of the standing-address screen."
+  },
+  "myAddressIntro": "Your permanent address. Send it to someone, or let them scan the code, and they can ask to chat with you.",
+  "@myAddressIntro": {
+    "description": "Introduction on the standing-address screen."
+  },
+  "myAddressCopy": "Copy address",
+  "@myAddressCopy": {
+    "description": "Button that copies the standing address."
+  },
+  "myAddressWarning": "The address does not expire and cannot be taken back: anyone who gets it can send you a request. Nobody can write to you until you accept theirs. To use it, the other person pastes it under New chat → Join.",
+  "@myAddressWarning": {
+    "description": "Explains what a standing address means for privacy and how the other person uses it."
+  },
+  "myAddressFailed": "Could not create an address.",
+  "@myAddressFailed": {
+    "description": "Shown if the standing address cannot be created."
+  },
+  "tabGroups": "Groups",
+  "@tabGroups": {
+    "description": "Navigation: the groups section."
+  },
+  "tabSettings": "Settings",
+  "@tabSettings": {
+    "description": "Navigation: the settings section."
+  },
+  "tabProfile": "Profile",
+  "@tabProfile": {
+    "description": "Navigation: the profile section."
+  },
+  "scanQr": "Scan a QR code",
+  "@scanQr": {
+    "description": "Entry in the new-action menu."
+  },
+  "noGroupsYet": "No groups yet. Tap the button below to create one.",
+  "@noGroupsYet": {
+    "description": "Empty state of the groups section."
+  },
+  "previewYou": "You:",
+  "@previewYou": {
+    "description": "Prefix of our own last message in the chat list."
+  },
+  "previewPhoto": "Photo",
+  "@previewPhoto": {
+    "description": "Chat list: the last message was a photo."
+  },
+  "previewVoice": "Voice message",
+  "@previewVoice": {
+    "description": "Chat list: the last message was a voice message."
+  },
+  "previewHidden": "Hidden message",
+  "@previewHidden": {
+    "description": "Chat list: the last message is one that disappears; its text is not quoted."
+  },
+  "settingsSectionPrivacy": "Privacy and security",
+  "@settingsSectionPrivacy": {
+    "description": "Settings heading."
+  },
+  "settingsSectionData": "Backups",
+  "@settingsSectionData": {
+    "description": "Settings heading."
+  },
+  "settingsSectionApp": "App",
+  "@settingsSectionApp": {
+    "description": "Settings heading."
+  },
+  "settingsSectionAdvanced": "Advanced",
+  "@settingsSectionAdvanced": {
+    "description": "Settings: the folded group of technical options."
+  },
+  "selectChatHint": "Choose a chat",
+  "@selectChatHint": {
+    "description": "Shown in the empty chat pane on a wide window."
+  },
   "messageHint": "Message",
   "@messageHint": {
     "description": "Placeholder text in the message composer."
   },
   "appLockMenu": "App lock",
-  "lockedTitle": "Night Drop is locked",
+  "lockedTitle": "CyberDog is locked",
   "lockedBody": "Enter your PIN or passphrase to open your messages.",
   "lockedField": "PIN or passphrase",
   "lockedFailed": "That didn't unlock it. Try again.",
@@ -1246,7 +1635,7 @@
   "bridgesMenu": "Tor bridges",
   "bridgesTitle": "Tor bridges",
   "bridgesBody": "If your network blocks Tor, a bridge is an unlisted way in. Paste the bridge lines you were given — one per line, exactly as they came.",
-  "bridgesLimit": "Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — Night Drop will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.",
+  "bridgesLimit": "Bridges get past a network that blocks the public list of Tor relays. Getting past one that inspects traffic and blocks Tor by how it looks needs a WebTunnel bridge, which carries Tor inside ordinary HTTPS — CyberDog will say so if this build cannot use one. Even then it is not a guarantee: we have tested it against blocked networks and against intrusion-detection tools, never against a national firewall, and the amount of data a chat moves is not disguised. If being identified as a Tor user is itself dangerous where you are, do not rely on this alone.",
   "bridgesHint": "203.0.113.5:9001 A1B2C3…",
   "bridgesWhereToGet": "Get bridges from bridges.torproject.org — add ?transport=webtunnel for a WebTunnel bridge, which looks like ordinary HTTPS traffic. Or email bridges@torproject.org with \"get transport none\" in the body.",
   "bridgesSaved": "{count, plural, =0{No bridges saved} =1{1 bridge saved} other{{count} bridges saved}}",
@@ -1266,7 +1655,7 @@
     }
   },
   "bridgesRestartTitle": "Reconnect now?",
-  "bridgesRestartBody": "Bridges are used when Night Drop connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.",
+  "bridgesRestartBody": "Bridges are used when CyberDog connects to Tor, so they take effect on the next connection. Reconnecting now takes a minute or two.",
   "bridgesRestartNow": "Reconnect",
   "coverTrafficMenu": "Cover traffic",
   "coverTrafficTitle": "Cover traffic",

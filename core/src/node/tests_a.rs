@@ -1468,7 +1468,7 @@ fn victim_view(bob: &Node, _victim: &str) -> String {
 #[test]
 fn a_local_nickname_stays_local_and_survives_a_restart() {
     use crate::storage;
-    // Everyone defaults to "Anon", so a contact list is unreadable until you can label people
+    // Everyone defaults to "NightDog", so a contact list is unreadable until you can label people
     // yourself (`docs/design/contact-naming.md`). The label is *yours*: it must never reach the
     // peer, and must outlive a restart or it is worthless.
     let key: storage::StoreKey = [17u8; 32];

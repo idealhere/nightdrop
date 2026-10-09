@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en" data-title-ru="Безопасность CyberDog">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberDog Security</title>
+<meta name="description" content="How CyberDog protects your conversations: end-to-end encryption, no account, local storage, sealed delivery, and what each network path does and does not hide.">
+<meta name="theme-color" content="#f4f7fb">
+<link rel="icon" type="image/png" href="assets/icon-192.png">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+  /* Security: a technical page — numbered chapters, large diagrams, a blueprint grid. */
+  .hero { position: relative; margin-top: -82px; padding: 82px 0 20px; }
+  .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(rgba(31,111,255,.055) 1px, transparent 1px) 0 0 / 100% 44px, linear-gradient(90deg, rgba(31,111,255,.055) 1px, transparent 1px) 0 0 / 44px 100%;
+    -webkit-mask-image: radial-gradient(70% 80% at 60% 40%, #000, transparent); mask-image: radial-gradient(70% 80% at 60% 40%, #000, transparent); }
+  .hero .wrap { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: center; padding-top: 30px; }
+  .hero h1 { margin-top: 16px; }
+  .hero .art { width: min(100%, 540px); margin: 0 auto; filter: drop-shadow(0 30px 50px rgba(31,111,255,.25)); animation: float 10s ease-in-out infinite; }
+  .index { list-style: none; padding: 0; margin-top: 34px; display: grid; grid-template-columns: repeat(2, max-content); gap: 8px 34px; font: 600 13px/1.4 Consolas, "Cascadia Mono", monospace; color: var(--ink-2); }
+  .index a:hover { color: var(--blue); } .index span { color: var(--blue); margin-right: 10px; }
+
+  /* Chapters: text on one side, a large diagram on the other, alternating. */
+  .chapter { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); gap: clamp(28px, 5vw, 80px); align-items: center; }
+  .chapter.flip { grid-template-columns: minmax(0, 1.18fr) minmax(0, .82fr); } .chapter.flip > .say { order: 2; }
+  .num { font: 700 13px/1 Consolas, "Cascadia Mono", monospace; color: var(--blue); letter-spacing: .14em; }
+  .say h2 { margin-top: 14px; }
+  .say p { margin-top: 18px; max-width: 460px; color: var(--ink-2); font-size: 17px; }
+  .say p.fine { margin-top: 12px; font-size: 14px; color: var(--muted); }
+  .fig { padding: clamp(22px, 3vw, 44px); border-radius: 32px; }
+  .mono { font: 600 11.5px/1.3 Consolas, "Cascadia Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+
+  /* Diagram pieces */
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; }
+  .node { padding: 22px 12px; border-radius: 22px; text-align: center; background: #fff; border: 1px solid #dbe6f7; box-shadow: 0 8px 22px rgba(30,60,110,.07); }
+  .node svg { width: 40px; height: 40px; color: var(--blue); } .node b { display: block; margin-top: 10px; font-size: 16px; letter-spacing: -.01em; } .node span { display: block; margin-top: 3px; color: var(--ink-2); font-size: 13px; }
+  .node.dim { background: #f3f6fb; box-shadow: none; } .node.dim svg { color: #9aa6b8; }
+  .wire { position: relative; width: clamp(34px, 6vw, 86px); height: 2px; background: repeating-linear-gradient(90deg, #7fc4ff 0 8px, transparent 8px 14px); }
+  .wire::after { content: ""; position: absolute; left: 50%; top: 50%; width: 26px; height: 20px; margin: -10px 0 0 -13px; border-radius: 6px; background: var(--grad); box-shadow: 0 4px 12px rgba(31,111,255,.4); }
+  .cap { margin-top: 22px; text-align: center; }
+
+  .ids { display: grid; grid-template-columns: 1fr auto 1fr; gap: 26px; align-items: center; }
+  .ids ul { list-style: none; padding: 0; display: grid; gap: 10px; }
+  .ids li { padding: 13px 18px; border-radius: 14px; background: #f3f6fb; color: var(--muted); font-size: 16px; text-decoration: line-through; text-decoration-color: #c3ccd9; }
+  .ids img { width: 170px; margin: 0 auto; } .ids .key { text-align: center; } .ids .key b { display: block; margin-top: 8px; font-size: 18px; }
+  .ids .key span { color: var(--ink-2); font-size: 13.5px; }
+  .ids i { font-style: normal; color: var(--blue); font-size: 30px; }
+
+  .device { display: grid; grid-template-columns: auto 1fr; gap: 30px; align-items: center; }
+  .device img { width: 190px; }
+  .device ul { list-style: none; padding: 0; display: grid; gap: 12px; }
+  .device li { display: flex; gap: 14px; align-items: baseline; padding: 14px 18px; border-radius: 16px; background: #fff; border: 1px solid #dbe6f7; font-size: 16px; }
+  .device li b { font-weight: 650; } .device li span { color: var(--ink-2); font-size: 14px; }
+  .device li::before { content: "✓"; color: var(--blue); font-weight: 700; }
+
+  .ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ledger div { padding: 22px 24px; border-radius: 22px; background: #fff; border: 1px solid #dbe6f7; }
+  .ledger .no { background: #f3f6fb; }
+  .ledger ul { list-style: none; padding: 0; margin-top: 14px; display: grid; gap: 9px; font-size: 16px; }
+  .ledger .yes li::before { content: "● "; color: #f0a020; font-size: 11px; vertical-align: 2px; } .ledger .no li::before { content: "✕ "; color: #9aa6b8; }
+  .ledger p { margin-top: 16px; color: var(--ink-2); font-size: 13.5px; }
+
+  /* Two network paths, side by side: what each one hides and what it does not. */
+  .paths { display: grid; gap: 16px; }
+  .path { padding: 24px 26px; border-radius: 24px; background: #fff; border: 1px solid #dbe6f7; }
+  .path h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 21px; letter-spacing: -.02em; }
+  .tag { padding: 3px 11px; border-radius: 999px; font: 700 10.5px/1.5 Consolas, "Cascadia Mono", monospace; letter-spacing: .1em; text-transform: uppercase; background: #e8f1ff; color: var(--blue-d); }
+  .tag.warn { background: #fff3dc; color: #8a5a00; } .tag.grey { background: #edf1f6; color: var(--ink-2); }
+  .hops { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+  .hop { flex: none; padding: 8px 14px; border-radius: 12px; background: #f3f6fb; border: 1px solid var(--line); font-size: 13.5px; font-weight: 600; }
+  .hop.tor { background: #f1ecff; border-color: #dcd0ff; color: #5a3fc0; }
+  .hops u { flex: 1; min-width: 14px; height: 2px; text-decoration: none; background: repeating-linear-gradient(90deg, #7fc4ff 0 6px, transparent 6px 11px); }
+  .path p { margin-top: 16px; color: var(--ink-2); font-size: 15px; } .path p b { color: var(--ink); }
+
+  .source { display: grid; grid-template-columns: auto 1fr; gap: 30px; align-items: center; }
+  .source img { width: 170px; }
+  .source code { display: block; padding: 16px 20px; border-radius: 16px; background: #0f1726; color: #cfe3ff; font: 13.5px/1.7 Consolas, "Cascadia Mono", monospace; overflow: auto; }
+  .source code span { color: #6f86a8; }
+
+  .limits { padding: clamp(26px, 4vw, 54px); border-radius: 32px; display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 40px; align-items: start; }
+  .limits h2 { font-size: clamp(24px, 2.5vw, 36px); }
+  .limits ul { list-style: none; padding: 0; display: grid; gap: 14px; color: var(--ink-2); font-size: 16px; }
+  .limits li { padding-left: 22px; position: relative; } .limits li::before { content: ""; position: absolute; left: 0; top: .62em; width: 8px; height: 2px; background: #f0a020; }
+
+  @media (max-width: 1180px) {
+    .hero .wrap, .chapter, .chapter.flip, .limits { grid-template-columns: 1fr; } .chapter.flip > .say { order: 0; } .hero .art { max-width: 400px; }
+  }
+  @media (max-width: 700px) {
+    .hero { margin-top: -70px; padding-top: 86px; } .index { grid-template-columns: 1fr; }
+    .fig { border-radius: 24px; padding: 18px; }
+    .flow { grid-template-columns: 1fr; } .wire { width: 2px; height: 30px; margin: 0 auto; background: repeating-linear-gradient(180deg, #7fc4ff 0 8px, transparent 8px 14px); }
+    .ids { grid-template-columns: 1fr; gap: 12px; text-align: center; } .ids i { rotate: 90deg; }
+    .device, .source { grid-template-columns: 1fr; } .device img, .source img { margin: 0 auto; width: 140px; }
+    .ledger { grid-template-columns: 1fr; }
+    .hops { flex-wrap: wrap; } .hops u { flex: 0 0 14px; }
+    .say p { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="top">
+  <div class="bar glass">
+    <a class="logo" href="./"><img src="assets/logo-horizontal.webp" width="720" height="211" alt="CyberDog — Private Messenger"></a>
+    <nav>
+      <a href="./" data-ru="Главная">Home</a>
+      <a href="security.html" aria-current="page" data-ru="Безопасность">Security</a>
+      <a href="download.html" data-ru="Скачать">Download</a>
+    </nav>
+    <span class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="ru" aria-pressed="false">RU</button>
+    </span>
+    <a class="btn primary small arrow" href="download.html" data-ru="Скачать CyberDog">Get CyberDog</a>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow" data-ru="Безопасность CyberDog">CyberDog Security</p>
+      <h1><span data-ru="Безопасность">Privacy</span><br><span class="blue" data-ru="по замыслу">by design</span></h1>
+      <p class="lead" data-ru="Что именно защищено, как это устроено и где проходят границы — простым языком.">What exactly is protected, how it works, and where the limits are — in plain language.</p>
+      <ol class="index">
+        <li><a href="#e2e"><span>01</span><span style="color:inherit" data-ru="Сквозное шифрование">End-to-end encryption</span></a></li>
+        <li><a href="#identity"><span>02</span><span style="color:inherit" data-ru="Личность без телефона и почты">Identity without phone or email</span></a></li>
+        <li><a href="#local"><span>03</span><span style="color:inherit" data-ru="Данные на устройстве">Local-first storage</span></a></li>
+        <li><a href="#relay"><span>04</span><span style="color:inherit" data-ru="Запечатанная доставка">Sealed delivery</span></a></li>
+        <li><a href="#network"><span>05</span><span style="color:inherit" data-ru="Сеть: HTTPS и Tor">Network: HTTPS and Tor</span></a></li>
+        <li><a href="#source"><span>06</span><span style="color:inherit" data-ru="Открытый код">Open source</span></a></li>
+      </ol>
+    </div>
+    <img class="art" src="assets/privacy.webp" width="1000" height="915" alt="">
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="e2e" class="chapter reveal">
+    <div class="say">
+      <p class="num">01 / 06</p>
+      <h2><span data-ru="Сквозное">End-to-end</span> <span class="blue" data-ru="шифрование">encryption</span></h2>
+      <p data-ru="Сообщение шифруется на вашем устройстве и расшифровывается только у собеседника. Текст, фото и голосовые идут через сервер запечатанными.">A message is encrypted on your device and decrypted only on your contact's. Text, photos and voice messages cross the server sealed.</p>
+      <p class="fine" data-ru="Сверьте код безопасности с собеседником — так вы убедитесь, что между вами никого нет.">Compare the safety number with your contact to make sure nobody sits between you.</p>
+    </div>
+    <div class="glass fig">
+      <div class="flow">
+        <div class="node"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.600" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.500" width="10" height="19" rx="2.500"/><path d="M10 13v-1.500a2 2 0 0 1 4 0V13M9.500 13h5v3.500h-5z"/></svg><b data-ru="Вы">You</b><span data-ru="шифрует">encrypts</span></div>
+        <div class="wire"></div>
+        <div class="node dim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.600" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="6" rx="1.500"/><rect x="4" y="14" width="16" height="6" rx="1.500"/><path d="M7.500 7h.01M7.500 17h.01"/></svg><b data-ru="Сервер">Server</b><span data-ru="не может прочитать">cannot read</span></div>
+        <div class="wire"></div>
+        <div class="node"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.600" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.500" width="10" height="19" rx="2.500"/><path d="M10 13v-1.500a2 2 0 0 1 3.800-.800M9.500 13h5v3.500h-5z"/></svg><b data-ru="Собеседник">Contact</b><span data-ru="расшифровывает">decrypts</span></div>
+      </div>
+      <p class="mono cap" data-ru="Ключи есть только на двух устройствах">The keys exist only on the two devices</p>
+    </div>
+  </section>
+
+  <section id="identity" class="chapter flip reveal">
+    <div class="say">
+      <p class="num">02 / 06</p>
+      <h2><span data-ru="Личность">Identity</span> <span class="blue" data-ru="без телефона и почты">without phone or email</span></h2>
+      <p data-ru="CyberDog не спрашивает номер, почту или имя. Ваша личность — это ключ, созданный на устройстве при первом запуске.">CyberDog asks for no number, email or name. Your identity is a key created on your device at first launch.</p>
+      <p class="fine" data-ru="Найти вас по номеру нельзя: чат начинается только с приглашения или вашего адреса.">Nobody can look you up by number: a chat starts only from an invite or your address.</p>
+    </div>
+    <div class="glass fig">
+      <div class="ids">
+        <ul><li data-ru="Номер телефона">Phone number</li><li data-ru="Электронная почта">Email address</li><li data-ru="Настоящее имя">Real name</li></ul>
+        <i>→</i>
+        <div class="key"><img src="assets/icon-identity.webp" width="240" height="242" alt=""><b data-ru="Ключ на устройстве">A key on your device</b><span data-ru="больше ничего не нужно">nothing else is needed</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="local" class="chapter reveal">
+    <div class="say">
+      <p class="num">03 / 06</p>
+      <h2><span data-ru="Данные">Local-first</span> <span class="blue" data-ru="на устройстве">storage</span></h2>
+      <p data-ru="Переписка хранится у вас, а не в облаке. Сервер не держит архив ваших чатов.">Your chats are kept with you, not in a cloud. The server holds no archive of your conversations.</p>
+      <p class="fine" data-ru="Обратная сторона: потеряв устройство без резервной копии, вы теряете и переписку.">The other side of it: lose the device without a backup and the chats are gone too.</p>
+    </div>
+    <div class="glass fig">
+      <div class="device">
+        <img src="assets/icon-local.webp" width="240" height="230" alt="">
+        <ul>
+          <li><b data-ru="Переписка и личность">Chats and identity</b><span data-ru="на этом устройстве">on this device</span></li>
+          <li><b data-ru="Резервная копия">Backup</b><span data-ru="файл под вашим паролем">a file under your password</span></li>
+          <li><b data-ru="Исчезающие сообщения">Disappearing messages</b><span data-ru="удаляются по таймеру">removed on a timer</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="relay" class="chapter flip reveal">
+    <div class="say">
+      <p class="num">04 / 06</p>
+      <h2><span data-ru="Запечатанная">Sealed</span> <span class="blue" data-ru="доставка">delivery</span></h2>
+      <p data-ru="Сервер работает как почтовый ящик: принимает запечатанный пакет и держит его, пока собеседник не выйдет на связь.">The server works like a mailbox: it takes a sealed packet and holds it until your contact comes online.</p>
+      <p class="fine" data-ru="Пакет хранится не дольше суток и удаляется после доставки.">A packet is kept for a day at most and deleted once delivered.</p>
+    </div>
+    <div class="glass fig">
+      <div class="ledger">
+        <div class="yes"><p class="mono" data-ru="Сервер видит">The server sees</p>
+          <ul><li data-ru="Ваш IP-адрес">Your IP address</li><li data-ru="Время отправки">When you send</li><li data-ru="Размер пакета">The packet size</li></ul></div>
+        <div class="no"><p class="mono" data-ru="Сервер не видит">The server cannot see</p>
+          <ul><li data-ru="Текст сообщений">Message text</li><li data-ru="Фото и голосовые">Photos and voice</li><li data-ru="Ваши ключи">Your keys</li></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="network" class="chapter reveal">
+    <div class="say">
+      <p class="num">05 / 06</p>
+      <h2><span data-ru="Сеть:">Network:</span> <span class="blue" data-ru="HTTPS и Tor">HTTPS and Tor</span></h2>
+      <p data-ru="Это разные вещи. HTTPS шифрует соединение, но не делает вас анонимным. Tor скрывает ваш адрес — ценой скорости.">These are different things. HTTPS encrypts the connection but does not make you anonymous. Tor hides your address — at the cost of speed.</p>
+      <p class="fine" data-ru="Если важно скрыть сам факт и место подключения, одного HTTPS недостаточно.">If hiding the fact and the place of your connection matters, HTTPS alone is not enough.</p>
+    </div>
+    <div class="glass fig">
+      <div class="paths">
+        <div class="path">
+          <h3>HTTPS <span class="tag" data-ru="Основной путь">Main path</span><span class="tag warn" data-ru="Зашифровано · не анонимно">Encrypted · not anonymous</span></h3>
+          <div class="hops"><span class="hop" data-ru="Вы">You</span><u></u><span class="hop" data-ru="Сервер">Server</span><u></u><span class="hop" data-ru="Собеседник">Contact</span></div>
+          <p data-ru="Быстро. Содержание закрыто, но <b>сервер и провайдер видят ваш IP-адрес</b> и время подключения.">Fast. The contents are closed, but <b>the server and your provider see your IP address</b> and when you connect.</p>
+        </div>
+        <div class="path">
+          <h3>Tor <span class="tag grey" data-ru="Запасной путь">Fallback path</span><span class="tag" data-ru="Скрывает адрес">Hides your address</span></h3>
+          <div class="hops"><span class="hop" data-ru="Вы">You</span><u></u><span class="hop tor">Tor</span><u></u><span class="hop tor">Tor</span><u></u><span class="hop tor">Tor</span><u></u><span class="hop" data-ru="Собеседник">Contact</span></div>
+          <p data-ru="Медленнее. Соединение идёт через несколько узлов, и <b>ваш IP-адрес не виден другой стороне</b>. Там, где Tor блокируют, может помочь мост WebTunnel. В бета-версии этот путь экспериментальный.">Slower. The connection passes through several nodes, and <b>your IP address is not visible to the other side</b>. Where Tor is blocked, a WebTunnel bridge can help. In the beta this path is experimental.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="source" class="chapter flip reveal">
+    <div class="say">
+      <p class="num">06 / 06</p>
+      <h2><span data-ru="Открытый">Open</span> <span class="blue" data-ru="код">source</span></h2>
+      <p data-ru="Код CyberDog открыт под лицензией AGPL-3.0 и основан на Night Drop. То, что здесь написано, можно проверить.">CyberDog's code is open under AGPL-3.0 and based on Night Drop. What this page says can be checked.</p>
+      <p class="fine" data-ru="Шифрование — готовая проверенная библиотека, а не собственное изобретение.">The encryption is an established library, not an invention of our own.</p>
+    </div>
+    <div class="glass fig">
+      <div class="source">
+        <img src="assets/icon-open.webp" width="240" height="273" alt="">
+        <code><span># license</span><br>AGPL-3.0<br><span># based on</span><br>Night Drop<br><span># source</span><br><a href="https://github.com/idealhere/nightdrop">github.com/idealhere/nightdrop</a></code>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="glass limits reveal">
+      <div>
+        <p class="mono" data-ru="Честно">Honestly</p>
+        <h2 style="margin-top:12px" data-ru="Чего CyberDog не обещает">What CyberDog does not promise</h2>
+      </div>
+      <ul>
+        <li data-ru="Абсолютной анонимности: по основному пути сервер и провайдер видят ваш IP-адрес.">Absolute anonymity: on the main path the server and your provider see your IP address.</li>
+        <li data-ru="Защиты от собеседника: он может сфотографировать экран или пересказать увиденное.">Protection from your contact: they can photograph the screen or retell what they saw.</li>
+        <li data-ru="Защиты взломанного или разблокированного устройства: кто держит ваш телефон, тот читает переписку.">Protection of a compromised or unlocked device: whoever holds your phone reads your chats.</li>
+        <li data-ru="Готового продукта: это бета, и независимого аудита пока не было.">A finished product: this is a beta, and there has been no independent audit yet.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="glass final reveal">
+      <img src="assets/mascot-side.webp" width="1000" height="748" alt="">
+      <div>
+        <p class="eyebrow" data-ru="Более приватный интернет. Вместе.">A more private internet. Together.</p>
+        <h2 data-ru="Попробуйте CyberDog сами.">Try CyberDog for yourself.</h2>
+      </div>
+      <div class="cta">
+        <a class="btn primary arrow" href="download.html" data-ru="Скачать CyberDog">Get CyberDog</a>
+        <small data-ru="Бесплатно · Открытый код · Без аккаунта">Free · Open Source · No Account Needed</small>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  <span><a href="./" data-ru="Главная">Home</a> · <a href="download.html" data-ru="Скачать">Download</a></span>
+  <span><span data-ru="Открытый код, AGPL-3.0 · основано на Night Drop">Open source, AGPL-3.0 · based on Night Drop</span> · <a href="https://github.com/idealhere/nightdrop" data-ru="исходники">source</a></span>
+</div></footer>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

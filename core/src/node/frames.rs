@@ -20,6 +20,13 @@ impl Node {
             } => {
                 crate::diag!("pair: inbound Hello — a peer is requesting a chat");
                 let olm = message.to_olm()?;
+                // A request to our standing address rather than a one-time invite. Its pre-key
+                // can be used again, so a replay of the very same first message is caught here.
+                let via_address =
+                    self.address_key.is_some() && crypto::pre_key_of(&olm) == self.address_key;
+                if via_address && !self.note_address_hello(&message) {
+                    return Ok(None);
+                }
                 let accepted = crypto::accept_inbound(&mut self.identity, &identity_key, &olm)?;
                 let contact_id = identity_key;
                 // Prefer the address the sender advertised (works over Tor/relay where the
@@ -34,6 +41,19 @@ impl Node {
                 // prior chat's state *before* the overwrite so we can warn on a re-pair (§1.2): a
                 // chat that existed and was closed is a known contact re-establishing a brand-new
                 // secure session, after which any earlier safety-number verification no longer holds.
+                // A group member we offered an introduction to is not a stranger (`groups.rs`).
+                let introduced = self.intro_expected.remove(&contact_id);
+                // An address can reach anyone it was passed on to, so a request to it always
+                // waits for the user — unless it comes from someone we already have a chat with.
+                let auto_authorized = !via_address && (introduced || !self.require_authorization);
+                if via_address
+                    && !self
+                        .chats
+                        .get(&contact_id)
+                        .is_some_and(|c| c.authorized && !c.closed)
+                {
+                    self.address_requests.insert(contact_id.clone());
+                }
                 let prior = self.chats.get(&contact_id);
                 let was_verified = prior.map(|c| c.contact.verified).unwrap_or(false);
                 // A Hello lands in one of three states: a brand-new contact, a re-pair of a chat we
@@ -86,8 +106,10 @@ impl Node {
                     // in this log means the invariant was bypassed.
                     crate::diag!(
                         "pair: new chat from an unknown identity — {}",
-                        if self.require_authorization {
+                        if !auto_authorized {
                             "held as a request pending approval"
+                        } else if introduced {
+                            "AUTO-APPROVED (introduced through a group)"
                         } else {
                             "AUTO-APPROVED (require_authorization is off)"
                         }
@@ -119,7 +141,7 @@ impl Node {
                             session: accepted.session,
                             history: Vec::new(),
                             // Inbound request: needs approval unless we auto-authorize.
-                            authorized: !self.require_authorization,
+                            authorized: auto_authorized,
                             // Associate the most recent invite code so approval can echo it.
                             code: self.last_invite_code.clone(),
                             closed: false,
@@ -160,6 +182,7 @@ impl Node {
                     // exist when the launch-time broadcast ran.
                     self.announce_captures_to(&contact_id);
                     self.announce_burns_to(&contact_id);
+                    self.announce_groups_to(&contact_id);
                     self.announce_version_to(&contact_id);
                     // Start the v2 mailbox agreement now rather than at the next relay tick (`mailbox.rs`).
                     // Refused for a chat still awaiting approval; the relay tick picks it up once approved.
@@ -295,6 +318,32 @@ impl Node {
                 chat.contact.peer_supports_burn = Some(true);
                 Ok(Some((from, String::new())))
             }
+            Frame::Groups { from, message } => {
+                // "My build understands group frames." Standing property, no history entry.
+                if !self.verify_control(&from, &message, MARK_GROUPS_V1) {
+                    return Ok(None);
+                }
+                if !self.groups_peers.insert(from.clone()) {
+                    return Ok(None);
+                }
+                self.dirty = true;
+                Ok(Some((from, String::new())))
+            }
+            Frame::Group { from, message } => {
+                // Decrypted on the session with `from`, which is therefore the sender — whatever
+                // the envelope says. The group rules live in `groups.rs`.
+                let olm = message.to_olm()?;
+                let plaintext = {
+                    let Some(chat) = self.chats.get_mut(&from) else {
+                        return Ok(None);
+                    };
+                    if !chat.authorized {
+                        return Ok(None);
+                    }
+                    crypto::decrypt(&mut chat.session, &olm)?
+                };
+                self.on_group_frame(&from, &plaintext)
+            }
             Frame::Version { from, message } => {
                 // "This is the Night Drop version I run." Standing property, no history entry.
                 // Decrypted once (a ratchet decrypt spends a message key) and accepted only with the
@@ -373,19 +422,31 @@ impl Node {
                     unpack_unsend(&plaintext)?
                 };
                 let now = crate::api::now_secs();
+                let mut dead_files: Vec<String> = Vec::new();
+                let mut found = false;
                 if let Some(chat) = self.chats.get_mut(&from) {
                     if let Some(msg) = chat.history.iter_mut().find(|m| {
                         !m.from_me
                             && !m.system
-                            && m.kind == "text"
-                            && !m.msg_id.is_empty()
-                            && m.msg_id == target_id
+                            && ((m.kind == "text" && !m.msg_id.is_empty() && m.msg_id == target_id)
+                                || is_attachment_named(m, &target_id))
                             && m.at != 0
                             && now.saturating_sub(m.at) <= EDIT_WINDOW.as_secs()
                     }) {
-                        make_tombstone(msg);
-                        return Ok(Some((from, String::new())));
+                        if msg.kind == "text" {
+                            make_tombstone(msg);
+                        } else {
+                            // A photo or video: the sealed files go too, not just the bubble.
+                            dead_files = make_attachment_tombstone(msg);
+                        }
+                        found = true;
                     }
+                }
+                if let Some((dir, _)) = &self.media_store {
+                    remove_attachment_files(dir, &dead_files);
+                }
+                if found {
+                    return Ok(Some((from, String::new())));
                 }
                 Ok(None)
             }
@@ -479,7 +540,7 @@ impl Node {
                 if let Some(chat) = self.chats.get_mut(&from) {
                     chat.closed = true;
                     chat.history.push(ChatMessage::system(
-                        "👻 The other person deleted this chat. A new chat will need to be \
+                        "🗑️ The other person deleted this chat. A new chat will need to be \
                          created to keep talking."
                             .to_string(),
                     ));
@@ -813,7 +874,7 @@ impl Node {
                         !m.from_me
                             && !m.transfer_id.is_empty()
                             && m.transfer_id == transfer_id
-                            && !m.media_id.is_empty()
+                            && (!m.media_id.is_empty() || m.kind == "deleted")
                     })
                 });
                 if !duplicate {
@@ -824,6 +885,7 @@ impl Node {
                             !m.transfer_id.is_empty()
                                 && m.transfer_id == transfer_id
                                 && m.media_id.is_empty()
+                                && m.kind != "deleted"
                         });
                         if let Some(m) = placeholder {
                             m.media_id = media_id;
@@ -881,7 +943,7 @@ impl Node {
                         !m.from_me
                             && !m.transfer_id.is_empty()
                             && m.transfer_id == transfer_id
-                            && !m.media_id.is_empty()
+                            && (!m.media_id.is_empty() || m.kind == "deleted")
                     })
                 });
                 if !duplicate {
@@ -924,6 +986,21 @@ impl Node {
                 let mut dead_media: Vec<String> = Vec::new();
                 let mut removed = false;
                 if let Some(chat) = self.chats.get_mut(&from) {
+                    // A view-once photo of ours keeps a "viewed" marker in place of the photo;
+                    // an ordinary burn message is dropped below, as before.
+                    for m in chat.history.iter_mut() {
+                        let named = (!m.msg_id.is_empty() && m.msg_id == target)
+                            || (!m.transfer_id.is_empty() && m.transfer_id == target);
+                        if m.from_me && m.burn_secs == VIEW_ONCE_SECS && named {
+                            for id in [m.media_id.as_str(), m.thumb_id.as_str()] {
+                                if !id.is_empty() {
+                                    dead_media.push(id.to_string());
+                                }
+                            }
+                            make_viewed_once_tombstone(m);
+                            removed = true;
+                        }
+                    }
                     let before = chat.history.len();
                     chat.history.retain(|m| {
                         let ours = m.from_me && m.burn_secs > 0;
@@ -939,7 +1016,7 @@ impl Node {
                         }
                         true
                     });
-                    removed = chat.history.len() != before;
+                    removed |= chat.history.len() != before;
                 }
                 if let Some((dir, _)) = &self.media_store {
                     for id in dead_media {

@@ -92,15 +92,45 @@ impl Node {
                 authorized: chat.authorized,
             })
             .collect();
+        let mut groups: Vec<crate::storage::PersistedGroup> = self
+            .groups
+            .values()
+            .map(|g| crate::storage::PersistedGroup {
+                id: g.id.clone(),
+                name: g.name.clone(),
+                creator: g.creator.clone(),
+                members: g.members.clone(),
+                left: g.left,
+                disappearing_secs: g.disappearing_secs,
+                acks: g.acks.clone(),
+                history: g
+                    .history
+                    .iter()
+                    .map(|gm| crate::storage::PersistedGroupMessage {
+                        sender: gm.sender.clone(),
+                        message: message_to_persisted(&gm.message),
+                    })
+                    .collect(),
+            })
+            .collect();
+        groups.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut groups_peers: Vec<String> = self.groups_peers.iter().cloned().collect();
+        groups_peers.sort();
         PersistedState {
             account_pickle,
             address: self.address(),
             chats,
+            groups,
+            groups_peers,
+            address_key: self.address_key.clone(),
+            address_requests: self.address_requests(),
+            address_hellos: self.address_hellos.clone(),
             media: Vec::new(),      // populated only for backups (see `backup`)
             onion_keys: Vec::new(), // populated only for backups (see `backup`)
             my_relays: self.my_relays.clone(),
             discovered_relays: self.discovered_relays.clone(),
             directory_version: self.directory_version,
+            pending_sends: self.export_pending_sends(),
             pending_control: self.export_pending_control(),
             pending_invites: self.export_pending_invites(),
             poll_seed: Some(base64_handle(&self.poll_seed)),
@@ -149,6 +179,48 @@ impl Node {
                     payload: p.payload.clone(),
                     ttl: Duration::from_secs(p.ttl_secs),
                     expiry: Instant::now() + Duration::from_secs(remaining),
+                })
+            })
+            .collect()
+    }
+
+    /// Serialize every user-message frame that still needs a network home. `pending_sends`
+    /// has not had its first off-lock delivery attempt yet; `pending_relay` already tried and
+    /// reached neither peer nor relay. Both carry the same exact sealed frame and restore through
+    /// the same retry path. Deduplicate defensively by (contact,msg_id) in case a future transition
+    /// briefly leaves the same item in both queues.
+    fn export_pending_sends(&self) -> Vec<crate::storage::PersistedPendingSend> {
+        use base64::Engine as _;
+        let mut seen = std::collections::HashSet::new();
+        self.pending_sends
+            .iter()
+            .chain(self.pending_relay.iter())
+            .filter(|p| seen.insert((p.contact_id.clone(), p.msg_id.clone())))
+            .map(|p| crate::storage::PersistedPendingSend {
+                contact_id: p.contact_id.clone(),
+                msg_id: p.msg_id.clone(),
+                bytes: base64::engine::general_purpose::STANDARD.encode(&p.bytes),
+            })
+            .collect()
+    }
+
+    /// Restore undelivered sealed frames onto the normal deferred-send queue. Re-running the full
+    /// delivery plan is intentional: after a transport switch (HTTPS → Tor/WebTunnel) a direct
+    /// peer path may now exist, while the exact same ciphertext remains safe to retry.
+    fn import_pending_sends(
+        persisted: &[crate::storage::PersistedPendingSend],
+    ) -> Vec<super::PendingRelaySend> {
+        use base64::Engine as _;
+        persisted
+            .iter()
+            .filter_map(|p| {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(p.bytes.as_bytes())
+                    .ok()?;
+                Some(super::PendingRelaySend {
+                    contact_id: p.contact_id.clone(),
+                    msg_id: p.msg_id.clone(),
+                    bytes,
                 })
             })
             .collect()
@@ -313,8 +385,35 @@ impl Node {
         } else {
             node.dirty = true;
         }
+        node.pending_sends = Self::import_pending_sends(&state.pending_sends);
         node.pending_control = Self::import_pending_control(&state.pending_control);
         node.pending_invites = Self::import_pending_invites(&state.pending_invites);
+        node.groups_peers = state.groups_peers.iter().cloned().collect();
+        node.address_key = state.address_key.clone();
+        node.address_requests = state.address_requests.iter().cloned().collect();
+        node.address_hellos = state.address_hellos.clone();
+        for g in &state.groups {
+            node.groups.insert(
+                g.id.clone(),
+                groups::Group {
+                    id: g.id.clone(),
+                    name: g.name.clone(),
+                    creator: g.creator.clone(),
+                    members: g.members.clone(),
+                    history: g
+                        .history
+                        .iter()
+                        .map(|gm| GroupMessage {
+                            sender: gm.sender.clone(),
+                            message: persisted_to_message(&gm.message),
+                        })
+                        .collect(),
+                    left: g.left,
+                    disappearing_secs: g.disappearing_secs,
+                    acks: g.acks.clone(),
+                },
+            );
+        }
         for chat in &state.chats {
             let session = Session::from_pickle(
                 SessionPickle::from_encrypted(&chat.session_pickle, key)
@@ -543,6 +642,9 @@ impl Node {
             for chat in &mut state.chats {
                 chat.history.clear();
             }
+            for group in &mut state.groups {
+                group.history.clear();
+            }
         }
         state.onion_keys = self.collect_onion_keys();
         let sealed = crate::storage::seal(&key, &serde_json::to_vec(&state)?)?;
@@ -566,6 +668,8 @@ impl Node {
         let mut key = crate::storage::derive_key(password, &salt)?;
         let mut state = self.export(&key);
         state.chats.retain(|c| c.contact_id == contact_id);
+        // One chat only: groups are not part of a scoped backup.
+        state.groups.clear();
         if full {
             state.media = self.collect_media_for(contact_id);
         } else {
@@ -669,5 +773,63 @@ impl Node {
                 anyhow::anyhow!("no server backup found (expired or wrong password?)")
             })?;
         Self::restore_from_backup(&blob, password, transport)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_sealed_sends_survive_export_restore() {
+        let net = crate::transport::MemoryNetwork::new();
+        let mut node = Node::new(Box::new(net.endpoint("pending-a")));
+        node.pending_sends.push(PendingRelaySend {
+            contact_id: "contact-a".into(),
+            msg_id: "msg-a".into(),
+            bytes: vec![1, 2, 3, 4],
+        });
+        node.pending_relay.push(PendingRelaySend {
+            contact_id: "contact-b".into(),
+            msg_id: "msg-b".into(),
+            bytes: vec![5, 6, 7, 8],
+        });
+        // A defensive duplicate across the two queues must be persisted only once.
+        node.pending_relay.push(PendingRelaySend {
+            contact_id: "contact-a".into(),
+            msg_id: "msg-a".into(),
+            bytes: vec![1, 2, 3, 4],
+        });
+
+        let key = [7u8; 32];
+        let state = node.export(&key);
+        assert_eq!(state.pending_sends.len(), 2);
+
+        let restored =
+            Node::restore(&state, Box::new(net.endpoint("pending-restored")), &key).unwrap();
+        assert!(restored.pending_relay.is_empty());
+        assert_eq!(restored.pending_sends.len(), 2);
+
+        let mut got: Vec<(String, String, Vec<u8>)> = restored
+            .pending_sends
+            .iter()
+            .map(|p| (p.contact_id.clone(), p.msg_id.clone(), p.bytes.clone()))
+            .collect();
+        got.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            got,
+            vec![
+                (
+                    "contact-a".to_string(),
+                    "msg-a".to_string(),
+                    vec![1, 2, 3, 4],
+                ),
+                (
+                    "contact-b".to_string(),
+                    "msg-b".to_string(),
+                    vec![5, 6, 7, 8],
+                ),
+            ]
+        );
     }
 }

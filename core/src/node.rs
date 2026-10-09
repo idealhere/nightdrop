@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use vodozemac::olm::{Account, AccountPickle, Session, SessionPickle};
 use zeroize::Zeroize as _;
 
-use crate::api::{ChatMessage, Contact};
+use crate::api::{ChatMessage, Contact, GroupMessage};
 use crate::crypto;
 use crate::identity::{LocalIdentity, PreKeyBundle};
 use crate::relay_client::RelayClient;
@@ -54,6 +54,10 @@ const MARK_UNVERIFIED: &[u8] = b"nightdrop/ctl/unverified/v1";
 /// Two markers for the screenshot-capability signal (#1), same shape as the verification pair: the
 /// state is *which* marker the receiver's ratchet decrypts, so there is no plaintext flag to flip.
 const MARK_BURNS_V1: &[u8] = b"nightdrop/ctl/burns/v1";
+/// How many requests to the standing address are remembered for replay detection.
+const MAX_ADDRESS_HELLOS: usize = 4096;
+/// Marker for the group capability signal (`Frame::Groups`).
+const MARK_GROUPS_V1: &[u8] = b"nightdrop/ctl/groups/v1";
 /// Prefix of a [`Frame::Version`] plaintext; the app version follows it (`"...:0.1.27"`).
 const MARK_VERSION_PREFIX: &[u8] = b"nightdrop/ctl/version/v1:";
 const MARK_CAPTURES_VISIBLE: &[u8] = b"nightdrop/ctl/captures-visible/v1";
@@ -118,10 +122,42 @@ fn relay_unwrap(own_identity_key: &str, blob: &[u8]) -> Result<Vec<u8>> {
     crate::storage::open(&relay_wrap_key(own_identity_key), blob)
 }
 
-/// Build a [`RelayClient`] for an arbitrary relay address: over Tor via the transport's dialer
-/// (anonymized), or a direct connection when the transport can't dial relays by address
-/// (tests/TCP). Free fn (not a method) so call sites keep disjoint field borrows (#17).
+/// Build a [`RelayClient`] for an arbitrary relay address.
+///
+/// HTTPS addresses are always reached by the direct TLS relay client, independent of the current
+/// peer transport. This matters after an HTTPS-first client has lazily bootstrapped Tor: operator
+/// / recipient-advertised HTTPS backup relays must keep working instead of being handed to arti as
+/// if they were onion names.
+///
+/// Non-HTTPS addresses use the transport's relay dialer when available (Tor anonymizes onion
+/// relays), or plain TCP for local/tests. A malformed HTTPS URL becomes an erroring dialer rather
+/// than falling through to plain TCP, which would risk handing URL text to the system resolver.
 fn build_relay(transport: &dyn Transport, addr: &str) -> RelayClient {
+    if addr.starts_with("https://") {
+        #[cfg(feature = "https-relay")]
+        {
+            let dialer = match crate::relay_client::https::https_relay_dialer(addr) {
+                Ok(dialer) => dialer,
+                Err(error) => {
+                    let message = format!("invalid HTTPS relay endpoint: {error}");
+                    std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {
+                        Err(anyhow::anyhow!(message.clone()))
+                    })
+                }
+            };
+            return RelayClient::with_dialer_for(addr, dialer);
+        }
+        #[cfg(not(feature = "https-relay"))]
+        {
+            let message = "HTTPS relay support is not compiled into this build".to_string();
+            let dialer: crate::relay_client::RelayDialer =
+                std::sync::Arc::new(move |_request: &str| -> crate::Result<String> {
+                    Err(anyhow::anyhow!(message.clone()))
+                });
+            return RelayClient::with_dialer_for(addr, dialer);
+        }
+    }
+
     match transport.relay_dialer(addr) {
         Some(dialer) => RelayClient::with_dialer_for(addr, dialer),
         None => RelayClient::new(addr),
@@ -192,6 +228,8 @@ pub(crate) struct DrainJob {
 pub(crate) struct RelayHarvest {
     blobs: Vec<Vec<u8>>,
     reachability: Vec<(String, bool)>,
+    /// Whether any fragment on the baked-in primary relay answered this round.
+    primary_reachable: Option<bool>,
     /// The plan's settling epoch, if every one of its jobs on every relay answered this round.
     settled: Option<u64>,
 }
@@ -282,9 +320,14 @@ pub(crate) fn drain_relay_mailboxes(plan: &RelayDrainPlan) -> RelayHarvest {
         skipped_jobs,
         blobs.len()
     );
+    let primary_reachable = tally
+        .iter()
+        .find(|(addr, _, _)| addr.is_none())
+        .map(|(_, ok, _)| *ok > 0);
     RelayHarvest {
         blobs,
         reachability: answered,
+        primary_reachable,
         settled: plan.settles.filter(|_| settle_ok),
     }
 }
@@ -424,7 +467,8 @@ fn user_frame_sender(frame: &Frame) -> Option<String> {
         | Frame::Media { from, .. }
         | Frame::MediaIncoming { from, .. }
         | Frame::Edit { from, .. }
-        | Frame::Unsend { from, .. } => Some(from.clone()),
+        | Frame::Unsend { from, .. }
+        | Frame::Group { from, .. } => Some(from.clone()),
         _ => None,
     }
 }
@@ -538,6 +582,28 @@ pub struct Node {
     /// for that chat until the app is restarted. Not persisted — re-announcing on a fresh launch
     /// is cheap and self-heals.
     burns_announced: std::collections::HashSet<String>,
+    /// Contacts this run has successfully told that we understand group frames. Per run and
+    /// success-gated, like [`burns_announced`](Self::burns_announced).
+    groups_announced: std::collections::HashSet<String>,
+    /// Contacts whose build has announced that it understands group frames (`Frame::Groups`).
+    /// Persisted: it is a fact about the peer, learned once.
+    groups_peers: std::collections::HashSet<String>,
+    /// Group members we offered an introduction to (by identity key): their `Hello` is accepted
+    /// without asking, because joining the group was the consent. In memory only — if it is lost,
+    /// that `Hello` simply becomes an ordinary request.
+    intro_expected: std::collections::HashSet<String>,
+    /// The public half of our standing address's pre-key ([`Node::my_address`]); `None` until
+    /// the address is first asked for. Persisted: the address must stay the same.
+    address_key: Option<String>,
+    /// Chats that began with a request to the standing address. They wait for the user: a code
+    /// is shown to one person, an address can reach anyone it was passed on to.
+    address_requests: std::collections::HashSet<String>,
+    /// Digests of the requests already received at the standing address. An ordinary pre-key
+    /// cannot be used twice, so a replayed first message fails by itself; the address key can
+    /// be, so a replay is recognised here instead and dropped.
+    address_hellos: Vec<String>,
+    /// Group chats, by group id (`node/groups.rs`).
+    groups: HashMap<String, groups::Group>,
     /// This build's app version (`"0.1.27"`), set by the app via [`set_app_version`]
     /// (Self::set_app_version) — the core crate does not know it. `None` until set, and nothing is
     /// announced until then: a guessed version would be worse than none.
@@ -604,18 +670,15 @@ pub struct Node {
     /// the "your relay is offline — add a backup" warning. Absent = not yet probed (treated as up).
     relay_reachable: std::collections::HashMap<String, bool>,
     /// Sent messages that reached neither the peer directly nor any relay yet — typically because
-    /// arti's Tor circuits were still cold when the user hit send. Re-queued on every relay poll
-    /// (which also warms arti) until a relay accepts the copy, so a message composed during Tor
-    /// warm-up still gets delivered instead of silently failing. In-memory only; a restart drops
-    /// the retry (the message stays "queued" in history), and the common case — app kept open
-    /// through the ~warm-up window — recovers on its own.
+    /// the active route was unavailable when the user hit send. Re-queued on every relay poll until
+    /// a relay accepts the exact sealed frame. Persisted together with pending_sends so a restart or
+    /// HTTPS→Tor transport rebuild retries the same ciphertext without advancing the ratchet again.
     pending_relay: Vec<PendingRelaySend>,
-    /// Messages composed while a **non-synchronous** transport (Tor) is in use: [`Node::send`]
-    /// seals + stores them "queued" and defers the network here so composing never blocks the UI
-    /// on a dial. The poller drains this via [`plan_pending_sends`](Self::plan_pending_sends),
-    /// attempting direct-peer delivery with relay fallback. In-memory only, and drained on the very
-    /// next poll tick (~80 ms), so a restart in that window just leaves the message "queued" — the
-    /// same recovery profile as [`pending_relay`](Self::pending_relay).
+    /// Messages composed while a non-synchronous transport is in use: Node::send seals + stores
+    /// them "queued" and defers network I/O so composing never blocks the UI on a dial. The poller
+    /// drains this via plan_pending_sends, attempting direct delivery with relay fallback. The exact
+    /// sealed bytes are persisted until an outcome is applied, so a process/core rebuild cannot
+    /// strand a ratchet-advanced message.
     pending_sends: Vec<PendingRelaySend>,
     /// Authenticated `Closed` signals (chat deletes, §11.6) that reached neither the peer nor any
     /// relay when the chat was torn down (arti still cold, or the relay briefly unreachable). Unlike
@@ -664,6 +727,10 @@ pub struct Node {
     /// peer is offline" and "this device cannot reach the network": the relay is dialled over the
     /// same Tor path, so if it answers, our circuits work and an unreachable peer is their problem.
     relay_ever_succeeded: bool,
+    /// Consecutive relay-drain rounds where the primary answered no fragment. Used only by the
+    /// relay-only HTTPS transport to trigger the lazy Tor/WebTunnel fallback without requiring a
+    /// user to send several messages first. A successful primary round resets it.
+    primary_relay_failures: u32,
     /// `(peer, id)` for every user message we have **accepted**, owed a [`Frame::Delivered`].
     ///
     /// Recorded by the frame handlers themselves, at the point of acceptance, because that is the
@@ -877,6 +944,7 @@ struct PendingInvite {
 
 mod backup;
 mod frames;
+mod groups;
 mod mailbox;
 mod messaging;
 mod pairing;
@@ -904,6 +972,13 @@ impl Node {
             last_invite_code: None,
             captures_visible: None,
             burns_announced: std::collections::HashSet::new(),
+            groups_announced: std::collections::HashSet::new(),
+            groups_peers: std::collections::HashSet::new(),
+            intro_expected: std::collections::HashSet::new(),
+            address_key: None,
+            address_requests: std::collections::HashSet::new(),
+            address_hellos: Vec::new(),
+            groups: HashMap::new(),
             app_version: None,
             version_announced: std::collections::HashSet::new(),
             mailbox_announced: std::collections::HashSet::new(),
@@ -938,6 +1013,7 @@ impl Node {
             direct_failures: 0,
             direct_ever_succeeded: false,
             relay_ever_succeeded: false,
+            primary_relay_failures: 0,
         }
     }
 
@@ -984,6 +1060,61 @@ impl Node {
     /// Require explicit approval of inbound chat requests (the recipient-side bouncer).
     pub fn set_require_authorization(&mut self, require: bool) {
         self.require_authorization = require;
+    }
+
+    /// Our standing address: a `cyberdog://pair?…` link that does not expire and may be given
+    /// to any number of people. Whoever has it can send a chat request, which then waits for
+    /// approval ([`address_requests`](Self::address_requests)). It carries a reusable pre-key in
+    /// place of a one-time one; `static=1` only marks it for a reader.
+    pub fn my_address(&mut self) -> Result<String> {
+        if self.address_key.is_none() {
+            self.address_key = self.identity.new_address_key();
+            self.dirty = true;
+        }
+        let key = self
+            .address_key
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("could not create an address"))?;
+        Ok(format!(
+            "cyberdog://pair?addr={}&ik={}&otk={}&static=1",
+            self.address(),
+            self.identity_key(),
+            key
+        ))
+    }
+
+    /// The pending requests that came through the standing address, by contact id. The app must
+    /// not accept these on the user's behalf.
+    pub fn address_requests(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .address_requests
+            .iter()
+            .filter(|id| {
+                self.chats
+                    .get(*id)
+                    .is_some_and(|c| !c.authorized && !c.closed)
+            })
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// Record a first message that used the address key. `false` if this very message was seen
+    /// before — a replay, to be dropped.
+    fn note_address_hello(&mut self, message: &WireOlm) -> bool {
+        use sha2::{Digest, Sha256};
+        let bytes = serde_json::to_vec(message).unwrap_or_default();
+        let digest = base64_handle(Sha256::digest(&bytes).as_slice());
+        if self.address_hellos.contains(&digest) {
+            return false;
+        }
+        if self.address_hellos.len() >= MAX_ADDRESS_HELLOS {
+            self.address_hellos.remove(0);
+        }
+        self.address_hellos.push(digest);
+        self.dirty = true;
+        true
     }
 
     /// Number of pending inbound requests, without cloning the contacts. The background
@@ -1860,6 +1991,27 @@ fn render_safety_number(digest: &[u8; 32]) -> String {
     groups.join(" ")
 }
 
+/// The persisted form of a UI [`ChatMessage`]; inverse of [`persisted_to_message`].
+fn message_to_persisted(m: &ChatMessage) -> PersistedMessage {
+    PersistedMessage {
+        from_me: m.from_me,
+        text: m.text.clone(),
+        system: m.system,
+        msg_id: m.msg_id.clone(),
+        edited: m.edited,
+        at: m.at,
+        delivery: m.delivery.clone(),
+        kind: m.kind.clone(),
+        mime: m.mime.clone(),
+        media_id: m.media_id.clone(),
+        media_size: m.media_size,
+        transfer_id: m.transfer_id.clone(),
+        thumb_id: m.thumb_id.clone(),
+        burn_secs: m.burn_secs,
+        viewed_at: m.viewed_at,
+    }
+}
+
 /// Rebuild a UI [`ChatMessage`] from its persisted form (restore + scoped-backup merge).
 fn persisted_to_message(m: &crate::storage::PersistedMessage) -> ChatMessage {
     ChatMessage {
@@ -1888,6 +2040,69 @@ fn make_tombstone(msg: &mut ChatMessage) {
     msg.kind = "deleted".to_string();
     msg.edited = false;
     msg.delivery = String::new();
+}
+
+/// Whether `msg` is an attachment that `id` names. Attachments have no `msg_id`; the id both
+/// sides share is the `transfer_id`.
+fn is_attachment_named(msg: &ChatMessage, id: &str) -> bool {
+    matches!(msg.kind.as_str(), "image" | "video" | "audio")
+        && !msg.transfer_id.is_empty()
+        && msg.transfer_id == id
+}
+
+/// Turn an unsent attachment into the same "deleted" tombstone a text message becomes, and return
+/// the ids of its sealed files for the caller to delete. The `transfer_id` is kept on purpose: a
+/// second copy of the attachment can still be on its way (a relay copy next to a direct one), and
+/// the receive path uses the id to recognise it and drop it instead of bringing the photo back.
+fn make_attachment_tombstone(msg: &mut ChatMessage) -> Vec<String> {
+    let files = [
+        std::mem::take(&mut msg.media_id),
+        std::mem::take(&mut msg.thumb_id),
+    ]
+    .into_iter()
+    .filter(|id| !id.is_empty())
+    .collect();
+    make_tombstone(msg);
+    msg.mime = String::new();
+    msg.media_size = 0;
+    msg.burn_secs = 0;
+    msg.viewed_at = 0;
+    files
+}
+
+/// Delete an unsent attachment's files: the sealed copies in the media store (`dir`) and any
+/// decrypted copy left in the scratch dir beside it from opening the attachment in a player.
+fn remove_attachment_files(dir: &str, ids: &[String]) {
+    let open_cache = std::path::Path::new(dir).with_file_name("nightdrop-open");
+    for id in ids {
+        let _ = std::fs::remove_file(format!("{dir}/{id}.bin"));
+        if let Ok(entries) = std::fs::read_dir(&open_cache) {
+            for entry in entries.flatten() {
+                if entry.path().file_stem().and_then(|s| s.to_str()) == Some(id.as_str()) {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+}
+
+/// The burn timer that means **view once**: a photo the recipient may open a single time.
+///
+/// No new frame and no new field — it rides the existing burn path as a reserved timer value, so
+/// the content, the sealing and the capability check are exactly the burn message's. What the
+/// value changes is what the recipient keeps: a "viewed" marker in place of the photo instead of
+/// an empty gap. Nothing extra is sent — whether the sender hears that it was opened is still the
+/// recipient's opt-in burn receipt, exactly as for any burn message; otherwise the sender's copy
+/// simply goes at the 24h horizon. A build that predates this treats the value as a one-second
+/// burn, which is still ephemeral: it degrades towards deleting, never towards keeping.
+pub(crate) const VIEW_ONCE_SECS: u64 = 1;
+
+/// Turn a view-once photo that has been opened into a "viewed" marker, in place. Same clearing
+/// as [`make_burn_tombstone`]: only its position and time survive, and the caller deletes the
+/// sealed files.
+fn make_viewed_once_tombstone(msg: &mut ChatMessage) {
+    make_burn_tombstone(msg);
+    msg.kind = "viewed_once".to_string();
 }
 
 /// Turn an unopened burn message that expired into a "burn message expired" marker, in place.
@@ -2190,6 +2405,10 @@ fn base64_handle(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests_a;
 #[cfg(test)]
+mod tests_address;
+#[cfg(test)]
 mod tests_b;
+#[cfg(test)]
+mod tests_groups;
 #[cfg(test)]
 mod tests_mailbox;

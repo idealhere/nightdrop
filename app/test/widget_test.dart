@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:night_drop/src/app.dart';
 import 'package:night_drop/src/core/mock_nightdrop_core.dart';
@@ -13,7 +14,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // After creating an identity we land on the (empty) chat list.
-    expect(find.text('Chats'), findsOneWidget);
-    expect(find.text('New chat'), findsOneWidget);
+    expect(find.text('Chats'), findsWidgets);
+    expect(find.byKey(const ValueKey('new-action')), findsOneWidget);
   });
 }

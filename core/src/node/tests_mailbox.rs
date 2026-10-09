@@ -955,3 +955,36 @@ fn receipt_survives_a_dead_connection(synchronous: bool) {
     alice.poll_relay().unwrap();
     assert_eq!(delivery(&alice), "delivered");
 }
+
+#[test]
+fn relay_only_health_triggers_after_failed_primary_rounds() {
+    let mut node = Node::new(Box::new(
+        crate::transport::relay_only::RelayOnlyTransport::new(),
+    ));
+    assert!(!node.direct_path_wedged());
+
+    for attempt in 1..=3 {
+        node.apply_relay_harvest(RelayHarvest {
+            blobs: Vec::new(),
+            reachability: Vec::new(),
+            primary_reachable: Some(false),
+            settled: None,
+        })
+        .unwrap();
+        assert_eq!(
+            node.direct_path_wedged(),
+            attempt >= 3,
+            "relay-only fallback threshold should be three complete failed primary rounds",
+        );
+    }
+
+    // One healthy round proves the fast route recovered and clears the fallback signal.
+    node.apply_relay_harvest(RelayHarvest {
+        blobs: Vec::new(),
+        reachability: Vec::new(),
+        primary_reachable: Some(true),
+        settled: None,
+    })
+    .unwrap();
+    assert!(!node.direct_path_wedged());
+}

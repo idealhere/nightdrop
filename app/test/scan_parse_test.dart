@@ -12,6 +12,9 @@ void main() {
   test('rejects non-invite QR contents', () {
     expect(isNightdropInvite('https://example.com'), isFalse);
     expect(isNightdropInvite('nightdrop://pair?addr=abc'), isFalse); // no ik
+    // The scheme written since the rename, and the one older builds wrote, are both invites.
+    expect(isNightdropInvite('cyberdog://pair?addr=abc.onion&ik=KEY&otk=OTK'), isTrue);
+    expect(isNightdropInvite('other://pair?addr=abc.onion&ik=KEY&otk=OTK'), isFalse);
     expect(isNightdropInvite('not a uri at all %%%'), isFalse);
     expect(isNightdropInvite('nightdrop://other?ik=KEY'), isFalse);
     expect(isNightdropInvite(''), isFalse);

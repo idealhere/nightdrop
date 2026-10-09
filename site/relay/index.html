@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberDog — private messenger</title>
+<meta name="description" content="CyberDog is an end-to-end encrypted messenger for one-to-one chats and small groups. No phone number, no email, no account.">
+<meta name="theme-color" content="#f4f7fb">
+<link rel="icon" type="image/png" href="assets/icon-192.png">
+<style>
+  :root {
+    --bg: #f3f6fb; --line: #e2e8f1; --line-2: #d3dcea;
+    --ink: #0b111d; --ink-2: #5c697d; --muted: #8e99aa;
+    --blue: #1f6fff; --cyan: #19b8f2; --blue-d: #1557d8;
+    --grad: linear-gradient(100deg, #2aa8ff, #1f6fff 55%, #5a5cff);
+    --glass: rgba(255,255,255,.66); --shadow: 0 18px 44px rgba(30, 60, 110, .12); --shadow-s: 0 6px 20px rgba(30, 60, 110, .07);
+    --gap: 12px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased;
+    font: 15px/1.45 "Segoe UI Variable Display", "Segoe UI", -apple-system, system-ui, Roboto, "Helvetica Neue", Arial, sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; height: auto; display: block; }
+  h1, h2, h3, p { margin: 0; }
+  /* The backdrop sits behind the top of the page at 80% of full-bleed size, washed out, and
+     fades into the plain page colour before its lower edge. */
+  .page { overflow: hidden; background: linear-gradient(180deg, rgba(248,250,253,.68), rgba(248,250,253,.78) 520px, rgba(246,248,252,.90) 760px, #f3f6fb 900px), url(assets/background.webp) center top / max(100%, 1600px) auto no-repeat, var(--bg); }
+  .wrap { width: min(1330px, 100% - 110px); margin: 0 auto; }
+  .blue { background: linear-gradient(100deg, #1f6fff, #2aa8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .34em; text-transform: uppercase; }
+  .glass { background: var(--glass); backdrop-filter: blur(12px) saturate(1.3); border: 1px solid rgba(255,255,255,.95); box-shadow: var(--shadow-s); }
+
+  /* Header */
+  .top { position: sticky; top: 0; z-index: 20; }
+  .bar { display: flex; align-items: center; gap: 20px; width: min(1080px, 100% - 32px); margin: 0 auto; padding: 10px 18px 12px 22px; border-radius: 0 0 34px 34px; }
+  .bar .logo img { height: 58px; width: auto; }
+  .bar nav { display: flex; gap: clamp(16px, 2.6vw, 36px); margin: 0 auto 0 48px; font-size: 15px; color: var(--ink); }
+  .bar nav a:hover { color: var(--blue); }
+  .lang { display: inline-flex; border: 1px solid var(--line-2); border-radius: 999px; overflow: hidden; font-size: 12px; font-weight: 600; }
+  .lang button { border: 0; background: transparent; padding: 6px 10px; color: var(--muted); cursor: pointer; font: inherit; }
+  .lang button[aria-pressed="true"] { background: #e8f1ff; color: var(--blue-d); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 14px; padding: 14px 40px; border-radius: 999px;
+    font-weight: 600; font-size: 15.5px; border: 1px solid rgba(255,255,255,.95); background: rgba(255,255,255,.8); color: var(--ink); white-space: nowrap;
+    box-shadow: var(--shadow-s); transition: transform .18s, box-shadow .18s; }
+  .btn:hover, .btn:focus-visible { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .btn.primary { border-color: transparent; background: var(--grad); color: #fff; box-shadow: 0 10px 26px rgba(31,111,255,.34); }
+  .btn.primary:hover, .btn.primary:focus-visible { box-shadow: 0 14px 34px rgba(31,111,255,.46); }
+  .btn.small { padding: 9px 22px; font-size: 13.5px; }
+  .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+  .arrow::after { content: "→"; font-weight: 400; font-size: 1.15em; }
+
+  /* Hero: text on the left; three phones on a glass platform and the dog on the right. */
+  .hero { overflow: hidden; margin-top: -82px; padding: 82px 0 26px; }
+  .hero .wrap { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px; align-items: center; padding-top: 14px; }
+  .hero h1 { margin-top: 12px; font-size: clamp(36px, 3.95vw, 57px); line-height: 1.01; letter-spacing: -.04em; font-weight: 780; white-space: nowrap; }
+  /* The Russian headline is longer: a size down, so that it stays clear of the phones. */
+  html[lang="ru"] .hero h1 { font-size: clamp(32px, 3.4vw, 49px); }
+  .hero .lead { margin-top: 20px; max-width: 470px; color: var(--ink-2); font-size: clamp(15px, 1.2vw, 17.5px); line-height: 1.4; }
+  .hero .cta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 24px; }
+  .hero .cta .btn { padding: 16px 44px; font-size: 16.5px; }
+  .hero .cta .btn.primary { padding: 16px 54px; }
+  .hero .trust { margin-top: 38px; color: var(--muted); font-size: 14px; }
+  .stage { position: relative; height: clamp(450px, 37.5vw, 545px); }
+  /* The glow behind and the glass platform under the phones and the dog make them one scene. */
+  .stage::before { content: ""; position: absolute; left: 4%; right: -22%; top: 4%; bottom: 2%; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(255,255,255,.9), rgba(200,230,255,.45) 60%, transparent); filter: blur(14px); }
+  .stage .dog { position: absolute; z-index: 4; right: -35%; bottom: -30%; height: 142%; width: auto; max-width: none;
+    filter: drop-shadow(0 24px 40px rgba(28,62,120,.22)); }
+  /* The guardian dog is cut from the reference scene, so its edges melt into the backdrop too. */
+  .stage .dog.guardian { z-index: 2; right: -7.4%; bottom: -3%; height: 100%; filter: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent 4%, #000 26%, #000 93%, transparent), linear-gradient(180deg, transparent, #000 8%, #000 93%, transparent);
+    -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent 4%, #000 26%, #000 93%, transparent), linear-gradient(180deg, transparent, #000 8%, #000 93%, transparent); mask-composite: intersect; }
+  /* The phones are the picture of the app; its edges melt into the backdrop. */
+  .stage .phones { position: absolute; z-index: 3; left: -4%; bottom: -6%; height: 107%; width: auto; max-width: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 86%, transparent), linear-gradient(180deg, transparent, #000 6%, #000 88%, transparent);
+    -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent, #000 9%, #000 86%, transparent), linear-gradient(180deg, transparent, #000 6%, #000 88%, transparent); mask-composite: intersect; }
+
+  main { display: grid; gap: 34px; padding: 4px 0 26px; }
+  section { scroll-margin-top: 70px; }
+  /* One row of five feature cards. */
+  .features { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--gap); }
+  .feature { display: flex; gap: 14px; align-items: center; padding: 22px 20px; border-radius: 18px; min-height: 104px;
+    background: rgba(255,255,255,.58); box-shadow: 0 4px 16px rgba(30,60,110,.045); }
+  .feature img { flex: none; width: 46px; }
+  .feature h3 { font-size: 15px; font-weight: 680; line-height: 1.2; letter-spacing: -.01em; }
+  .feature p { margin-top: 4px; color: var(--ink-2); font-size: 12px; line-height: 1.35; }
+
+  /* How it works: text on the left, four steps on the right with the illustration between them. */
+  .how { display: grid; grid-template-columns: minmax(0, 1.9fr) repeat(2, minmax(0, 1fr)) minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); gap: 26px; align-items: center; padding: 0 0 0 20px; }
+  .how h2 { margin-top: 10px; font-size: clamp(30px, 3.2vw, 46px); line-height: 1; letter-spacing: -.04em; font-weight: 790; }
+  .how .title p.t { margin-top: 12px; max-width: 320px; color: var(--ink-2); font-size: 13.5px; line-height: 1.35; }
+  .how .title .btn { margin-top: 18px; color: var(--blue-d); padding: 7px 28px; font-size: 12.5px; }
+  .step { position: relative; padding: 20px 12px 22px; border-radius: 20px; text-align: center; min-height: 190px; align-self: stretch;
+    background: rgba(255,255,255,.46); border-color: rgba(255,255,255,.8); box-shadow: none; }
+  .step .n { position: absolute; left: 10px; top: 10px; padding: 2px 8px; border-radius: 9px; background: #e8f1ff; color: var(--blue-d); font-weight: 700; font-size: 11px; }
+  .step svg { display: block; margin: 16px auto 0; width: 54px; height: 54px; padding: 13px; border-radius: 50%; color: var(--blue); border: 1px solid #cfe0ff; background: #f6faff; }
+  .step.line::after { content: ""; position: absolute; top: 63px; left: calc(50% + 38px); width: calc(50% - 4px); height: 1px; background: #8fd0f5; }
+  .step h3 { margin-top: 14px; font-size: 13.5px; font-weight: 680; letter-spacing: -.01em; } .step p { margin-top: 5px; color: var(--ink-2); font-size: 12px; line-height: 1.35; }
+  .how .art { width: 100%; max-width: 290px; margin: -20px auto; filter: drop-shadow(0 14px 26px rgba(31,111,255,.22)); animation: float 9s ease-in-out infinite; }
+
+  /* Download: the title on the left, platform tiles on the right. */
+  .strip { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 30px; align-items: center; padding: 30px 34px 30px 44px; border-radius: 28px; }
+  .strip h2 { margin-top: 10px; font-size: clamp(28px, 2.9vw, 42px); line-height: 1.02; letter-spacing: -.04em; font-weight: 790; }
+  .strip p.t { margin-top: 12px; max-width: 400px; color: var(--ink-2); font-size: 14px; line-height: 1.35; }
+  .platforms { display: flex; gap: 18px; }
+  .platform { display: grid; justify-items: center; align-content: center; gap: 1px; width: 136px; height: 124px; border-radius: 22px; border: 1px solid rgba(255,255,255,.95); background: rgba(255,255,255,.72); box-shadow: 0 6px 18px rgba(30,60,110,.06);
+    transition: transform .2s, box-shadow .2s, border-color .2s; }
+  a.platform:hover, a.platform:focus-visible { transform: translateY(-3px); border-color: var(--blue); box-shadow: var(--shadow); }
+  .platform svg { width: 32px; height: 32px; color: var(--blue); }
+  .platform b { margin-top: 6px; font-size: 14px; font-weight: 650; } .platform small { color: var(--muted); font-size: 11.5px; }
+  .platform i { margin-top: 3px; width: 15px; height: 15px; border-radius: 50%; border: 1px solid #cfe0ff; color: var(--blue); font-style: normal; font-size: 10px; line-height: 13px; text-align: center; }
+  .platform.off { background: rgba(255,255,255,.4); box-shadow: none; } .platform.off svg { color: #a3adbc; } .platform.off b { color: var(--ink-2); }
+
+  /* Closing block: large and light, the dog standing inside it. */
+  .final { grid-template-columns: minmax(0, .95fr) minmax(0, 1.1fr) auto; gap: 34px; padding: 6px 56px 6px 30px; border-radius: 32px; overflow: hidden;
+    background: radial-gradient(48% 120% at 18% 60%, rgba(196,230,255,.75), transparent 72%), linear-gradient(110deg, rgba(255,255,255,.82), rgba(255,255,255,.62)); }
+  .final img { width: 100%; max-width: 330px; margin: -4px auto -18px; filter: drop-shadow(0 18px 26px rgba(28,62,120,.2)); }
+  .final h2 { margin-top: 12px; font-size: clamp(26px, 2.8vw, 40px); line-height: 1.04; letter-spacing: -.04em; font-weight: 790; }
+  .final .cta { text-align: center; } .final .btn { padding: 18px 64px; font-size: 17px; } .final small { display: block; margin-top: 12px; color: var(--muted); font-size: 11.5px; }
+
+  footer { padding: 2px 0 12px; color: var(--muted); font-size: 11.5px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 4px 22px; justify-content: space-between; }
+  footer a { text-decoration: underline; }
+
+  .reveal { opacity: 0; transform: translateY(12px); transition: opacity .6s, transform .6s; }
+  .reveal.in { opacity: 1; transform: none; }
+  @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -7px; } }
+
+  @media (max-width: 1180px) {
+    .wrap { width: min(1330px, 100% - 48px); }
+    .hero .wrap { grid-template-columns: 1fr; } .hero h1 { white-space: normal; }
+    .stage { height: 480px; max-width: 720px; margin-top: 26px; }
+    .stage .dog { right: -34%; height: 136%; bottom: -34%; }
+    .features { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .how { grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0; gap: 12px; } .how .title { grid-column: 1 / span 3; } .how .art { grid-column: 4; grid-row: 1; max-width: 170px; margin: 0 auto; }
+    .step.line::after { display: none; }
+    .strip { grid-template-columns: 1fr; padding: 18px; } .platforms { flex-wrap: wrap; } .platform { flex: 1 1 120px; width: auto; }
+    .final { padding: 18px; gap: 16px 24px; grid-template-columns: 240px minmax(0, 1fr); } .final img { margin: 0; grid-row: span 2; }
+    .final .cta { text-align: left; }
+  }
+  @media (max-width: 700px) {
+    .wrap { width: min(1330px, 100% - 28px); }
+    .page { background-size: auto 760px; }
+    .bar { gap: 8px; padding: 4px 10px 6px; } .bar .logo img { height: 40px; } .bar nav, .bar .btn { display: none; } .bar .lang { margin-left: auto; }
+    .hero { margin-top: -70px; padding-top: 70px; } .hero .wrap { padding-top: 18px; } .hero .cta .btn { flex: 1 1 100%; } .hero .trust { margin-top: 20px; }
+    .stage { height: auto; margin-top: 18px; } .stage::before, .stage .dog { display: none; }
+    .stage .phones { position: static; display: block; height: auto; width: 116%; margin: 0 -8%; }
+    .features { grid-template-columns: 1fr; }
+    .how { grid-template-columns: repeat(2, minmax(0, 1fr)); } .how .title { grid-column: 1 / -1; } .how .art { display: none; }
+    .platforms { gap: 10px; } .platform { flex: 1 1 28%; }
+    main { gap: 24px; }
+    .final { grid-template-columns: 1fr; text-align: center; padding: 22px 18px; } .final img { margin: 0 auto; grid-row: auto; max-width: 280px; } .final .cta { text-align: center; } .final .btn { padding: 15px 44px; }
+    .feature { min-height: 0; padding: 16px; } .step { min-height: 0; } .strip { padding: 22px 18px; border-radius: 22px; } .platform { height: 104px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="top">
+  <div class="bar glass">
+    <a class="logo" href="#top"><img src="assets/logo-horizontal.webp" width="720" height="211" alt="CyberDog — Private Messenger"></a>
+    <nav>
+      <a href="#features" data-ru="Возможности">Features</a>
+      <a href="security.html" data-ru="Приватность">Privacy</a>
+      <a href="#how" data-ru="Как это работает">How It Works</a>
+      <a href="download.html" data-ru="Скачать">Download</a>
+    </nav>
+    <span class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="ru" aria-pressed="false">RU</button>
+    </span>
+    <a class="btn primary small arrow" href="download.html" data-ru="Скачать CyberDog">Get CyberDog</a>
+  </div>
+</div>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow" data-ru="Приватно · Зашифровано · Без аккаунта">Secure · Private · Connected</p>
+      <h1><span data-ru="Личная переписка">Private messaging</span><br><span data-ru="для">for a</span> <span class="blue" data-ru="свободного завтра">freer tomorrow</span></h1>
+      <p class="lead" data-ru="CyberDog — мессенджер со сквозным шифрованием, в котором приватность на первом месте. Без номера телефона, без почты, без аккаунта.">CyberDog is an end-to-end encrypted messenger that puts your privacy first. No phone number, no email, no account.</p>
+      <div class="cta">
+        <a class="btn primary arrow" href="download.html" data-ru="Скачать CyberDog">Download CyberDog</a>
+        <a class="btn" href="#how" data-ru="Подробнее">Learn More</a>
+      </div>
+      <p class="trust" data-ru="Более приватный интернет. Вместе.">A more private internet. Together.</p>
+    </div>
+    <div class="stage" aria-hidden="true">
+      <img class="dog guardian" src="assets/mascot-guardian.webp" width="524" height="1000" alt="">
+
+      <img class="phones" src="assets/phones.webp" width="1172" height="979" alt="">
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="features" class="features">
+    <article class="glass feature reveal"><img src="assets/icon-encrypted.webp" width="240" height="219" alt=""><div>
+      <h3 data-ru="Сквозное шифрование">End-to-end encrypted</h3>
+      <p data-ru="Читать сообщения можете только вы и собеседник.">Only you and your contacts can read your messages.</p></div></article>
+    <article class="glass feature reveal"><img src="assets/icon-identity.webp" width="240" height="242" alt=""><div>
+      <h3 data-ru="Без аккаунта">No account</h3>
+      <p data-ru="Ни номера телефона, ни почты, ни имени.">No phone number, no email, no real-world identity.</p></div></article>
+    <article class="glass feature reveal"><img src="assets/icon-relay.webp" width="240" height="231" alt=""><div>
+      <h3 data-ru="Запечатанная доставка">Sealed delivery</h3>
+      <p data-ru="Сервер передаёт пакет, но открыть его не может.">The server passes the packet on and cannot open it.</p></div></article>
+    <article class="glass feature reveal"><img src="assets/icon-local.webp" width="240" height="230" alt=""><div>
+      <h3 data-ru="Данные на устройстве">Local-first storage</h3>
+      <p data-ru="Переписка хранится у вас, а не в облаке.">Your data stays on your device, not in the cloud.</p></div></article>
+    <article class="glass feature reveal"><img src="assets/icon-open.webp" width="240" height="273" alt=""><div>
+      <h3 data-ru="Открытый код">Open source</h3>
+      <p data-ru="Прозрачный код, который можно проверить.">Transparent and open to audit.</p></div></article>
+  </section>
+
+  <section id="how" class="how">
+    <div class="title reveal">
+      <p class="eyebrow" data-ru="Как это работает">How it works</p>
+      <h2><span data-ru="Настоящая приватность.">Real privacy.</span><br><span class="blue" data-ru="Так задумано.">By design.</span></h2>
+      <p class="t" data-ru="Шифрование защищает содержание. Сервер и провайдер всё же видят ваш IP-адрес и время отправки.">Encryption protects what you say. The server and your provider still see your IP address and when you send.</p>
+      <a class="btn glass arrow" href="security.html" data-ru="О безопасности">About security</a>
+    </div>
+    <div class="glass step line reveal"><span class="n">01</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><h3 data-ru="Ваше сообщение">Your message</h3><p data-ru="Вы пишете собеседнику.">You send a message to your contact.</p></div>
+    <div class="glass step line reveal"><span class="n">02</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><h3 data-ru="Сквозное шифрование">End-to-end encryption</h3><p data-ru="Оно шифруется на вашем устройстве.">It is encrypted on your device.</p></div>
+    <img class="art reveal" src="assets/privacy.webp" width="1000" height="915" alt="">
+    <div class="glass step line reveal"><span class="n">03</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg><h3 data-ru="Передача">Sent sealed</h3><p data-ru="Сервер передаёт запечатанный пакет и удаляет его после доставки.">The server passes the sealed packet on and deletes it once delivered.</p></div>
+    <div class="glass step reveal"><span class="n">04</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.500-4 4.500-6 8-6s6.500 2 8 6"/></svg><h3 data-ru="Доставлено">Delivered securely</h3><p data-ru="Расшифровать и прочитать может только собеседник.">Only your contact can decrypt and read it.</p></div>
+  </section>
+
+  <section id="download" class="glass strip reveal">
+    <div>
+      <p class="eyebrow" data-ru="Доступно на ваших устройствах">Available on your devices</p>
+      <h2><span data-ru="Скачать">Download</span> Cyber<span class="blue">Dog</span></h2>
+      <p class="t" data-ru="Начните переписку сегодня. Бесплатно, с открытым кодом.">Start messaging privately today. Free and open source.</p>
+    </div>
+    <div class="platforms">
+      <a class="platform" href="download.html#windows"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.300 10.800 4.200v7.300H3zM11.900 4.100 21 2.800v8.700h-9.100zM3 12.600h7.800v7.300L3 18.800zM11.900 12.600H21v8.700l-9.100-1.300z"/></svg><b>Windows</b><small>Beta</small><i>↓</i></a>
+      <a class="platform" href="download.html#android"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.200 3.100 8.600 5.400A7 7 0 0 1 12 4.600c1.200 0 2.400.300 3.400.800l1.400-2.300.9.500-1.400 2.300A6 6 0 0 1 19 10H5a6 6 0 0 1 2.700-4.100L6.300 3.600zM5 11h14v7a1.500 1.500 0 0 1-1.500 1.500H16V22a1.300 1.300 0 0 1-2.600 0v-2.500h-2.800V22A1.300 1.300 0 0 1 8 22v-2.500H6.500A1.500 1.500 0 0 1 5 18z"/></svg><b>Android</b><small>Beta</small><i>↓</i></a>
+      <div class="platform off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="1.500"/><path d="M2 19h20"/></svg><b>macOS</b><small data-ru="Пока нет">Not yet</small></div>
+      <div class="platform off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><b>Linux</b><small data-ru="Пока нет">Not yet</small></div>
+      <div class="platform off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.700" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.500" width="10" height="19" rx="2.500"/><path d="M11 18.500h2"/></svg><b>iOS</b><small data-ru="Пока нет">Not yet</small></div>
+    </div>
+  </section>
+
+  <section class="glass strip final reveal">
+    <img src="assets/mascot-side.webp" width="1000" height="748" alt="">
+    <div>
+      <p class="eyebrow" data-ru="Более приватный интернет. Вместе.">A more private internet. Together.</p>
+      <h2 data-ru="За открытое и приватное будущее.">Join a more open and private future.</h2>
+    </div>
+    <div class="cta">
+      <a class="btn primary arrow" href="download.html" data-ru="Скачать CyberDog">Get CyberDog</a>
+      <small data-ru="Бесплатно · Открытый код · Без аккаунта">Free · Open Source · No Account Needed</small>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  <span><a href="security.html" data-ru="Безопасность">Security</a></span>
+  <span><span data-ru="Открытый код, AGPL-3.0 · основано на Night Drop">Open source, AGPL-3.0 · based on Night Drop</span> · <a href="https://github.com/idealhere/nightdrop" data-ru="исходники">source</a></span>
+</div></footer>
+</div>
+
+<script>
+(function () {
+  // Two languages in one page: English is the markup, Russian sits in data-ru. The choice is
+  // shared with the classic site.
+  var nodes = document.querySelectorAll('[data-ru]');
+  nodes.forEach(function (n) { n.setAttribute('data-en', n.textContent); });
+  var titles = { en: 'CyberDog — private messenger', ru: 'CyberDog — приватный мессенджер' };
+  function apply(lang) {
+    nodes.forEach(function (n) { n.textContent = n.getAttribute('data-' + lang); });
+    document.documentElement.lang = lang;
+    document.title = titles[lang];
+    document.querySelectorAll('.lang button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-lang') === lang));
+    });
+    try { localStorage.setItem('cyberdog-lang', lang); } catch (e) {}
+  }
+  var saved = null;
+  try { saved = localStorage.getItem('cyberdog-lang'); } catch (e) {}
+  if (saved === 'ru' || /[?&]ru\b/.test(location.search)) apply('ru');
+  document.querySelectorAll('.lang button').forEach(function (b) {
+    b.addEventListener('click', function () { apply(b.getAttribute('data-lang')); });
+  });
+
+  // Sections fade in as they are reached. Without the observer everything is simply visible.
+  var items = document.querySelectorAll('.reveal');
+  // `?static` shows everything at once: for a screenshot, or a reader who wants no fading.
+  if (!('IntersectionObserver' in window) || /[?&]static/.test(location.search)) {
+    items.forEach(function (i) { i.classList.add('in'); }); return;
+  }
+  var seen = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); seen.unobserve(e.target); } });
+  }, { rootMargin: '0px 0px -4% 0px' });
+  items.forEach(function (i) { seen.observe(i); });
+})();
+</script>
+</body>
+</html>

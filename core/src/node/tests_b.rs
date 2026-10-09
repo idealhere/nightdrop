@@ -285,6 +285,57 @@ fn unsending_a_delivered_message_tombstones_it_on_both_sides() {
 }
 
 #[test]
+fn unsending_a_photo_removes_it_and_its_file_on_both_sides() {
+    let key: StoreKey = [9u8; 32];
+    let dir = std::env::temp_dir().join(format!("nightdrop-unsendmedia-{}", std::process::id()));
+    let net = MemoryNetwork::new();
+    let mut alice = Node::new(Box::new(net.endpoint("alice")));
+    let mut bob = Node::new(Box::new(net.endpoint("bob")));
+    alice.set_media_store(format!("{}-a", dir.display()), key);
+    bob.set_media_store(format!("{}-b", dir.display()), key);
+    let bundle = alice.publish_bundle();
+    let alice_contact = bob.connect_with_bundle("alice", &bundle).unwrap();
+    alice.pump().unwrap();
+    let bob_contact = alice.contacts()[0].id.clone();
+
+    alice
+        .send_media(&bob_contact, &[1u8, 2, 3, 4], "image/png", "image", &[])
+        .unwrap();
+    bob.pump().unwrap();
+    let sent = alice.messages(&bob_contact).into_iter().last().unwrap();
+    let got = bob.messages(&alice_contact).into_iter().last().unwrap();
+    assert_eq!(got.kind, "image");
+    let file = |side: &str, id: &str| format!("{}-{side}/{id}.bin", dir.display());
+    assert!(std::path::Path::new(&file("a", &sent.media_id)).exists());
+    assert!(std::path::Path::new(&file("b", &got.media_id)).exists());
+
+    alice
+        .unsend_message(&bob_contact, &sent.transfer_id)
+        .unwrap();
+    bob.pump().unwrap();
+
+    let mine = alice.messages(&bob_contact).into_iter().last().unwrap();
+    assert_eq!(mine.kind, "deleted");
+    assert!(mine.media_id.is_empty());
+    assert!(
+        !std::path::Path::new(&file("a", &sent.media_id)).exists(),
+        "the sender's sealed file is gone"
+    );
+    let theirs = bob.messages(&alice_contact).into_iter().last().unwrap();
+    assert_eq!(theirs.kind, "deleted", "receiver's copy is tombstoned");
+    assert!(theirs.media_id.is_empty());
+    assert!(
+        !std::path::Path::new(&file("b", &got.media_id)).exists(),
+        "the receiver's sealed file is gone"
+    );
+    assert!(bob.media_bytes(&got.media_id).is_err());
+
+    for s in ["a", "b"] {
+        std::fs::remove_dir_all(format!("{}-{s}", dir.display())).ok();
+    }
+}
+
+#[test]
 fn unsending_a_queued_message_recalls_it_so_the_peer_never_sees_it() {
     let relay_addr = RelayServer::spawn("127.0.0.1:0").unwrap();
     let relay = RelayClient::new(relay_addr.to_string());

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CYBERDOG — анонимный мессенджер</title>
+<meta name="description" content="CYBERDOG — мессенджер для личных разговоров и небольших групп со сквозным шифрованием. Без номера телефона, без имени, без профиля.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#050816">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=3">
+<link rel="icon" href="favicon.ico?v=3" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #050816; --bg2: #090d1f; --surface: #0d1225; --soft: #11172c;
+    --border: rgba(130,120,255,.18); --border-on: rgba(130,90,255,.5);
+    --text: #f4f5fa; --text2: #a8aec5; --muted: #707892;
+    --accent: #7657ff; --accent-l: #9b7bff; --accent-d: #5638d7;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; color: var(--text); -webkit-font-smoothing: antialiased;
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: var(--bg); }
+  a { color: inherit; text-decoration: none; }
+  .page { min-height: 100%; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px clamp(16px, 6.5vw, 110px); border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; } .brand img { display: block; height: 40px; width: auto; }
+  
+  nav { display: flex; align-items: center; gap: clamp(14px, 2.6vw, 44px); font-size: 14px; }
+  .pill { padding: 8px 22px; border: 1px solid var(--border-on); border-radius: 999px; }
+  nav a:hover { color: var(--accent-l); }
+
+  main { flex: 1; display: grid; place-items: center; padding: clamp(10px, 2.4vh, 28px) clamp(16px, 6.5vw, 110px) 0; }
+  .hero { text-align: center; }
+  .appicon { display: block; width: clamp(96px, 19vh, 184px); height: auto; aspect-ratio: 1; margin: 0 auto;
+    border-radius: 22%; box-shadow: 0 0 50px rgba(118,87,255,.35); }
+  h1 { margin: clamp(10px, 2.2vh, 24px) 0 0; line-height: 0; }
+  h1 img { width: min(clamp(300px, 62vh, 620px), 86vw); height: auto; }
+  .tag { margin: clamp(8px, 1.6vh, 16px) 0 0; color: var(--accent-l); font-size: min(clamp(10px, 1.5vh, 14px), 2.5vw); letter-spacing: .5em; text-indent: .5em; }
+  .lead { margin: clamp(12px, 2.6vh, 28px) 0 0; font-size: clamp(17px, 2.6vh, 24px); }
+  .sub { margin: 6px 0 0; color: var(--text2); font-size: clamp(14px, 2vh, 19px); }
+  .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: clamp(14px, 3vh, 30px); }
+  .btn { display: inline-flex; align-items: center; gap: 12px; padding: clamp(11px, 1.9vh, 18px) clamp(22px, 2.4vw, 36px);
+    border-radius: 14px; font-weight: 600; font-size: clamp(15px, 2vh, 18px); border: 1px solid var(--border-on);
+    background: #0a0d22; transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .btn.main { border-color: transparent; background: linear-gradient(135deg, #7556ff, #5d37ee); box-shadow: 0 6px 30px rgba(118,87,255,.28); }
+  .btn:hover, .btn:focus-visible { transform: translateY(-1px); border-color: var(--accent-l); }
+  .btn:focus-visible { outline: 2px solid var(--accent-l); outline-offset: 3px; }
+  .meta { margin: clamp(10px, 2vh, 20px) 0 0; color: var(--muted); font-size: 14px; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; padding: clamp(8px, 1.6vh, 18px) clamp(16px, 3.5vw, 58px) 0; }
+  .card { display: flex; gap: 22px; padding: clamp(12px, 2vh, 22px) clamp(16px, 1.8vw, 28px); border-radius: 16px;
+    background: rgba(13,18,37,.8); border: 1px solid var(--border); }
+  .tile { flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 14px; background: #171a40; }
+  .tile svg { fill: var(--accent-l); }
+  .card small { color: var(--accent-l); font-size: 10.5px; letter-spacing: .32em; }
+  .card h2 { margin: 6px 0 4px; font-size: 18px; font-weight: 650; }
+  .card p { margin: 0; color: var(--text2); font-size: 15px; }
+  .legal { margin: 0; padding: clamp(8px, 1.4vh, 14px) 16px; text-align: center; font-size: 12px; color: #515a78; }
+  .legal a { text-decoration: underline; }
+
+  @media (max-width: 900px) {
+    nav { gap: 14px; font-size: 13px; } nav a:first-child { display: none; } .brand img { height: 32px; } .pill { padding: 6px 14px; }
+    main { padding-top: 26px; }
+    .lead, .sub { padding: 0 6px; } .meta { font-size: 12.5px; padding: 0 10px; }
+    .cards { grid-template-columns: 1fr; gap: 12px; padding-top: 28px; }
+    .card { gap: 14px; } .tile { width: 46px; height: 46px; }
+  }
+
+  /* --- Motion ------------------------------------------------------------------------------- */
+  /* The backdrop sways, and three translucent waves slide along the bottom at different speeds:
+     the curves in the artwork read as moving water rather than as a picture. */
+  .bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bg-img { position: absolute; inset: -7%;
+    background: linear-gradient(rgba(5,8,22,.25), rgba(5,8,22,.25)), url(backdrop.jpg) center / cover no-repeat;
+    animation: sway 24s ease-in-out infinite alternate; }
+  @keyframes sway { from { transform: translate3d(-1.8%, .7%, 0) rotate(-.6deg) scale(1.02); }
+                    to   { transform: translate3d(1.8%, -.9%, 0) rotate(.7deg) scale(1.07); } }
+  .wave { position: absolute; left: 0; bottom: 0; width: 200%; height: 44vh; mix-blend-mode: screen;
+    animation: slide 46s linear infinite; }
+  .wave.w2 { height: 36vh; animation-duration: 64s; animation-direction: reverse; }
+  .wave.w3 { height: 28vh; animation-duration: 88s; }
+  @keyframes slide { to { transform: translate3d(-50%, 0, 0); } }
+  /* A slow glow drifting behind the hero. */
+  .bg::after { content: ""; position: absolute; inset: -20%;
+    background:
+      radial-gradient(38% 34% at 28% 62%, rgba(118,87,255,.18), transparent 70%),
+      radial-gradient(34% 30% at 76% 38%, rgba(155,123,255,.12), transparent 70%);
+    animation: drift 26s ease-in-out infinite alternate; }
+  @keyframes drift { from { transform: translate3d(-3%, 2%, 0); } to { transform: translate3d(4%, -3%, 0) scale(1.08); } }
+  .page { position: relative; z-index: 1; }
+
+  /* The hero arrives piece by piece, then the cards. */
+  .hero > *, .card { opacity: 0; animation: rise .7s cubic-bezier(.2,.7,.2,1) forwards; }
+  .hero > :nth-child(1) { animation-delay: .05s; } .hero > :nth-child(2) { animation-delay: .18s; }
+  .hero > :nth-child(3) { animation-delay: .30s; } .hero > :nth-child(4) { animation-delay: .40s; }
+  .hero > :nth-child(5) { animation-delay: .48s; } .hero > :nth-child(6) { animation-delay: .58s; }
+  .hero > :nth-child(7) { animation-delay: .68s; }
+  .card:nth-child(1) { animation-delay: .80s; } .card:nth-child(2) { animation-delay: .90s; } .card:nth-child(3) { animation-delay: 1s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  /* The icon floats a few pixels and its glow breathes: it arrives, then lives. */
+  .hero > .appicon { animation: rise .7s cubic-bezier(.2,.7,.2,1) .05s forwards, float 7s ease-in-out 1s infinite, glow 4.5s ease-in-out 1s infinite; }
+  @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -7px; } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 50px rgba(118,87,255,.35); } 50% { box-shadow: 0 0 78px rgba(118,87,255,.6); } }
+
+  /* A band of light crosses the main button now and then. */
+  .btn.main { position: relative; overflow: hidden; }
+  .btn.main::after { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent);
+    transform: skewX(-18deg); animation: sheen 6.5s ease-in-out 2s infinite; }
+  @keyframes sheen { 0%, 62% { left: -60%; } 86%, 100% { left: 125%; } }
+  .btn:hover, .btn:focus-visible { box-shadow: 0 10px 34px rgba(118,87,255,.30); }
+  .btn.main:hover, .btn.main:focus-visible { box-shadow: 0 12px 42px rgba(118,87,255,.5); }
+
+  /* Cards and the header answer the pointer. */
+  .card { transition: transform .25s, border-color .25s, box-shadow .25s, background .25s; }
+  .card:hover { transform: translateY(-4px); border-color: var(--border-on); background: rgba(17,23,44,.9);
+    box-shadow: 0 16px 44px rgba(118,87,255,.16); }
+  .tile { transition: transform .25s, background .25s; }
+  .card:hover .tile { transform: scale(1.08) rotate(-3deg); background: #1f2358; }
+  .pill { transition: background .2s, box-shadow .2s; }
+  .pill:hover { background: rgba(118,87,255,.16); box-shadow: 0 0 22px rgba(118,87,255,.3); }
+  .brand img { transition: filter .25s; } .brand:hover img { filter: drop-shadow(0 0 10px rgba(155,123,255,.7)); }
+
+  /* A light passes along the three words. */
+  .tag { background: linear-gradient(90deg, var(--accent-l) 0 40%, #efeaff 50%, var(--accent-l) 60% 100%) 0 0 / 300% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: rise .7s cubic-bezier(.2,.7,.2,1) .30s forwards, shimmer 9s linear 1.5s infinite; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .hero > *, .card { opacity: 1; }
+    .btn.main::after { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="bg-img"></div><svg class="wave w1" viewBox="0 0 2880 320" preserveAspectRatio="none"><defs><linearGradient id="g-w1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(118,87,255,.10)"/><stop offset="1" stop-color="rgba(5,8,22,0)"/></linearGradient></defs><path d="M0,150 Q360,104 720,150 T1440,150 T2160,150 T2880,150 L2880,320 L0,320 Z" fill="url(#g-w1)" stroke="rgba(155,123,255,.38)" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg><svg class="wave w2" viewBox="0 0 2880 320" preserveAspectRatio="none"><defs><linearGradient id="g-w2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(93,55,238,.08)"/><stop offset="1" stop-color="rgba(5,8,22,0)"/></linearGradient></defs><path d="M0,190 Q180,156 360,190 T720,190 T1080,190 T1440,190 T1800,190 T2160,190 T2520,190 T2880,190 L2880,320 L0,320 Z" fill="url(#g-w2)" stroke="rgba(118,87,255,.26)" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg><svg class="wave w3" viewBox="0 0 2880 320" preserveAspectRatio="none"><defs><linearGradient id="g-w3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(155,123,255,.05)"/><stop offset="1" stop-color="rgba(5,8,22,0)"/></linearGradient></defs><path d="M0,230 Q120,206 240,230 T480,230 T720,230 T960,230 T1200,230 T1440,230 T1680,230 T1920,230 T2160,230 T2400,230 T2640,230 T2880,230 L2880,320 L0,320 Z" fill="url(#g-w3)" stroke="rgba(155,123,255,.18)" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg></div>
+<div class="page">
+  <header>
+    <a class="brand" href="#top"><img src="logo-horizontal.webp" width="185" height="40" alt="CYBERDOG"></a>
+    <nav>
+      <a href="#features">Возможности</a>
+      <a href="security.html">Безопасность</a>
+      <a class="pill" href="download.html">Скачать</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="hero">
+      <img class="appicon" src="app-icon.png" width="164" height="164" alt="">
+      <h1><img src="wordmark.webp" width="1120" height="157" alt="CYBERDOG"></h1>
+      <p class="tag">PRIVATE • ANONYMOUS • ENCRYPTED</p>
+      <p class="lead">Анонимный мессенджер для личных разговоров и небольших групп.</p>
+      <p class="sub">Без номера телефона. Без имени. Без профиля.</p>
+      <div class="actions" id="download">
+        <a class="btn main" href="download.html#android">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.2 3.1 8.6 5.4A7 7 0 0 1 12 4.6c1.2 0 2.4.3 3.4.8l1.400-2.300.9.5-1.400 2.300A6 6 0 0 1 19 10H5a6 6 0 0 1 2.700-4.100L6.300 3.600zM5 11h14v7a1.500 1.500 0 0 1-1.500 1.500H16V22a1.300 1.300 0 0 1-2.600 0v-2.500h-2.800V22A1.300 1.300 0 0 1 8 22v-2.500H6.500A1.500 1.500 0 0 1 5 18zM2.300 11.200a1.300 1.300 0 0 1 1.300 1.300v4a1.300 1.300 0 0 1-2.600 0v-4a1.300 1.300 0 0 1 1.300-1.300zm19.400 0a1.300 1.300 0 0 1 1.300 1.300v4a1.300 1.300 0 0 1-2.600 0v-4a1.300 1.300 0 0 1 1.300-1.300z"/></svg>
+          Скачать для Android
+        </a>
+        <a class="btn" href="download.html#windows">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.300 10.800 4.200v7.300H3zM11.900 4.100 21 2.800v8.700h-9.100zM3 12.600h7.800v7.300L3 18.800zM11.900 12.600H21v8.700l-9.100-1.300z"/></svg>
+          Скачать для Windows
+        </a>
+      </div>
+      <p class="meta">Beta · Android: 0.1.27, сборка 68 · Windows: 0.1.27, сборка 53</p>
+    </div>
+  </main>
+
+  <div class="cards" id="features">
+    <div class="card" id="security">
+      <div class="tile"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9z"/></svg></div>
+      <div><small>01 / ENCRYPTED</small><h2>Сквозное шифрование</h2><p>Сообщения шифруются на устройстве и доступны только участникам разговора.</p></div>
+    </div>
+    <div class="card">
+      <div class="tile"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4.500 4.500 0 1 1 0 9 4.500 4.500 0 0 1 0-9zm0 11c4.400 0 8 2.200 8 5v2H4v-2c0-2.800 3.600-5 8-5z"/></svg></div>
+      <div><small>02 / ANONYMOUS</small><h2>Без аккаунта</h2><p>Ни номера телефона, ни почты, ни логина.</p></div>
+    </div>
+    <div class="card">
+      <div class="tile"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c5 0 9 3.400 9 7.700s-4 7.700-9 7.700c-.9 0-1.800-.100-2.600-.300L5 20.500l.9-3.700C4.100 15.400 3 13.600 3 10.700 3 6.400 7 3 12 3z"/></svg></div>
+      <div><small>03 / PRIVATE</small><h2>Только свои</h2><p>Личные чаты и группы до 10 человек. Никаких каналов и публичных чатов.</p></div>
+    </div>
+  </div>
+  <p class="legal">Открытый код, AGPL-3.0 · основано на Night Drop · <a href="https://github.com/idealhere/nightdrop">исходники</a></p>
+</div>
+</body>
+</html>

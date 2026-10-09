@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../rust/api.dart' as rust;
+import 'app_locale.dart';
 import 'app_process.dart';
 import 'background_delivery.dart';
 import 'app_version.dart';
@@ -12,6 +13,9 @@ import 'nightdrop_core.dart';
 import 'media_cache.dart';
 import 'models.dart';
 import 'notifications.dart';
+import 'privacy_prefs.dart';
+import '../features/pairing/scan_screen.dart' show isNightdropInvite;
+import 'profile_name.dart';
 import 'install_source.dart';
 import 'public_downloads.dart';
 import 'screenshot_detector.dart';
@@ -26,6 +30,7 @@ class RustNightdropCore extends NightdropCore {
   rust.NightdropCore? _core;
   StreamSubscription<rust.AppEvent>? _events;
   bool _networked = false;
+  bool _httpsRelay = false;
   bool _booting = true;
   // Lifecycle + notification bookkeeping: while backgrounded, new received messages/requests
   // raise a notification. Counts are baselined after the first load so existing history
@@ -38,6 +43,30 @@ class RustNightdropCore extends NightdropCore {
   List<Contact> _contacts = const [];
   List<Contact> _requests = const [];
   final Map<String, List<Message>> _messages = {};
+  List<Group> _groups = const [];
+  final Map<String, List<Message>> _groupMessages = {};
+  Set<String> _groupCapable = const {};
+  String _myIdentityKey = '';
+
+  /// Received-message counts per group, and how many of them the user has seen.
+  final Map<String, int> _groupReceived = {};
+  final Map<String, int> _groupRead = {};
+
+  /// Chats already given the user's preferred name this run, so a failed attempt is not
+  /// repeated on every refresh.
+  final Set<String> _preferredNameApplied = {};
+
+  /// Pending requests that came through the standing address: for the user to decide.
+  Set<String> _addressRequests = const {};
+
+  @override
+  Set<String> get addressRequests => _addressRequests;
+
+  @override
+  Future<String> myAddress() => _core!.myAddress();
+
+  /// Requests already accepted automatically this run (see [_acceptInvited]).
+  final Set<String> _autoAccepted = {};
 
   /// Optimistic outgoing messages awaiting core confirmation, kept SEPARATE from [_messages]
   /// (the core history) so overlapping sends to an offline peer don't wipe each other when one
@@ -434,6 +463,115 @@ class RustNightdropCore extends NightdropCore {
     }
   }
 
+  /// Upgrade an HTTPS-first session to the Tor transport only after the fast path has shown
+  /// positive failure evidence. The same encrypted state file/identity is reopened, and the
+  /// primary relay is expressed as two endpoints of ONE logical RelayCore/store:
+  /// HTTPS first, then its onion endpoint. Independent relay stores must never be put in this
+  /// bundle; those use CyberDog's existing fan-out/deduplication instead.
+  ///
+  /// Two independent triggers reach this (the liveness watcher and a pairing attempt), so the
+  /// switch is single-flight: a second caller awaits the one already running instead of tearing
+  /// down and rebuilding the core concurrently over the same state file and Tor state dir.
+  Future<void> _switchHttpsToTorFallback(String statePath, String key) =>
+      _httpsFallbackSwitch ??= _runHttpsToTorFallback(statePath, key);
+
+  Future<void> _runHttpsToTorFallback(String statePath, String key) async {
+    final https = _httpsRelayAddr;
+    final onion = _relayAddr;
+    final stateDir = await _torStateDir();
+    // The bundle below declares both endpoints to be ONE store, so only this relay's own onion
+    // endpoint may go in it — never an arbitrary NIGHTDROP_RELAY address.
+    if (https == null ||
+        onion == null ||
+        stateDir == null ||
+        !onion.contains('.onion')) {
+      _httpsFallbackSwitch = null;
+      return;
+    }
+
+    _httpsFallbackDone = true;
+    await rust.diagNote(
+        line: 'transport: HTTPS path failed — switching to Tor/WebTunnel fallback');
+    await _closeCore();
+    try {
+      _core = await rust.NightdropCore.newTor(
+        stateDir: stateDir,
+        relayAddr: '$https|$onion',
+        persistPath: statePath,
+        persistKey: key,
+      );
+    } catch (_) {
+      // Tor/WebTunnel would not come up (for example the device is simply offline). Never leave
+      // the app without a core: reopen the same identity on the HTTPS-only path and keep
+      // watching, so a later failure round can try the fallback again.
+      await _restoreHttpsOnlyCore(stateDir, https, statePath, key);
+      return;
+    }
+    _httpsRelay = true; // relay still prefers HTTPS when it recovers
+    _tor = true; // peer path + onion fallback are now available
+    _networked = false;
+    _events = rust.subscribe().listen(_onEvent);
+    final id = await _core!.identity();
+    _identity = Identity(id: id.id);
+    await _refresh();
+    await _applyBuiltInRelayFanout();
+    unawaited(_scheduleGuardHeal(statePath, key));
+    notifyListeners();
+  }
+
+  Future<void> _restoreHttpsOnlyCore(
+      String stateDir, String https, String statePath, String key) async {
+    await rust.diagNote(
+        line: 'transport: Tor/WebTunnel fallback failed — staying on HTTPS');
+    await _closeCore();
+    try {
+      _core = await rust.NightdropCore.newTor(
+        stateDir: stateDir,
+        relayAddr: https,
+        persistPath: statePath,
+        persistKey: key,
+      );
+    } catch (_) {
+      await _closeCore();
+      _identity = null;
+      _loadError = true;
+      notifyListeners();
+      return;
+    }
+    _httpsRelay = true;
+    _tor = false;
+    _networked = false;
+    _events = rust.subscribe().listen(_onEvent);
+    final id = await _core!.identity();
+    _identity = Identity(id: id.id);
+    await _refresh();
+    await _applyBuiltInRelayFanout();
+    _httpsFallbackDone = false;
+    _httpsFallbackSwitch = null;
+    unawaited(_scheduleHttpsFallback(statePath, key));
+    notifyListeners();
+  }
+
+  /// Watch the existing end-to-end liveness signal while running HTTPS-only. In relay-only mode
+  /// every direct peer send fails locally by design; `directPathWedged` becomes true only after
+  /// several such sends AND no relay operation has ever succeeded. That makes it a conservative
+  /// trigger: an offline contact with a healthy HTTPS relay does not switch transports.
+  Future<void> _scheduleHttpsFallback(String statePath, String key) async {
+    if (!_httpsRelay || _tor || _httpsFallbackDone || _relayAddr == null) return;
+    final core = _core;
+    while (!_httpsFallbackDone &&
+        _httpsRelay &&
+        !_tor &&
+        identical(_core, core) &&
+        core != null) {
+      await Future.delayed(_httpsFallbackRecheck);
+      if (await core.directPathWedged()) {
+        await _switchHttpsToTorFallback(statePath, key);
+        return;
+      }
+    }
+  }
+
   /// Reset the entry-guard state and rebuild the core on fresh guards, keeping the `.onion`
   /// identity. Shared by the automatic heal and the manual [resetTorConnection] action.
   Future<void> _resetTorConnection(String statePath, String key) async {
@@ -508,6 +646,168 @@ class RustNightdropCore extends NightdropCore {
   List<Contact> get incomingRequests => List.unmodifiable(_requests);
 
   @override
+  List<Group> get groups => List.unmodifiable(_groups);
+
+  @override
+  List<Message> groupMessagesFor(String groupId) =>
+      List.unmodifiable(_groupMessages[groupId] ?? const <Message>[]);
+
+  @override
+  String get myIdentityKey => _myIdentityKey;
+
+  @override
+  Set<String> get groupCapableContacts => _groupCapable;
+
+  @override
+  int groupUnreadCount(String groupId) {
+    final n = (_groupReceived[groupId] ?? 0) - (_groupRead[groupId] ?? 0);
+    return n < 0 ? 0 : n;
+  }
+
+  @override
+  void markGroupRead(String groupId) {
+    final n = _groupReceived[groupId] ?? 0;
+    if ((_groupRead[groupId] ?? 0) != n) {
+      _groupRead[groupId] = n;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<String> createGroup(String name, List<String> memberIds) async {
+    final id = await _core!.createGroup(name: name, memberIds: memberIds);
+    await _refresh();
+    return id;
+  }
+
+  @override
+  Future<void> sendGroupMessage(String groupId, String text) async {
+    try {
+      await _core!.sendGroupMessage(groupId: groupId, text: text);
+    } finally {
+      // The message is in the local history even when no copy could be sent.
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> sendGroupMedia(String groupId, List<int> data, String mime, String kind) async {
+    try {
+      await _core!.sendGroupMedia(groupId: groupId, data: data, mime: mime, kind: kind);
+    } finally {
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> unsendGroupMessage(String groupId, String id) async {
+    try {
+      await _core!.unsendGroupMessage(groupId: groupId, id: id);
+    } finally {
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> setGroupDisappearing(String groupId, int secs) async {
+    await _core!.setGroupDisappearing(groupId: groupId, secs: BigInt.from(secs));
+    await _refresh();
+  }
+
+  @override
+  Future<void> addGroupMembers(String groupId, List<String> memberIds) async {
+    try {
+      await _core!.addGroupMembers(groupId: groupId, memberIds: memberIds);
+    } finally {
+      await _refresh();
+    }
+  }
+
+  @override
+  Future<void> removeGroupMember(String groupId, String memberId) async {
+    await _core!.removeGroupMember(groupId: groupId, memberId: memberId);
+    await _refresh();
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    await _core!.leaveGroup(groupId: groupId);
+    await _refresh();
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    await _core!.deleteGroup(groupId: groupId);
+    await _refresh();
+  }
+
+  /// Re-read the groups and their histories. Groups are few and small, so all of them, always.
+  Future<void> _refreshGroups() async {
+    _myIdentityKey = await _core!.myIdentityKey();
+    _groupCapable = (await _core!.groupCapableContacts()).toSet();
+    _groups = [
+      for (final g in await _core!.groups())
+        Group(
+          id: g.id,
+          name: g.name,
+          members: g.members,
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: g.disappearingSecs.toInt(),
+        ),
+    ];
+    final live = _groups.map((g) => g.id).toSet();
+    final before = {
+      for (final history in _groupMessages.values)
+        for (final m in history)
+          if (m.mediaId.isNotEmpty) m.mediaId,
+    };
+    for (final id in live) {
+      var i = 0;
+      _groupMessages[id] = [
+        for (final gm in await _core!.groupMessages(groupId: id))
+          Message(
+            id: 'g-$id-${i++}',
+            contactId: id,
+            senderId: gm.sender,
+            text: gm.message.text,
+            fromMe: gm.message.fromMe,
+            at: gm.message.at == BigInt.zero
+                ? DateTime.now()
+                : DateTime.fromMillisecondsSinceEpoch(gm.message.at.toInt() * 1000),
+            msgId: gm.message.msgId,
+            system: gm.message.system,
+            kind: gm.message.kind,
+            mime: gm.message.mime,
+            mediaId: gm.message.mediaId,
+            mediaSize: gm.message.mediaSize.toInt(),
+            transferId: gm.message.transferId,
+            delivery: gm.message.delivery,
+          ),
+      ];
+      _groupReceived[id] =
+          _groupMessages[id]!.where((m) => !m.fromMe && !m.system).length;
+    }
+    _groupMessages.removeWhere((id, _) => !live.contains(id));
+    final after = {
+      for (final history in _groupMessages.values)
+        for (final m in history) m.mediaId,
+    };
+    for (final gone in before.difference(after)) {
+      MediaCache.bytes.remove(gone);
+      MediaCache.files.remove(gone);
+    }
+    _groupReceived.removeWhere((id, _) => !live.contains(id));
+    _groupRead.removeWhere((id, _) => !live.contains(id));
+    if (!_unreadReady) {
+      // Baseline existing history as read, as for 1:1 chats.
+      for (final id in live) {
+        _groupRead[id] = _groupReceived[id] ?? 0;
+      }
+    }
+  }
+
+  @override
   List<Message> messagesFor(String contactId) => List.unmodifiable([
         ...?_messages[contactId],
         ...?_pending[contactId], // optimistic sends, shown after the confirmed history
@@ -515,13 +815,19 @@ class RustNightdropCore extends NightdropCore {
 
   // --- Transport configuration -------------------------------------------------------
   //
-  // Networked mode (real two-client comms over TCP + a shared relay) is what lets two
-  // physical devices talk. It is selected by NIGHTDROP_LISTEN + NIGHTDROP_RELAY, resolved from
-  // either a compile-time --dart-define (the only option on Android) or, on desktop, a
-  // process env var. If neither is set we fall back to the in-process demo core.
-  // Tor mode (NIGHTDROP_TOR=1) is the production WAN path: each device bootstraps an embedded
-  // Tor client and gets a reachable .onion, so peers pair (by QR — no relay needed) and
-  // chat over any network including LTE. It takes precedence over TCP networked mode.
+  // Reliability-first fork:
+  //   NIGHTDROP_HTTPS_RELAY=https://relay.example/v1/relay
+  // selects the fast WAN path first. It keeps the existing E2E/session crypto but sends sealed
+  // relay requests directly over TLS/443, so it is encrypted but NOT anonymous (the relay host /
+  // network can observe source IP and timing). It starts without waiting for Tor.
+  //
+  // Legacy networked mode (NIGHTDROP_LISTEN + NIGHTDROP_RELAY) remains for desktop/TCP tests.
+  // Tor mode (NIGHTDROP_TOR=1) remains the anonymity path. A bare HTTPS relay takes precedence on
+  // startup; later failover can upgrade the same logical relay to its onion endpoint.
+  static const String _defineHttpsRelay =
+      String.fromEnvironment('NIGHTDROP_HTTPS_RELAY');
+  static const String _defineHttpsRelayBackup =
+      String.fromEnvironment('NIGHTDROP_HTTPS_RELAY_BACKUP');
   static const String _defineTor = String.fromEnvironment('NIGHTDROP_TOR');
   static const String _defineListen = String.fromEnvironment('NIGHTDROP_LISTEN');
   static const String _defineRelay = String.fromEnvironment('NIGHTDROP_RELAY');
@@ -542,6 +848,10 @@ class RustNightdropCore extends NightdropCore {
     return (env != null && env.isNotEmpty) ? env : null;
   }
 
+  static String? get _httpsRelayAddr =>
+      _config('NIGHTDROP_HTTPS_RELAY', _defineHttpsRelay);
+  static String? get _httpsRelayBackupAddr =>
+      _config('NIGHTDROP_HTTPS_RELAY_BACKUP', _defineHttpsRelayBackup);
   static String? get _listenAddr => _config('NIGHTDROP_LISTEN', _defineListen);
   static String? get _relayAddr => _config('NIGHTDROP_RELAY', _defineRelay);
   static bool get _torEnabled {
@@ -552,6 +862,22 @@ class RustNightdropCore extends NightdropCore {
   static bool get _diagEnabled {
     final v = _config('NIGHTDROP_DIAG', _defineDiag)?.toLowerCase();
     return v == '1' || v == 'true' || v == 'yes';
+  }
+
+  /// Apply the operator-baked independent backup relay through CyberDog's existing multi-relay
+  /// fan-out. This is a DIFFERENT store from the primary, so it must never be placed in the
+  /// primary's HTTPS|onion endpoint bundle. The core advertises it to contacts and drains it
+  /// separately; identical sealed frames are deduplicated on receipt.
+  Future<void> _applyBuiltInRelayFanout() async {
+    final core = _core;
+    final backup = _httpsRelayBackupAddr;
+    final primary = _httpsRelayAddr;
+    if (core == null || backup == null || backup == primary) return;
+
+    final current = await core.myRelays();
+    if (current.contains(backup)) return;
+    await core.setMyRelays(relays: [...current, backup]);
+    await rust.diagNote(line: 'transport: independent HTTPS backup relay enabled');
   }
 
   static const String _diagLogName = 'nightdrop-diag.log';
@@ -631,7 +957,6 @@ class RustNightdropCore extends NightdropCore {
 
   static const _kBackedUp = 'nightdrop_backed_up';
   static const _kBackupSnoozeUntil = 'nightdrop_backup_snooze_until';
-  static const _kProtocolNoticeDismissed = 'nightdrop_protocol_notice_dismissed_version';
   static const _kUpdateCheckedAt = 'nightdrop_update_checked_at';
   static const _kUpdateHidden = 'nightdrop_update_hidden_version';
 
@@ -749,7 +1074,7 @@ class RustNightdropCore extends NightdropCore {
       // Linux, the installer on Windows.
       final desktop = Platform.isLinux || Platform.isWindows;
       final ext = Platform.isLinux ? 'AppImage' : (Platform.isWindows ? 'exe' : 'apk');
-      final dest = '${dir.path}/NightDrop-update.$ext';
+      final dest = '${dir.path}/CyberDog-update.$ext';
       final n = await _core?.downloadUpdate(destPath: dest);
       if (n == null || n <= BigInt.zero) {
         // Rust has already said why on its own diag line; this one marks that the UI gave up, so
@@ -757,7 +1082,7 @@ class RustNightdropCore extends NightdropCore {
         await rust.diagNote(line: 'update: download returned nothing — reporting failure');
         return null;
       }
-      // Named for the version it actually is. "NightDrop-update.apk" tells a user nothing months
+      // Named for the version it actually is. "CyberDog-update.apk" tells a user nothing months
       // later, and collides with the last one they downloaded.
       final version = _updateAvailable;
       if (desktop) {
@@ -765,7 +1090,7 @@ class RustNightdropCore extends NightdropCore {
         // marked executable so it can be started from the file manager; nothing here runs it.
         final name = Platform.isLinux
             ? 'Night_Drop-${version ?? 'update'}-x86_64.AppImage'
-            : 'NightDropSetup-${version ?? 'update'}.exe';
+            : 'CyberDogSetup-${version ?? 'update'}.exe';
         final where = await PublicDownloads.toDownloadsFolder(File(dest),
             displayName: name, executable: Platform.isLinux);
         await rust.diagNote(
@@ -778,7 +1103,7 @@ class RustNightdropCore extends NightdropCore {
       final where = await PublicDownloads.publish(
         File(dest),
         displayName:
-            version == null ? 'NightDrop.apk' : 'NightDrop-$version.apk',
+            version == null ? 'CyberDog.apk' : 'CyberDog-$version.apk',
         mimeType: 'application/vnd.android.package-archive',
       );
       // Which of the three routes ran is invisible otherwise, and it is the difference between a
@@ -819,8 +1144,14 @@ class RustNightdropCore extends NightdropCore {
     await _check();
   }
 
+  /// CyberDog does not ask the upstream Night Drop site about updates: that site only ever
+  /// describes upstream builds, signed with upstream's key. The check stays compiled out unless a
+  /// build opts in, until CyberDog has an update channel of its own.
+  static const _updateChecks = bool.fromEnvironment('NIGHTDOG_UPDATE_CHECKS');
+
   /// The check itself. Returns whether the onion site answered.
   Future<bool> _check() async {
+    if (!_updateChecks) return false;
     // Never let this fail a launch. Every branch below is best-effort: no answer is the normal
     // outcome on a slow or offline network, and it must look exactly like "nothing to report".
     try {
@@ -866,14 +1197,6 @@ class RustNightdropCore extends NightdropCore {
   }
 
   @override
-  Future<bool> shouldShowProtocolBreakNotice() async =>
-      await _secure.read(key: _kProtocolNoticeDismissed) != kAppVersion;
-
-  @override
-  Future<void> dismissProtocolBreakNotice() =>
-      _secure.write(key: _kProtocolNoticeDismissed, value: kAppVersion);
-
-  @override
   Future<void> recordBackupDone() async {
     await _secure.write(key: _kBackedUp, value: 'yes');
     notifyListeners();
@@ -894,6 +1217,12 @@ class RustNightdropCore extends NightdropCore {
   static const _guardHealRecheck = Duration(seconds: 30);
   // At most one automatic guard-heal per launch, so a genuinely offline device can't loop.
   bool _guardHealDone = false;
+
+  // HTTPS-first starts without Tor for fast startup. If the fast path repeatedly fails and an
+  // onion endpoint for the same logical relay was baked into the app, switch to Tor once.
+  static const _httpsFallbackRecheck = Duration(seconds: 10);
+  bool _httpsFallbackDone = false;
+  Future<void>? _httpsFallbackSwitch;
 
   /// In-flight [start] call, so concurrent launches coalesce instead of interleaving.
   ///
@@ -927,11 +1256,56 @@ class RustNightdropCore extends NightdropCore {
         await _purgeDiagnosticsLog();
       }
       _guardHealDone = false;
+      _httpsFallbackDone = false;
+      _httpsFallbackSwitch = null;
       // Close anything already running first: this runs again via `retryStart` after a failure,
       // and a second bootstrap over the same (still-locked) Tor state dir would fail no matter
       // how many times the user pressed "Try again".
       await _closeCore();
-      if (_torEnabled) {
+      final httpsRelay = _httpsRelayAddr;
+      if (httpsRelay != null) {
+        // Fast WAN restore: use the existing generated newTor FFI entry point, but a bare
+        // https:// relay is recognized by Rust as relay-only mode and does NOT bootstrap Tor.
+        // This keeps persistence compatible without regenerating the bridge merely to add a new
+        // constructor. E2E encryption is unchanged; only network metadata exposure differs.
+        if (await isStoreLocked() && !storeUnlocked) {
+          _lockedOut = true;
+          _booting = false;
+          notifyListeners();
+          return;
+        }
+        final key = await _readStoreKey();
+        final statePath = await _stateFilePath();
+        final hasState = File(statePath).existsSync();
+        if (key != null && hasState) {
+          try {
+            _core = await rust.NightdropCore.newTor(
+              stateDir: await _torStateDir(),
+              relayAddr: httpsRelay,
+              persistPath: statePath,
+              persistKey: key,
+            );
+            _httpsRelay = true;
+            _tor = false;
+            _networked = false;
+            _events = rust.subscribe().listen(_onEvent);
+            final id = await _core!.identity();
+            _identity = Identity(id: id.id);
+            await _refresh();
+            await _applyBuiltInRelayFanout();
+            unawaited(_scheduleHttpsFallback(statePath, key));
+          } catch (_) {
+            await _closeCore();
+            _identity = null;
+            // A saved state exists and failed to open through the configured WAN path. Preserve
+            // the same recovery behavior as Tor: never reinterpret that as a fresh install.
+            _loadError = true;
+          }
+        } else if (key == null && hasState) {
+          _identity = null;
+          _loadError = true;
+        }
+      } else if (_torEnabled) {
         // A locked store has no readable key yet, and the check below would then see
         // "no key + saved state" and fall through to onboarding — which is precisely the
         // overwrite-recoverable-data path the comment there warns about. Stop and let the UI
@@ -1089,6 +1463,8 @@ class RustNightdropCore extends NightdropCore {
     // have left a core holding the Tor state lock.
     await _closeCore();
     _guardHealDone = false;
+    _httpsFallbackDone = false;
+    _httpsFallbackSwitch = null;
     // Refuse to displace a state file nobody agreed to abandon. Onboarding is only ever correct
     // on a genuinely fresh install, or after the recovery screen said the state is unreadable and
     // the user chose to move on (dismissLoadError). Reaching it any other way means a failed or
@@ -1096,7 +1472,7 @@ class RustNightdropCore extends NightdropCore {
     // working install silently loses its identity.
     if (!_abandonExistingStateApproved && await _savedStateExists()) {
       throw StateError(
-        'There is already a saved identity on this device. Restart Night Drop and try again; '
+        'There is already a saved identity on this device. Restart CyberDog and try again; '
         'if it still cannot be opened, the recovery screen will offer to replace it.',
       );
     }
@@ -1104,7 +1480,21 @@ class RustNightdropCore extends NightdropCore {
     _abandonExistingStateApproved = false;
     final listen = _listenAddr;
     final relay = _relayAddr;
-    if (_torEnabled) {
+    final httpsRelay = _httpsRelayAddr;
+    if (httpsRelay != null) {
+      final key = await _ensureStoreKey();
+      final statePath = await _stateFilePath();
+      _core = await rust.NightdropCore.newTor(
+        stateDir: await _torStateDir(),
+        relayAddr: httpsRelay,
+        persistPath: statePath,
+        persistKey: key,
+      );
+      _httpsRelay = true;
+      _tor = false;
+      _networked = false;
+      unawaited(_scheduleHttpsFallback(statePath, key));
+    } else if (_torEnabled) {
       // Embedded Tor: a reachable .onion, WAN-capable. Bootstrapping takes a while.
       // On mobile, arti needs an explicit writable state dir (the app's support dir). A
       // persistence key (held in the OS secure store) makes the identity survive restarts.
@@ -1128,6 +1518,9 @@ class RustNightdropCore extends NightdropCore {
     _events = rust.subscribe().listen(_onEvent);
     final id = await _core!.identity();
     _identity = Identity(id: id.id);
+    if (_httpsRelay) {
+      await _applyBuiltInRelayFanout();
+    }
     // Settle the screenshot capability before anyone pairs, so the first contact is announced to
     // on pairing rather than left reading our silence as "they'd be told" (#1).
     unawaited(_announceAppVersion());
@@ -1156,8 +1549,9 @@ class RustNightdropCore extends NightdropCore {
       }
       return PairingInvite(shortCode: code, qrPayload: invite.qrPayload);
     }
-    if (_networked) {
-      // Real rendezvous short code (no QR); the peer joins with this code.
+    if (_networked || _httpsRelay) {
+      // Real rendezvous short code (no QR); the peer joins with this code. In HTTPS relay-only
+      // mode the SPAKE2 rendezvous and the first-contact Hello both use the encrypted mailbox.
       final code = await _core!.createShortCodeInvite();
       return PairingInvite(shortCode: code, qrPayload: '');
     }
@@ -1170,14 +1564,30 @@ class RustNightdropCore extends NightdropCore {
   Future<Contact> joinWithShortCode(String code) async {
     // A scanned/typed QR pre-auth payload (the Tor pairing path) goes through connectViaQr;
     // a bare short code uses the rendezvous (networked) or the in-process demo.
-    final rust.Contact created;
-    if (code.startsWith('nightdrop://')) {
+    late rust.Contact created;
+    if (isNightdropInvite(code.trim())) {
       created = await _core!.connectViaQr(payload: code);
-    } else if (_networked || _tor) {
+    } else if (_networked || _httpsRelay || _tor) {
       // A bare `slot-secret-words` short code: run the SPAKE2 rendezvous handshake over the
-      // relay. Works over Tor too — the relay is reached through the onion transport, so the
-      // secret words never leave the device and the rendezvous only ever sees ciphertext.
-      created = await _core!.joinViaShortCode(code: code);
+      // relay. If the direct HTTPS rendezvous is unavailable and this build carries the same
+      // relay's onion endpoint, bootstrap Tor/WebTunnel once and retry the exact pairing flow.
+      try {
+        created = await _core!.joinViaShortCode(code: code);
+      } catch (e) {
+        // Only a relay that could not be reached is evidence against the HTTPS path. A wrong
+        // code or an inviter who never answered says nothing about the transport and must not
+        // bootstrap Tor.
+        if (!_httpsRelay ||
+            _tor ||
+            _relayAddr == null ||
+            !e.toString().contains('could not reach any relay')) {
+          rethrow;
+        }
+        final key = await _readStoreKey();
+        if (key == null) rethrow;
+        await _switchHttpsToTorFallback(await _stateFilePath(), key);
+        created = await _core!.joinViaShortCode(code: code);
+      }
     } else {
       created = await _core!.openChat(code: code);
     }
@@ -1198,7 +1608,8 @@ class RustNightdropCore extends NightdropCore {
   Future<void> saveBackup(String path) => _core!.saveBackup(path: path);
 
   @override
-  Future<bool> onionReady() async => _core == null ? true : await _core!.onionReady();
+  Future<bool> onionReady() async =>
+      !_tor || _core == null ? true : await _core!.onionReady();
 
   @override
   Future<List<int>> backupBytes() => _core!.backupBytes();
@@ -1356,8 +1767,15 @@ class RustNightdropCore extends NightdropCore {
     _contacts = const [];
     _requests = const [];
     _messages.clear();
+    _groups = const [];
+    _groupMessages.clear();
+    _groupReceived.clear();
+    _groupRead.clear();
+    _groupCapable = const {};
+    _myIdentityKey = '';
     _pending.clear();
     _networked = false;
+    _httpsRelay = false;
     _tor = false;
     _countsReady = false;
     notifyListeners(); // _Root -> onboarding now
@@ -1735,10 +2153,70 @@ class RustNightdropCore extends NightdropCore {
     unawaited(_refresh(e));
   }
 
+  /// A request only ever comes from someone holding an invite we created and handed over, so it
+  /// is accepted straight away: giving out the code was the consent. Who is really on the other
+  /// end is still a question for the safety-number check, exactly as it was with a manual tap.
+  void _acceptInvited() {
+    for (final r in _requests) {
+      // Someone who used a code was invited by us a moment ago. Someone who used the address
+      // may be a stranger, so that request waits for the user.
+      if (_addressRequests.contains(r.id)) continue;
+      if (_autoAccepted.add(r.id)) {
+        unawaited(authorize(r.id, true).catchError((Object _) {}));
+      }
+    }
+  }
+
+  /// The newest received message as (sender, text) for a full-detail notification, or null when
+  /// its content must not be shown: burn and view-once messages never surface in a preview, and
+  /// a photo or video is named by kind rather than shown.
+  (String, String)? _latestIncoming() {
+    Message? newest;
+    for (final history in _messages.values) {
+      for (final m in history) {
+        if (m.fromMe || m.system) continue;
+        if (newest == null || m.at.isAfter(newest.at)) newest = m;
+      }
+    }
+    if (newest == null || newest.burnSecs > 0) return null;
+    final from = newest.contactId;
+    final sender = _contacts.where((c) => c.id == from).map((c) => c.displayName).firstOrNull;
+    if (sender == null) return null;
+    final body = newest.isImage
+        ? AppLocale.pick('Photo', 'Фото')
+        : newest.isVideo
+            ? AppLocale.pick('Video', 'Видео')
+            : newest.isAudio
+                ? AppLocale.pick('Voice message', 'Голосовое сообщение')
+                : newest.text;
+    return body.isEmpty ? null : (sender, body);
+  }
+
+  /// Give chats the name the user chose in settings, and make sure the other side hears it.
+  ///
+  /// The core only tells the peer about a name while the chat is live; a name set earlier (which
+  /// is the normal case — the setting exists before the chat does) is stored but never sent. So
+  /// each chat gets the name announced once per run, as soon as it is live. A chat the user
+  /// renamed by hand to something else is left alone.
+  void _applyPreferredName() {
+    final preferred = ProfileName.current.value;
+    if (preferred.isEmpty || preferred == kDefaultName) return;
+    for (final c in _contacts) {
+      final follows = c.myName == kDefaultName || c.myName == preferred;
+      final live = !(_messages[c.id] ?? const <Message>[])
+          .any((m) => m.system && m.kind == 'await_approval');
+      if (follows && live && _preferredNameApplied.add(c.id)) {
+        setMyNameInChat(c.id, preferred);
+      }
+    }
+  }
+
   Future<void> _refresh([rust.AppEvent? event]) async {
     // Contact/request lists are small — always re-read them (a roster change is cheap).
     _contacts = (await _core!.contacts()).map(_map).toList();
     _requests = (await _core!.incomingRequests()).map(_map).toList();
+    _addressRequests = (await _core!.addressRequests()).toSet();
+    _acceptInvited();
     final known = {..._contacts, ..._requests}.map((c) => c.id).toSet();
 
     // Pull message history only for the chats that actually changed (§1.5.5). The event names them;
@@ -1756,6 +2234,8 @@ class RustNightdropCore extends NightdropCore {
     // Forget chats that disappeared (deleted/declined) so their history/counts don't linger.
     _messages.removeWhere((id, _) => !known.contains(id));
     _receivedCache.removeWhere((id, _) => !known.contains(id));
+    _applyPreferredName();
+    await _refreshGroups();
 
     if (!_unreadReady) {
       // Baseline existing history as "read" so a restart doesn't mark old messages unread.
@@ -1769,9 +2249,11 @@ class RustNightdropCore extends NightdropCore {
   }
 
   /// Raise a local notification when, while backgrounded, the number of received messages or
-  /// pending requests grows. Generic text only — no message content in the notification.
+  /// pending requests grows. What it shows is the user's choice ([NotificationDetail]); by
+  /// default it says a message arrived and nothing more.
   void _maybeNotify() {
-    final received = _receivedCache.values.fold<int>(0, (a, b) => a + b);
+    final received = _receivedCache.values.fold<int>(0, (a, b) => a + b) +
+        _groupReceived.values.fold<int>(0, (a, b) => a + b);
     final requests = _requests.length;
     if (!_countsReady) {
       _knownReceived = received;
@@ -1782,10 +2264,25 @@ class RustNightdropCore extends NightdropCore {
     if (!_foreground) {
       if (received > _knownReceived) {
         final n = received - _knownReceived;
-        NotificationService.show('Night Drop', n == 1 ? 'New message' : '$n new messages');
+        final detail = PrivacyPrefs.notificationDetail.value;
+        final count = n == 1
+            ? AppLocale.pick('New message', 'Новое сообщение')
+            : AppLocale.pick('$n new messages', 'Новых сообщений: $n');
+        final latest = detail == NotificationDetail.full && n == 1 ? _latestIncoming() : null;
+        if (detail == NotificationDetail.hidden) {
+          NotificationService.show('CyberDog', '');
+        } else if (latest != null) {
+          NotificationService.show(latest.$1, latest.$2);
+        } else {
+          NotificationService.show('CyberDog', count);
+        }
       }
       if (requests > _knownRequests) {
-        NotificationService.show('Night Drop', 'New chat request');
+        NotificationService.show(
+            'CyberDog',
+            PrivacyPrefs.notificationDetail.value == NotificationDetail.hidden
+                ? ''
+                : AppLocale.pick('New chat request', 'Новый запрос на чат'));
       }
     }
     _knownReceived = received;
@@ -1813,6 +2310,18 @@ class RustNightdropCore extends NightdropCore {
       );
 
   List<Message> _mapMessages(String contactId, List<rust.ChatMessage> history) {
+    // Media that has left the chat (unsent, burned, expired) must not stay decrypted in memory.
+    final live = <String>{
+      for (final m in history) ...[m.mediaId, m.thumbId],
+    };
+    for (final old in _messages[contactId] ?? const <Message>[]) {
+      for (final id in [old.mediaId, old.thumbId]) {
+        if (id.isEmpty || live.contains(id)) continue;
+        MediaCache.bytes.remove(id);
+        MediaCache.bytes.remove('thumb:$id');
+        MediaCache.files.remove(id);
+      }
+    }
     var i = 0;
     return _withPendingReveals(contactId, history
         .map((m) => Message(

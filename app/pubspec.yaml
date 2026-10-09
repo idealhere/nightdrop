@@ -20,6 +20,8 @@ dependencies:
   file_picker: ^12.0.0-beta.7
   path_provider: ^2.1.4 # default backup locations (Documents/Desktop) + persisted state dir
   flutter_secure_storage: ^10.3.1 # OS-backed keystore for the at-rest persistence key
+  record: ^7.1.1 # record voice messages (microphone, on-device only)
+  audioplayers: ^6.8.1 # play voice messages inside the chat
   open_filex: ^4.5.0 # open a received video/file in the system player (cross-platform)
   image: ^4.9.1 # downscale/recompress images before sending (big speed win over Tor)
   # Preview frame for sent videos (Android/iOS/macOS/Windows; no Linux). Replaced the
@@ -50,7 +52,31 @@ flutter:
     # by `make config` — the single source of truth shared with the website.
     - assets/app_config.json
     - assets/icons/icon-512.png
+    - assets/brand/backdrop-light.jpg
+    - assets/brand/logo-icon.png
   fonts:
+    # The UI typeface. The Latin and Cyrillic cuts are separate small files; the Cyrillic one
+    # is used as a fallback family (see theme.dart).
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter-latin-400.ttf
+          weight: 400
+        - asset: assets/fonts/inter-latin-500.ttf
+          weight: 500
+        - asset: assets/fonts/inter-latin-600.ttf
+          weight: 600
+        - asset: assets/fonts/inter-latin-700.ttf
+          weight: 700
+    - family: InterCyrillic
+      fonts:
+        - asset: assets/fonts/inter-cyrillic-400.ttf
+          weight: 400
+        - asset: assets/fonts/inter-cyrillic-500.ttf
+          weight: 500
+        - asset: assets/fonts/inter-cyrillic-600.ttf
+          weight: 600
+        - asset: assets/fonts/inter-cyrillic-700.ttf
+          weight: 700
     # Color-emoji fallback so emoji render on desktop (Flutter's Linux/Windows builds don't
     # ship one; Android/iOS have a system emoji font but this is a harmless fallback there).
     - family: NotoColorEmoji

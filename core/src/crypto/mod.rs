@@ -35,6 +35,16 @@ pub struct Accepted {
     pub first_plaintext: Vec<u8>,
 }
 
+/// The pre-key of ours that a first message was encrypted to (base64), or `None` if it is not a
+/// first message. Tells an ordinary invite, whose pre-key is used once, from a request sent to
+/// our standing address.
+pub fn pre_key_of(first_message: &OlmMessage) -> Option<String> {
+    match first_message {
+        OlmMessage::PreKey(m) => Some(m.one_time_key().to_base64()),
+        OlmMessage::Normal(_) => None,
+    }
+}
+
 /// Accept an **inbound** session from a peer's first message. `their_identity_key` is the
 /// sender's long-term Curve25519 key (base64), authenticated by the handshake. Consumes
 /// the matching one-time key, so it can succeed only once per pre-key.

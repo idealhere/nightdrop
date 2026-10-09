@@ -1,0 +1,49 @@
+name: Build relay (Linux x86_64)
+
+# Builds the relay server binary for deployment, so the VPS never has to compile it (the build
+# pulls in the whole Tor stack and would starve a small production host). Runs only when this
+# file changes, or manually.
+on:
+  push:
+    branches: [feature/https-primary-transport]
+    paths: [.github/workflows/build-relay-linux.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-relay-linux
+  cancel-in-progress: true
+
+jobs:
+  relay:
+    name: nightdrop-relay release binary
+    # Pinned so the binary links against the same glibc as the Ubuntu 24.04 server.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build
+        run: cargo build --release -p nightdrop_relay
+
+      # The file name carries the build number and commit, so deployed binaries are traceable.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name="nightdrop-relay-b${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}-linux-x86_64"
+          cp target/release/nightdrop-relay "$name"
+          strip "$name"
+          sha256sum "$name" | tee "$name.sha256"
+          gh release delete relay-bin --yes --cleanup-tag || true
+          gh release create relay-bin "$name" "$name.sha256" --prerelease --target "$GITHUB_SHA" --title "Relay binary build ${GITHUB_RUN_NUMBER}" --notes "Server binary for deployment. Not a client release."

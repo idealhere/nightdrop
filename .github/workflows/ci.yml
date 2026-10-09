@@ -53,8 +53,15 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Tests
+      - name: Core tests
         run: cargo test -p nightdrop
+
+      # Fork gate: direct HTTPS client code must compile and pass independently of Tor.
+      - name: HTTPS relay tests
+        run: cargo test -p nightdrop --features https-relay
+
+      - name: Relay server tests
+        run: cargo test -p nightdrop_relay
 
       # The Tor path is feature-gated (pulls arti); a plain build never compiles it, so
       # verify it separately. Compile-only — the live circuit test is #[ignore]d.
@@ -102,7 +109,7 @@ jobs:
         run: make core-build
 
       - name: Resolve Dart deps
-        run: cd app && flutter pub get
+        run: cd app && flutter pub get && flutter gen-l10n
 
       # Vendored cargokit under app/rust_builder ships analyzer noise — scope analysis to
       # our own sources (MAINTENANCE.md §3).
@@ -111,3 +118,17 @@ jobs:
 
       - name: Test (widget + Dart↔Rust bridge)
         run: cd app && flutter test
+
+      # Compile the actual Android reliability-first path, not just the Linux host library.
+      # Use a deliberately non-routable example hostname: build correctness must not depend on
+      # a live relay, and no CI device should make network requests during compilation.
+      #
+      # WebTunnel is disabled in this job so failures isolate the new HTTPS path. The existing
+      # Tor/WebTunnel Android build remains a separate release/on-device gate.
+      - name: Build Android arm64 APK (HTTPS-first)
+        env:
+          NIGHTDROP_WEBTUNNEL: "0"
+        run: |
+          cd app
+          flutter build apk --debug --split-per-abi --target-platform android-arm64 \
+            --dart-define=NIGHTDROP_HTTPS_RELAY=https://relay.invalid/v1/relay

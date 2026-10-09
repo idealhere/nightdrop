@@ -44,6 +44,130 @@ class MockNightdropCore extends NightdropCore {
       List.unmodifiable(_messages[contactId] ?? const []);
 
   @override
+  Future<String> myAddress() async => 'cyberdog://pair?addr=mock&ik=mock&otk=mock&static=1';
+
+  final List<Group> _groups = [];
+  final Map<String, List<Message>> _groupMessages = {};
+
+  @override
+  List<Group> get groups => List.unmodifiable(_groups);
+
+  @override
+  List<Message> groupMessagesFor(String groupId) =>
+      List.unmodifiable(_groupMessages[groupId] ?? const <Message>[]);
+
+  @override
+  String get myIdentityKey => 'me';
+
+  @override
+  Set<String> get groupCapableContacts => _contacts.map((c) => c.id).toSet();
+
+  @override
+  Future<String> createGroup(String name, List<String> memberIds) async {
+    final id = 'group-${_groups.length + 1}';
+    _groups.add(Group(id: id, name: name, members: [...memberIds, 'me'], creator: 'me'));
+    _groupMessages[id] = [];
+    notifyListeners();
+    return id;
+  }
+
+  @override
+  Future<void> sendGroupMessage(String groupId, String text) async {
+    final list = _groupMessages[groupId] ??= [];
+    list.add(Message(
+      id: '$groupId-${list.length}',
+      contactId: groupId,
+      text: text,
+      fromMe: true,
+      at: DateTime.now(),
+      msgId: 'g-msg-${list.length}',
+      delivery: 'sent',
+    ));
+    notifyListeners();
+  }
+
+  void _replaceGroup(String groupId, Group Function(Group) change) {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i < 0) return;
+    _groups[i] = change(_groups[i]);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setGroupDisappearing(String groupId, int secs) async => _replaceGroup(
+      groupId,
+      (g) => Group(
+          id: g.id,
+          name: g.name,
+          members: g.members,
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: secs));
+
+  @override
+  Future<void> addGroupMembers(String groupId, List<String> memberIds) async => _replaceGroup(
+      groupId,
+      (g) => Group(
+          id: g.id,
+          name: g.name,
+          members: [...g.members, ...memberIds],
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: g.disappearingSecs));
+
+  @override
+  Future<void> removeGroupMember(String groupId, String memberId) async => _replaceGroup(
+      groupId,
+      (g) => Group(
+          id: g.id,
+          name: g.name,
+          members: g.members.where((m) => m != memberId).toList(),
+          creator: g.creator,
+          left: g.left,
+          disappearingSecs: g.disappearingSecs));
+
+  @override
+  Future<void> unsendGroupMessage(String groupId, String id) async {
+    final list = _groupMessages[groupId];
+    if (list == null) return;
+    final i = list.indexWhere((m) => m.fromMe && m.unsendId == id);
+    if (i < 0) return;
+    final old = list[i];
+    list[i] = Message(
+      id: old.id,
+      contactId: old.contactId,
+      text: '',
+      fromMe: true,
+      at: old.at,
+      msgId: old.msgId,
+      kind: 'deleted',
+    );
+    notifyListeners();
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i < 0) return;
+    final g = _groups[i];
+    _groups[i] = Group(
+      id: g.id,
+      name: g.name,
+      members: g.members.where((m) => m != 'me').toList(),
+      creator: g.creator,
+      left: true,
+    );
+    notifyListeners();
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    _groups.removeWhere((g) => g.id == groupId);
+    _groupMessages.remove(groupId);
+    notifyListeners();
+  }
+
+  @override
   int unreadCount(String contactId) => 0;
 
   @override
@@ -66,7 +190,7 @@ class MockNightdropCore extends NightdropCore {
     _requests.add(Contact(id: 'nightdrop:${_token(10)}'));
     notifyListeners();
     return PairingInvite(
-        shortCode: code, qrPayload: 'nightdrop://pair?b=${_token(24)}');
+        shortCode: code, qrPayload: 'cyberdog://pair?b=${_token(24)}');
   }
 
   @override
@@ -313,7 +437,7 @@ class MockNightdropCore extends NightdropCore {
   Future<void> unsendMessage(String contactId, String msgId) async {
     final list = _messages[contactId];
     if (list == null) return;
-    final i = list.indexWhere((m) => m.msgId == msgId && m.fromMe);
+    final i = list.indexWhere((m) => m.unsendId == msgId && m.fromMe);
     if (i < 0) return;
     final old = list[i];
     list[i] = Message(

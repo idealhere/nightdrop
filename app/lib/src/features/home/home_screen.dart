@@ -5,181 +5,1225 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
 import '../../core/app_config.dart';
+import '../../core/app_locale.dart';
 import '../../core/app_version.dart';
 import '../../core/background_delivery.dart';
 import '../../core/nightdrop_core.dart';
 import '../../core/models.dart';
+import '../../core/privacy_prefs.dart';
+import '../../core/profile_name.dart';
 import '../backup/backup_actions.dart';
 import '../bridges/bridges_screen.dart';
 import '../chat/chat_screen.dart';
-import '../donations/donations_screen.dart';
+import '../groups/group_screens.dart';
+import 'my_address_screen.dart';
 import '../lock/app_lock_settings.dart';
 import '../pairing/pairing_screen.dart';
+import '../privacy/privacy_screen.dart';
+import '../../theme/brand.dart';
+import '../../theme/cyberdog.dart';
 
-/// The conversation list. Empty until the user pairs with someone.
-class HomeScreen extends StatelessWidget {
+/// The app's home: four sections — chats, groups, settings, profile — under one compact header.
+/// A bar along the bottom on a phone; a rail down the side on a wide window, where a bottom bar
+/// would sit a long way from everything else.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  static const _wide = 900.0;
+
+  /// From this width there is room for the list and the open chat side by side.
+  static const _desk = 1200.0;
+
+  int _tab = 0;
+
+  /// The Requests line of the top bar: the chat list narrowed to the requests waiting for an
+  /// answer. It belongs to the Chats section.
+  bool _requestsOnly = false;
+
+  /// The chat open in the pane beside the rail on a wide window: its id and whether it is a
+  /// group. Null while the pane shows the section itself.
+  (String, bool)? _open;
+
+  final _paneKey = GlobalKey<NavigatorState>();
+  final _detailKey = GlobalKey<NavigatorState>();
+
+  /// On a large window the open chat sits beside the list. It has a navigator of its own, so a
+  /// chat that closes itself — deleted or left — falls back to the empty state, and whatever the
+  /// chat opens (a profile, the verify screen) stays inside the message area.
+  Widget _detail(NightdropCore core) {
+    return ListenableBuilder(
+      listenable: core,
+      builder: (context, _) {
+        final open = _open;
+        final exists = open != null &&
+            (open.$2
+                ? core.groups.any((g) => g.id == open.$1)
+                : core.contacts.any((c) => c.id == open.$1));
+        return Navigator(
+          key: _detailKey,
+          pages: [
+            const _DetailPage(key: ValueKey('empty'), child: _EmptyDetail()),
+            if (open != null && exists)
+              _DetailPage(
+                key: ValueKey('chat-${open.$1}'),
+                child: open.$2
+                    ? GroupChatScreen(groupId: open.$1)
+                    : ChatScreen(contactId: open.$1),
+              ),
+          ],
+          onDidRemovePage: (page) {
+            if (page.key == const ValueKey('empty')) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _open == open) setState(() => _open = null);
+            });
+          },
+        );
+      },
+    );
+  }
+
+  /// On a wide window the rail stays put and everything else happens in the pane beside it, which
+  /// has a navigator of its own: a chat opens over the list, and its back arrow — or a chat that
+  /// closes itself, deleted or left — returns to the list.
+  Widget _pane(NightdropCore core, Widget section) {
+    return ListenableBuilder(
+      listenable: core,
+      builder: (context, _) {
+        final open = _open;
+        final exists = open != null &&
+            (open.$2
+                ? core.groups.any((g) => g.id == open.$1)
+                : core.contacts.any((c) => c.id == open.$1));
+        return Navigator(
+          key: _paneKey,
+          pages: [
+            MaterialPage<void>(
+              key: const ValueKey('section'),
+              child: Material(type: MaterialType.transparency, child: section),
+            ),
+            if (open != null && exists)
+              MaterialPage<void>(
+                key: ValueKey('chat-${open.$1}'),
+                child: open.$2
+                    ? GroupChatScreen(groupId: open.$1)
+                    : ChatScreen(contactId: open.$1),
+              ),
+          ],
+          onDidRemovePage: (page) {
+            if (page.key == const ValueKey('section')) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _open == open) setState(() => _open = null);
+            });
+          },
+        );
+      },
+    );
+  }
+
+  void _push(Widget screen) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+  /// The one button for starting something: a chat, a group, or scanning someone's code.
+  Future<void> _newAction() async {
+    final l10n = AppLocalizations.of(context)!;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const ValueKey('new-chat'),
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: Text(l10n.newChat),
+              onTap: () => Navigator.pop(context, 'chat'),
+            ),
+            ListTile(
+              key: const ValueKey('new-group'),
+              leading: const Icon(Icons.group_add_outlined),
+              title: Text(l10n.newGroup),
+              onTap: () => Navigator.pop(context, 'group'),
+            ),
+            ListTile(
+              key: const ValueKey('scan-qr'),
+              leading: const Icon(Icons.qr_code_scanner),
+              title: Text(l10n.scanQr),
+              onTap: () => Navigator.pop(context, 'scan'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'chat':
+        _push(const PairingScreen());
+      case 'group':
+        _push(const CreateGroupScreen());
+      case 'scan':
+        _push(const PairingScreen(initialTab: 1));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final core = NightdropScope.of(context);
     final l10n = AppLocalizations.of(context)!;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.chats),
-        actions: [
-          IconButton(
-            tooltip: l10n.supportNightDrop,
-            icon: const Icon(Icons.volunteer_activism_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const DonationsScreen()),
-            ),
-          ),
-          PopupMenuButton<String>(
-            tooltip: l10n.backUp,
-            icon: const Icon(Icons.backup_outlined),
-            onSelected: (value) {
-              if (value == 'file') createAndSaveBackup(context, core);
-              if (value == 'server') _createServerBackup(context, core);
-              if (value == 'merge') mergeChatBackup(context, core);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(value: 'file', child: Text(l10n.saveBackupFile)),
-              PopupMenuItem(
-                  value: 'server', child: Text(l10n.backUpToServer24h)),
-              PopupMenuItem(
-                  value: 'merge', child: Text(l10n.mergeChatBackupMenu)),
-            ],
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'identity') _showMyIdentity(context, core);
-              if (value == 'background') _backgroundDeliverySettings(context);
-              if (value == 'applock') showAppLockSettings(context, core);
-              if (value == 'duress') showDuressSettings(context, core);
-              if (value == 'bridges') {
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const BridgesScreen()));
-              }
-              if (value == 'cover') _coverTrafficSettings(context, core);
-              if (value == 'burnreceipts') _burnReceiptSettings(context, core);
-              if (value == 'relays') _editRelays(context, core);
-              if (value == 'resettor') _confirmResetTor(context, core);
-              if (value == 'update') _updateApp(context, core);
-              if (value == 'about') _showAbout(context);
-              if (value == 'exit') _confirmExit(context, core);
-              if (value == 'logout') _confirmLogout(context, core);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(value: 'identity', child: Text(l10n.myIdentity)),
-              if (BackgroundDelivery.supported)
-                PopupMenuItem(
-                    value: 'background', child: Text(l10n.backgroundDeliveryMenu)),
-              PopupMenuItem(value: 'applock', child: Text(l10n.appLockMenu)),
-              // Its own row, and deliberately stateless in the label: "Wipe code" reads the same
-              // whether or not one is armed, so a glance at an unlocked phone gives nothing away.
-              // The feature itself is public; only *your* having armed it is worth hiding (#3).
-              PopupMenuItem(value: 'duress', child: Text(l10n.duressMenu)),
-              PopupMenuItem(value: 'bridges', child: Text(l10n.bridgesMenu)),
-              PopupMenuItem(value: 'cover', child: Text(l10n.coverTrafficMenu)),
-              PopupMenuItem(
-                  value: 'burnreceipts', child: Text(l10n.burnReceiptsMenu)),
-              PopupMenuItem(value: 'relays', child: Text(l10n.myRelaysMenu)),
-              PopupMenuItem(value: 'resettor', child: Text(l10n.resetTorMenu)),
-              PopupMenuItem(value: 'update', child: Text(l10n.updateApp)),
-              PopupMenuItem(value: 'about', child: Text(l10n.aboutMenu)),
-              // Issue #15: leave the network and close, keeping the identity. Next to "Log out"
-              // on purpose, so the harmless way out is found before the destructive one.
-              PopupMenuItem(value: 'exit', child: Text(l10n.exitMenu)),
-              PopupMenuItem(
-                  value: 'logout', child: Text(l10n.logoutDeleteMenu)),
-            ],
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const PairingScreen()),
+    final width = MediaQuery.sizeOf(context).width;
+    final wide = width >= _wide;
+    // Beside the rail, a chat opens in the pane rather than over the whole window.
+    void openInPane(String id, bool group) => setState(() => _open = (id, group));
+    final desk = width >= _desk;
+    // A phone's bottom bar carries the first three; the profile is in its top bar. A side rail
+    // has room for all four.
+    final sections = [
+      (Icons.chat_bubble_outline, Icons.chat_bubble, l10n.chats),
+      (Icons.people_outline, Icons.people, AppLocale.pick('Contacts', 'Контакты')),
+      (Icons.settings_outlined, Icons.settings, l10n.tabSettings),
+      (Icons.person_outline, Icons.person, l10n.tabProfile),
+    ];
+    final page = switch (_tab) {
+      0 => _ChatList(
+          groupsOnly: false,
+          requestsOnly: _requestsOnly,
+          onOpen: wide ? openInPane : null,
+          selected: desk ? _open?.$1 : null,
         ),
-        icon: const Icon(Icons.qr_code_2),
-        label: Text(l10n.newChat),
-      ),
-      body: Column(
-        children: [
+      1 => _ChatList(
+          groupsOnly: false,
+          peopleOnly: true,
+          onOpen: wide ? openInPane : null,
+          selected: desk ? _open?.$1 : null,
+        ),
+      2 => const _SettingsTab(),
+      _ => const _ProfileTab(),
+    };
+    final content = Column(
+      children: [
+        if (_tab < 2) ...[
           _OnionBanner(core: core),
           const _BackgroundStoppedBanner(),
           _RelayHealthBanner(core: core),
-          _ProtocolBreakBanner(core: core),
           _BackupReminderBanner(core: core),
-          _UpdateBanner(core: core),
-          Expanded(
-            child: ListenableBuilder(
-        listenable: core,
-        builder: (context, _) {
-          final requests = core.incomingRequests;
-          final contacts = core.contacts;
-          if (requests.isEmpty && contacts.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  l10n.noChatsYet,
-                  textAlign: TextAlign.center,
-                ),
+        ],
+        Expanded(child: page),
+      ],
+    );
+    // The one button for starting something sits in the top bar, next to the profile.
+    final actionButton = Padding(
+      padding: const EdgeInsets.only(right: 12, left: 6),
+      child: Semantics(
+        button: true,
+        label: l10n.newChat,
+        child: Tooltip(
+          message: l10n.newChat,
+          child: InkResponse(
+            key: const ValueKey('new-action'),
+            onTap: _newAction,
+            radius: 26,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: CyberDog.outgoing,
+                boxShadow: CyberDog.glow,
               ),
-            );
-          }
-          return ListView(
+              child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+            ),
+          ),
+        ),
+      ),
+    );
+    final profileButton = IconButton(
+      key: const ValueKey('profile-button'),
+      tooltip: l10n.tabProfile,
+      onPressed: () => _push(const _ProfileScreen()),
+      icon: const _OwnAvatar(radius: 17),
+    );
+    if (desk) {
+      final rail = NavigationRail(
+        backgroundColor: Colors.transparent,
+        extended: true,
+        minExtendedWidth: 212,
+        indicatorColor: CyberDog.accent.withValues(alpha: 0.12),
+        selectedIconTheme: const IconThemeData(color: CyberDog.accent),
+        selectedLabelTextStyle: const TextStyle(
+          color: CyberDog.accentDark,
+          fontWeight: FontWeight.w700,
+          fontSize: 14.5,
+        ),
+        unselectedLabelTextStyle: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+          fontSize: 14.5,
+        ),
+        leading: const Padding(
+          padding: EdgeInsets.fromLTRB(4, 14, 4, 18),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              for (final r in requests) _RequestTile(request: r, core: core),
-              for (final c in contacts)
-                // Long-press (touch) or right-click (desktop) a chat to delete it.
-                GestureDetector(
-                  onLongPress: () => _confirmDeleteChat(context, core, c),
-                  onSecondaryTapDown: (_) => _confirmDeleteChat(context, core, c),
-                  child: ListTile(
-                    leading: const ExcludeSemantics(
-                      child: CircleAvatar(child: Text('👻')),
-                    ),
-                    title: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(child: Text(c.displayName)),
-                        if (c.showIdentityTag) ...[
-                          const SizedBox(width: 6),
-                          IdentityTag(tag: c.identityTag),
+              CyberDogLogo(size: 40),
+              SizedBox(width: 10),
+              BrandTitle(fontSize: 17),
+            ],
+          ),
+        ),
+        selectedIndex: _tab,
+        // Choosing a section leaves whatever chat was open.
+        onDestinationSelected: (i) => setState(() {
+          _tab = i;
+          _open = null;
+        }),
+        destinations: [
+          for (final (icon, selected, label) in sections)
+            NavigationRailDestination(
+              icon: Icon(icon),
+              selectedIcon: Icon(selected),
+              label: Text(label),
+            ),
+        ],
+      );
+      return Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Surface(child: rail),
+                const SizedBox(width: 12),
+                if (_tab < 2) ...[
+                  SizedBox(
+                    width: 380,
+                    child: _Surface(
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(22, 18, 14, 10),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    sections[_tab].$3,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -.5,
+                                    ),
+                                  ),
+                                ),
+                                IconButton.filled(
+                                  key: const ValueKey('new-action'),
+                                  tooltip: l10n.newChat,
+                                  onPressed: _newAction,
+                                  icon: const Icon(Icons.add_rounded),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(child: content),
                         ],
-                        if (c.verified) ...[
-                          const SizedBox(width: 6),
-                          Icon(Icons.verified_user,
-                              semanticLabel: l10n.verified,
-                              size: 15,
-                              color: Theme.of(context).colorScheme.primary),
-                        ],
-                      ],
+                      ),
                     ),
-                    subtitle: c.remoteStorage
-                        ? Text(l10n.storedOnServer24h)
-                        : Text(l10n.storedOnThisDevice),
-                    // Counted once per tile: unreadCount scans the chat's history.
-                    trailing: switch (core.unreadCount(c.id)) {
-                      0 => null,
-                      final n => Badge(label: Text('$n')),
-                    },
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ChatScreen(contactId: c.id),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: _Surface(child: _detail(core))),
+                ] else
+                  Expanded(
+                    child: _Surface(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 760),
+                          child: content,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 58,
+        centerTitle: false,
+        titleSpacing: 16,
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CyberDogLogo(size: 36),
+            SizedBox(width: 8),
+            BrandTitle(fontSize: 21),
+          ],
+        ),
+        actions: [if (!wide) profileButton, actionButton],
+        // What the lists hold, as a line under the brand: chats, contacts, and the requests
+        // waiting for an answer.
+        bottom: !wide && _tab < 2
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(40),
+                child: _TopTabs(
+                  active: _requestsOnly && _tab == 0 ? 2 : _tab,
+                  requests: core.incomingRequests.length,
+                  onSelect: (i) => setState(() {
+                    _tab = i == 1 ? 1 : 0;
+                    _requestsOnly = i == 2;
+                  }),
+                ),
+              )
+            : null,
+      ),
+      body: wide
+          ? Row(
+              children: [
+                NavigationRail(
+                  backgroundColor: Colors.transparent,
+                  extended: MediaQuery.sizeOf(context).width >= 1100,
+                  selectedIndex: _tab,
+                  // Choosing a section leaves whatever chat was open in the pane.
+                  onDestinationSelected: (i) => setState(() {
+                    _tab = i;
+                    _open = null;
+                  }),
+                  destinations: [
+                    for (final (icon, selected, label) in sections)
+                      NavigationRailDestination(
+                        icon: Icon(icon),
+                        selectedIcon: Icon(selected),
+                        label: Text(label),
+                      ),
+                  ],
+                ),
+                const VerticalDivider(width: 1, color: CyberDog.hairline),
+                Expanded(
+                  child: _pane(
+                    core,
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: content,
                       ),
                     ),
                   ),
                 ),
-            ],
-          );
-        },
+              ],
+            )
+          : content,
+      // A floating bar: lifted off the edge, rounded, with a soft shadow.
+      bottomNavigationBar: wide
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(34),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x2E1C3E78), blurRadius: 28, offset: Offset(0, 10)),
+                    BoxShadow(color: Color(0x1F1F6FFF), blurRadius: 18, spreadRadius: -6),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(34),
+                  child: NavigationBarTheme(
+                    data: NavigationBarThemeData(
+                      // The chosen section: a white icon on a solid blue pill, its name in blue.
+                      iconTheme: WidgetStateProperty.resolveWith(
+                        (states) => IconThemeData(
+                          size: 27,
+                          color: states.contains(WidgetState.selected)
+                              ? Colors.white
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      labelTextStyle: WidgetStateProperty.resolveWith(
+                        (states) => TextStyle(
+                          fontSize: 12.5,
+                          letterSpacing: .1,
+                          fontWeight: states.contains(WidgetState.selected)
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: states.contains(WidgetState.selected)
+                              ? CyberDog.accent
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    child: NavigationBar(
+                      height: 78,
+                      backgroundColor: CyberDog.panel,
+                      indicatorColor: CyberDog.accent,
+                      indicatorShape: const StadiumBorder(),
+                      // The profile is not along the bottom: shown from a rail, it marks nothing.
+                      selectedIndex: _tab > 2 ? 2 : _tab,
+                      onDestinationSelected: (i) => setState(() {
+                        _tab = i;
+                        _requestsOnly = false;
+                      }),
+                      destinations: [
+                        for (final (icon, selected, label) in sections.take(3))
+                          NavigationDestination(
+                            icon: Icon(icon),
+                            selectedIcon: Icon(selected),
+                            label: label,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// The line under the brand on a phone: Chats, Contacts, Requests. It shows where one is and how
+/// many requests wait, and a tap goes there.
+class _TopTabs extends StatelessWidget {
+  const _TopTabs({required this.active, required this.requests, required this.onSelect});
+
+  /// 0 chats, 1 contacts, 2 requests.
+  final int active;
+  final int requests;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget tab(int index, String text, {int count = 0}) {
+      final on = active == index;
+      return Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: InkWell(
+            key: ValueKey('top-tab-$index'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => onSelect(index),
+            child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.only(bottom: 8, top: 6),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: on ? CyberDog.accent : Colors.transparent, width: 2),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                    color: on ? CyberDog.accent : scheme.onSurfaceVariant,
+                  ),
+                ),
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Badge(label: Text('$count'), backgroundColor: CyberDog.accent),
+                ],
+              ],
             ),
           ),
-        ],
+          ),
+        );
+    }
+
+    return Container(
+          height: 40,
+          alignment: Alignment.bottomLeft,
+          padding: const EdgeInsets.only(left: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: CyberDog.hairline)),
+          ),
+          // Scaled down rather than cut off, should a narrow screen or a large font not fit it.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.bottomLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                tab(0, AppLocale.pick('Chats', 'Чаты')),
+                tab(1, AppLocale.pick('Contacts', 'Контакты')),
+                tab(2, AppLocale.pick('Requests', 'Запросы'), count: requests),
+              ],
+            ),
+          ),
+    );
+  }
+}
+
+/// The user's own avatar, in the colour chosen in the profile.
+class _OwnAvatar extends StatelessWidget {
+  const _OwnAvatar({required this.radius});
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: PrivacyPrefs.avatarStyle,
+        builder: (context, style, _) =>
+            CyberDogAvatar(seed: 'me', label: '', radius: radius, palette: style),
+      );
+}
+
+/// The avatar at the top of the profile: tap it to choose another colour.
+class _AvatarChoice extends StatelessWidget {
+  const _AvatarChoice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: InkResponse(
+        key: const ValueKey('change-avatar'),
+        radius: 56,
+        onTap: () => showModalBottomSheet<void>(
+          context: context,
+          builder: (context) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (var i = 0; i < CyberDogAvatar.paletteCount; i++)
+                    InkResponse(
+                      key: ValueKey('avatar-$i'),
+                      radius: 36,
+                      onTap: () {
+                        PrivacyPrefs.setAvatarStyle(i);
+                        Navigator.pop(context);
+                      },
+                      child: CyberDogAvatar(seed: 'me', label: '', radius: 30, palette: i),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const _OwnAvatar(radius: 46),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: CyberDog.panel,
+                  border: Border.all(color: CyberDog.hairline),
+                ),
+                child: const Icon(Icons.edit_outlined, size: 16, color: CyberDog.accent),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+/// The profile as a screen of its own, opened from the top bar of a phone.
+class _ProfileScreen extends StatelessWidget {
+  const _ProfileScreen();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text(AppLocalizations.of(context)!.tabProfile)),
+        body: const _ProfileTab(),
+      );
+}
+
+/// One row of the chat list: a contact or a group, with the last thing said in it.
+class _Row {
+  const _Row({this.contact, this.group, this.last});
+
+  final Contact? contact;
+  final Group? group;
+
+  /// The newest message that is not a system notice, if there is one.
+  final Message? last;
+}
+
+/// What the list says a message was, without printing more than a line of it. A message that is
+/// meant to disappear is never quoted here.
+String _preview(AppLocalizations l10n, Message m) {
+  final body = m.isDeleted
+      ? l10n.messageDeleted
+      : m.burnSecs > 0 || m.isBurnExpired || m.isViewedOnce
+          ? l10n.previewHidden
+          : m.isImage
+              ? l10n.previewPhoto
+              : m.isAudio
+                  ? l10n.previewVoice
+                  : m.isVideo
+                      ? l10n.video
+                      : m.text;
+  return m.fromMe ? '${l10n.previewYou} $body' : body;
+}
+
+/// Today's messages by the clock, older ones by the date.
+String _listTime(DateTime at) {
+  final now = DateTime.now();
+  final local = at.toLocal();
+  if (local.year == now.year && local.month == now.month && local.day == now.day) {
+    return formatMessageTime(at);
+  }
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.day)}.${two(local.month)}';
+}
+
+/// The chats, newest activity first: everything, or only the groups.
+class _ChatList extends StatelessWidget {
+  const _ChatList({required this.groupsOnly, this.peopleOnly = false,
+    this.requestsOnly = false,
+    this.onOpen,
+    this.selected,
+  });
+
+  /// People without the groups: the Contacts section.
+  final bool peopleOnly;
+
+  /// Only the requests waiting for an answer.
+  final bool requestsOnly;
+
+  final bool groupsOnly;
+
+  /// On a wide window: open the chat in the pane beside the rail (its id, whether it is a group)
+  /// instead of over the whole window. Null on a phone.
+  final void Function(String id, bool group)? onOpen;
+
+  /// The chat open beside the list on a large window, to mark its row.
+  final String? selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    return ListenableBuilder(
+      listenable: core,
+      builder: (context, _) {
+        final requests = groupsOnly ? const <Contact>[] : core.incomingRequests;
+        final rows = requestsOnly ? <_Row>[] : <_Row>[
+          if (!peopleOnly)
+            for (final g in core.groups)
+              _Row(
+                group: g,
+                last: core.groupMessagesFor(g.id).where((m) => !m.system).lastOrNull,
+              ),
+          if (!groupsOnly)
+            for (final c in core.contacts)
+              _Row(
+                contact: c,
+                last: core.messagesFor(c.id).where((m) => !m.system).lastOrNull,
+              ),
+        ];
+        // Newest first; chats with nothing said yet keep their order at the end. The sort is
+        // stable only if told to be, so the original position breaks ties.
+        final order = {for (var i = 0; i < rows.length; i++) rows[i]: i};
+        rows.sort((a, b) {
+          final at = a.last?.at, bt = b.last?.at;
+          if (at != null && bt != null) return bt.compareTo(at);
+          if (at != null) return -1;
+          if (bt != null) return 1;
+          return order[a]!.compareTo(order[b]!);
+        });
+        if (requests.isEmpty && rows.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 168,
+                    height: 168,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [Color(0x5522B4F2), Color(0x1F1F6FFF), Color(0x001F6FFF)],
+                        stops: [0, .6, 1],
+                      ),
+                    ),
+                    child: const CyberDogLogo(size: 112),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    requestsOnly
+                        ? AppLocale.pick('No requests', 'Запросов нет')
+                        : groupsOnly
+                            ? l10n.noGroupsYet
+                            : l10n.noChatsYet,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -.2),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    requestsOnly
+                        ? AppLocale.pick('Someone who writes to your address appears here.',
+                            'Здесь появится тот, кто напишет на ваш адрес.')
+                        : AppLocale.pick(
+                            'Tap + to start a private chat.', 'Нажмите +, чтобы начать приватный чат.'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 88),
+          children: [
+            for (final r in requests) _RequestTile(request: r, core: core),
+            for (final row in rows)
+              _ChatTile(
+                row: row,
+                core: core,
+                onOpen: onOpen,
+                selected: selected != null && selected == (row.contact?.id ?? row.group?.id),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A chat in the list: avatar, name, the last line, and on the right the time with either the
+/// unread count or, for our own last message, whether it was delivered.
+class _ChatTile extends StatelessWidget {
+  const _ChatTile({required this.row, required this.core, this.onOpen, this.selected = false});
+
+  final _Row row;
+  final NightdropCore core;
+  final void Function(String id, bool group)? onOpen;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    final contact = row.contact;
+    final group = row.group;
+    final last = row.last;
+    final unread =
+        contact != null ? core.unreadCount(contact.id) : core.groupUnreadCount(group!.id);
+    final muted = TextStyle(color: scheme.onSurfaceVariant, fontSize: 13);
+    final subtitle = last != null
+        ? _preview(l10n, last)
+        : contact != null
+            ? (contact.remoteStorage ? l10n.storedOnServer24h : l10n.storedOnThisDevice)
+            : l10n.groupMembersCount(group!.members.length);
+    void open() {
+      final inPane = onOpen;
+      if (inPane != null) {
+        inPane(contact?.id ?? group!.id, group != null);
+        return;
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => contact != null
+              ? ChatScreen(contactId: contact.id)
+              : GroupChatScreen(groupId: group!.id),
+        ),
+      );
+    }
+
+    // Long-press (touch) or right-click (desktop) a chat to delete it.
+    void remove() {
+      if (contact != null) _confirmDeleteChat(context, core, contact);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Material(
+      color: selected ? CyberDog.accent.withValues(alpha: 0.10) : Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+      onTap: open,
+      onLongPress: contact != null ? remove : null,
+      onSecondaryTap: contact != null ? remove : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            ExcludeSemantics(
+              child: CyberDogAvatar(
+                seed: contact?.id ?? group!.id,
+                label: contact?.headerName ?? group!.name,
+                group: group != null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          contact?.headerName ?? group!.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            letterSpacing: -.1,
+                            fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (contact != null && contact.showIdentityTag) ...[
+                        const SizedBox(width: 6),
+                        IdentityTag(tag: contact.identityTag),
+                      ],
+                      if (contact != null && contact.verified) ...[
+                        const SizedBox(width: 6),
+                        // Present, not prominent: the name is what the row is for.
+                        Icon(Icons.verified_user,
+                            semanticLabel: l10n.verified,
+                            size: 12,
+                            color: scheme.onSurfaceVariant),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    // An unread chat's last line is in ink, a read one's is muted.
+                    style: unread > 0
+                        ? muted.copyWith(color: scheme.onSurface, fontWeight: FontWeight.w500)
+                        : muted,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  last != null ? _listTime(last.at) : '',
+                  style: muted.copyWith(
+                    fontSize: 12,
+                    color: unread > 0 ? CyberDog.accent : null,
+                    fontWeight: unread > 0 ? FontWeight.w600 : null,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                if (unread > 0)
+                  Badge(label: Text('$unread'), backgroundColor: CyberDog.accent)
+                else if (last != null && last.fromMe && last.delivery.isNotEmpty)
+                  Icon(
+                    switch (last.delivery) {
+                      'delivered' => Icons.done_all,
+                      'queued' => Icons.cloud_upload_outlined,
+                      'expired' => Icons.error_outline,
+                      _ => group != null ? Icons.done : Icons.schedule,
+                    },
+                    size: 15,
+                    // Delivered ticks are in the accent, anything still on its way is muted.
+                    color: last.delivery == 'delivered' ? CyberDog.accent : scheme.onSurfaceVariant,
+                  )
+                else
+                  const SizedBox(height: 15),
+              ],
+            ),
+          ],
+        ),
+      ),
+      ),
+      ),
+    );
+  }
+}
+
+/// A white glass panel: the sidebar, the list and the message area of a large window.
+class _Surface extends StatelessWidget {
+  const _Surface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: CyberDog.panel.withValues(alpha: 0.82),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: CyberDog.hairline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+}
+
+/// The message area before a chat is chosen.
+class _EmptyDetail extends StatelessWidget {
+  const _EmptyDetail();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      type: MaterialType.transparency,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CyberDogLogo(size: 132),
+            const SizedBox(height: 18),
+            Text(
+              AppLocale.pick('Select a chat', 'Выберите чат'),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -.4),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              AppLocale.pick('Your messages are end-to-end encrypted.',
+                  'Ваши сообщения защищены сквозным шифрованием.'),
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A page of the message area. Unlike an ordinary page it brings no back arrow and no slide:
+/// the chat is beside its list, not on top of it.
+class _DetailPage extends Page<void> {
+  const _DetailPage({required LocalKey super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Route<void> createRoute(BuildContext context) => _DetailRoute(this);
+}
+
+class _DetailRoute extends PageRoute<void> {
+  _DetailRoute(_DetailPage page) : super(settings: page);
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  bool get impliesAppBarDismissal => false;
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> a, Animation<double> b) =>
+      (settings as _DetailPage).child;
+}
+
+/// A small heading between groups of settings.
+class _Section extends StatelessWidget {
+  const _Section(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+        child: Text(
+          title.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 11,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w600,
+            color: CyberDog.accentLight,
+          ),
+        ),
+      );
+}
+
+/// A rounded panel holding a few related rows, with a hairline between them.
+class _Panel extends StatelessWidget {
+  const _Panel(this.rows);
+
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Material(
+          color: CyberDog.panel.withValues(alpha: 0.9),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: CyberDog.hairline),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) const Divider(height: 1, indent: 56, color: CyberDog.hairline),
+                rows[i],
+              ],
+            ],
+          ),
+        ),
+      );
+}
+
+/// One row of a settings panel: an icon, what it is, and a chevron saying it opens something.
+class _Item extends StatelessWidget {
+  const _Item(this.icon, this.title, this.onTap, {this.danger = false, this.chevron = true});
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  /// Drawn in the error colour: an action that cannot be undone.
+  final bool danger;
+  final bool chevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(icon, color: danger ? scheme.error : CyberDog.accentLight),
+      title: Text(title, style: danger ? TextStyle(color: scheme.error) : null),
+      trailing: chevron
+          ? Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)
+          : null,
+      onTap: onTap,
+    );
+  }
+}
+
+/// Settings — the only place they live. Everyday ones first; what matters only on the Tor
+/// transport, or to someone running their own relay, is folded away under "Advanced".
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    void push(Widget screen) =>
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        _Section(l10n.settingsSectionPrivacy),
+        _Panel([
+          _Item(Icons.lock_outline, l10n.privacyMenu, () => push(const PrivacyScreen())),
+          _Item(Icons.pin_outlined, l10n.appLockMenu, () => showAppLockSettings(context, core)),
+          _Item(Icons.shield_outlined, l10n.duressMenu, () => showDuressSettings(context, core)),
+          if (BackgroundDelivery.supported)
+            _Item(Icons.notifications_none, l10n.backgroundDeliveryMenu,
+                () => _backgroundDeliverySettings(context)),
+        ]),
+        _Section(l10n.settingsSectionData),
+        _Panel([
+          _Item(Icons.save_alt, l10n.saveBackupFile, () => createAndSaveBackup(context, core)),
+          _Item(Icons.cloud_upload_outlined, l10n.backUpToServer24h,
+              () => _createServerBackup(context, core)),
+          _Item(Icons.merge_type, l10n.mergeChatBackupMenu, () => mergeChatBackup(context, core)),
+        ]),
+        _Section(l10n.settingsSectionApp),
+        _Panel([
+          _Item(Icons.language, l10n.switchLanguage, AppLocale.toggle, chevron: false),
+          _Item(Icons.info_outline, l10n.aboutMenu, () => _showAbout(context)),
+        ]),
+        const SizedBox(height: 18),
+        _Panel([
+          ExpansionTile(
+            key: const ValueKey('settings-advanced'),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            leading: const Icon(Icons.tune, color: CyberDog.accentLight),
+            title: Text(l10n.settingsSectionAdvanced),
+            children: [
+              _Item(Icons.visibility_off_outlined, l10n.coverTrafficMenu,
+                  () => _coverTrafficSettings(context, core)),
+              _Item(Icons.local_fire_department_outlined, l10n.burnReceiptsMenu,
+                  () => _burnReceiptSettings(context, core)),
+              _Item(Icons.hub_outlined, l10n.myRelaysMenu, () => _editRelays(context, core)),
+              _Item(Icons.alt_route, l10n.bridgesMenu, () => push(const BridgesScreen())),
+              _Item(Icons.restart_alt, l10n.resetTorMenu,
+                  () => _confirmResetTor(context, core)),
+            ],
+          ),
+        ]),
+      ],
+    );
+  }
+}
+
+/// Who you are here: the name you chose, your ID, the address others can reach you at — and the
+/// two ways out.
+class _ProfileTab extends StatelessWidget {
+  const _ProfileTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final core = NightdropScope.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    void push(Widget screen) =>
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        const SizedBox(height: 28),
+        const _AvatarChoice(),
+        const SizedBox(height: 14),
+        ValueListenableBuilder<String>(
+          valueListenable: ProfileName.current,
+          builder: (context, name, _) => Text(
+            plainName(name),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Center(child: UserRankBadge(rank: UserRankBadge.defaultRank)),
+        const SizedBox(height: 8),
+        Text(
+          core.identity?.id ?? '',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 22),
+        _Panel([
+          _Item(Icons.qr_code_2, l10n.myAddressTitle, () => push(const MyAddressScreen())),
+          _Item(Icons.badge_outlined, l10n.myNameMenu, () => _editMyName(context, core)),
+          _Item(Icons.fingerprint, l10n.myIdentity, () => _showMyIdentity(context, core)),
+        ]),
+        const SizedBox(height: 18),
+        // The harmless way out above the destructive one, so it is the one found first.
+        _Panel([
+          _Item(Icons.logout, l10n.exitMenu, () => _confirmExit(context, core), chevron: false),
+          _Item(Icons.delete_forever_outlined, l10n.logoutDeleteMenu,
+              () => _confirmLogout(context, core),
+              danger: true, chevron: false),
+        ]),
+      ],
     );
   }
 }
@@ -515,220 +1559,6 @@ class _RelayHealthBannerState extends State<_RelayHealthBanner> {
   }
 }
 
-/// Gentle, dismissible reminder to back up once there are chats worth losing and no backup has
-/// been made yet (lost backup / password = lost data, by design — §7). "Back up" opens the file
-/// backup; "Later" snoozes it. Hidden entirely once a backup succeeds or while snoozed.
-/// "A newer release exists" — shown only when our onion site says so (see `core/src/update.rs`).
-///
-/// Deliberately not dismissible-with-memory and deliberately quiet: it carries no urgency styling
-/// and no download button. The app never fetches or installs a build; the user goes and gets it.
-/// It disappears by itself once the running version matches, so there is nothing to dismiss.
-/// "Update app" — the way back to an update the user hid, and the way to ask on demand rather
-/// than waiting for the daily check.
-///
-/// Downloads and verifies; it never installs. Forces a check first, because the point of asking
-/// is not to be told what yesterday's check thought.
-Future<void> _updateApp(BuildContext context, NightdropCore core) async {
-  final l10n = AppLocalizations.of(context)!;
-  final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(SnackBar(content: Text(l10n.updateChecking)));
-  final answered = await core.checkForUpdateNow();
-  final version = core.updateAvailable;
-  if (!context.mounted) return;
-  if (!answered) {
-    // The site did not answer. Saying "up to date" here would be a confident lie on the one
-    // screen where the user deliberately asked.
-    messenger.showSnackBar(SnackBar(content: Text(l10n.updateCheckFailed)));
-    return;
-  }
-  if (version == null) {
-    messenger.showSnackBar(SnackBar(content: Text(l10n.updateUpToDate)));
-    return;
-  }
-  final go = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      content: Text(l10n.updateAvailableBody(version)),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(l10n.close),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: Text(l10n.updateDownload),
-        ),
-      ],
-    ),
-  );
-  if (go != true) return;
-  messenger.showSnackBar(SnackBar(content: Text(l10n.updateDownloading)));
-  final path = await core.downloadUpdate();
-  messenger.showSnackBar(SnackBar(
-    content: Text(path == null ? l10n.updateFailed : '${l10n.updateDownloaded}\n$path'),
-    duration: const Duration(seconds: 8),
-  ));
-}
-
-class _UpdateBanner extends StatefulWidget {
-  const _UpdateBanner({required this.core});
-
-  final NightdropCore core;
-
-  @override
-  State<_UpdateBanner> createState() => _UpdateBannerState();
-}
-
-class _UpdateBannerState extends State<_UpdateBanner> {
-  bool _busy = false;
-
-  /// True while *any* download runs, including one the menu started. Asking the core rather than
-  /// only tracking our own tap is what stops the banner offering to start a second one — tapping
-  /// it to watch a download in progress used to do exactly that.
-  bool get _downloading => _busy || widget.core.downloadInProgress;
-
-  /// "45%" once there is a figure, empty until then. Empty rather than "0%" on purpose: a Tor
-  /// circuit can take tens of seconds to produce the first byte, and "0%" for half a minute reads
-  /// as stuck where a bare "Downloading…" reads as starting.
-  String get _percentLabel {
-    final p = widget.core.downloadProgress;
-    return p == null ? '' : ' ${(p * 100).round()}%';
-  }
-
-  /// Tapping the banner downloads; it never installs. The file is verified against the hash the
-  /// onion site published, then handed to the user — Android decides whether it may replace the
-  /// app, and it refuses anything not signed by our release key.
-  Future<void> _download() async {
-    if (_downloading) return;
-    setState(() => _busy = true);
-    final l10n = AppLocalizations.of(context)!;
-    final path = await widget.core.downloadUpdate();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(path == null ? l10n.updateFailed : '${l10n.updateDownloaded}\n$path'),
-      duration: const Duration(seconds: 8),
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final version = widget.core.updateAvailable;
-    if (version == null) return const SizedBox.shrink();
-    final l10n = AppLocalizations.of(context)!;
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.secondaryContainer,
-      child: InkWell(
-        onTap: _downloading ? null : _download,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-          child: Row(
-            children: [
-              Icon(Icons.system_update_alt,
-                  size: 18, color: scheme.onSecondaryContainer),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _downloading
-                          ? l10n.updateDownloadingPercent(_percentLabel)
-                          : l10n.updateAvailableBody(version),
-                      style: TextStyle(
-                          color: scheme.onSecondaryContainer, fontSize: 12.5),
-                    ),
-                    // Only while downloading, and only then: a bar sitting under a plain notice
-                    // would read as progress toward something the user has not started.
-                    if (_downloading) ...[
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        // A null value renders the indeterminate animation, which is the honest
-                        // display when the server did not say how big the file is.
-                        child: LinearProgressIndicator(
-                          value: widget.core.downloadProgress,
-                          minHeight: 3,
-                          backgroundColor:
-                              scheme.onSecondaryContainer.withValues(alpha: 0.15),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              // Hiding is scoped to this version: a later release shows again, so a hidden
-              // banner can never swallow the notice that actually matters.
-              TextButton(
-                onPressed: _downloading ? null : widget.core.hideUpdateBanner,
-                child: Text(l10n.updateHide),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Warns, in the last 0.1.x releases, that 0.2 changes the protocol: 0.1.x and 0.2 apps cannot
-/// message each other, so people who do not update lose contact with those who do. A changelog
-/// line does not reach most people; this does. Dismissible, and shown once more after each update.
-class _ProtocolBreakBanner extends StatefulWidget {
-  const _ProtocolBreakBanner({required this.core});
-
-  final NightdropCore core;
-
-  @override
-  State<_ProtocolBreakBanner> createState() => _ProtocolBreakBannerState();
-}
-
-class _ProtocolBreakBannerState extends State<_ProtocolBreakBanner> {
-  bool _show = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.core.shouldShowProtocolBreakNotice().then((show) {
-      if (mounted) setState(() => _show = show);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_show) return const SizedBox.shrink();
-    final l10n = AppLocalizations.of(context)!;
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.tertiaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-        child: Row(
-          children: [
-            Icon(Icons.update, size: 18, color: scheme.onTertiaryContainer),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                l10n.protocolBreakNotice,
-                style: TextStyle(color: scheme.onTertiaryContainer, fontSize: 12.5),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                await widget.core.dismissProtocolBreakNotice();
-                if (mounted) setState(() => _show = false);
-              },
-              child: Text(l10n.gotIt),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _BackupReminderBanner extends StatefulWidget {
   const _BackupReminderBanner({required this.core});
 
@@ -990,6 +1820,51 @@ Future<void> _createServerBackup(BuildContext context, NightdropCore core) async
 }
 
 /// Show this device's own anonymous identity (the id others key you by).
+/// "My name" — the name new chats start with. Existing chats that still use the previous
+/// preferred name (or the default) follow the change; a chat renamed by hand keeps its own name.
+Future<void> _editMyName(BuildContext context, NightdropCore core) async {
+  final l10n = AppLocalizations.of(context)!;
+  final previous = ProfileName.current.value;
+  final controller = TextEditingController(text: previous == kDefaultName ? '' : previous);
+  final entered = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: Text(l10n.myNameMenu),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l10n.myNameBody),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 24,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: Text(l10n.save),
+        ),
+      ],
+    ),
+  );
+  if (entered == null) return;
+  final name = entered.trim().isEmpty ? kDefaultName : entered.trim();
+  await ProfileName.set(name);
+  for (final c in core.contacts) {
+    final followsSetting = c.myName == kDefaultName || (previous.isNotEmpty && c.myName == previous);
+    if (followsSetting && c.myName != name) core.setMyNameInChat(c.id, name);
+  }
+}
+
 Future<void> _showMyIdentity(BuildContext context, NightdropCore core) async {
   final l10n = AppLocalizations.of(context)!;
   final id = core.identity?.id ?? '(none)';
@@ -1017,8 +1892,15 @@ Future<void> _showMyIdentity(BuildContext context, NightdropCore core) async {
 /// dialog rather than Flutter's `showAboutDialog`, which auto-adds a "View licenses" button (the
 /// full bundled-package license list) and a "Powered by Flutter" footer we don't want here.
 void _showAbout(BuildContext context) {
+  // The number after "+" in the pubspec version never changes between our builds, so it says
+  // nothing about which build this is. Preview builds pass their real build number instead; it
+  // matches the number in the downloaded file's name.
+  const build = String.fromEnvironment('CYBERDOG_BUILD');
   final parts = kAppVersion.split('+');
-  final version = parts.length == 2 ? '${parts[0]} (build ${parts[1]})' : kAppVersion;
+  final number = build.isNotEmpty ? build : (parts.length == 2 ? parts[1] : '');
+  final version = number.isEmpty
+      ? parts[0]
+      : '${parts[0]} (${AppLocale.pick('build', 'сборка')} $number)';
   final l10n = AppLocalizations.of(context)!;
   showDialog<void>(
     context: context,
@@ -1037,18 +1919,12 @@ void _showAbout(BuildContext context) {
                 Text(AppConfig.current.appName,
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 2),
-                Text('Version $version',
+                Text('${AppLocale.pick('Version', 'Версия')} $version',
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
-                const Text('© 2026 Night Drop'),
+                const Text('© 2026 CyberDog'),
                 const Text('AGPL-3.0-or-later'),
                 const SizedBox(height: 12),
-                // The one connection the app makes on its own behalf, stated where it stays
-                // stated. Everything else on the wire is the user's own traffic.
-                Text(
-                  l10n.aboutUpdateChecks,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
               ],
             ),
           ),

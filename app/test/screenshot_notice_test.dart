@@ -118,4 +118,22 @@ void main() {
 
     expect(contact.id, isNotEmpty);
   });
+
+  testWidgets('a notice at the top of the chat can be swiped away and stays away', (tester) async {
+    final (core, _) = await pumpChat(tester);
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    core.peerSaysCapturesSilent(true);
+    await tester.pump();
+    expect(find.text(l10n.peerCapturesSilentSummary), findsOneWidget);
+
+    await tester.drag(find.text(l10n.peerCapturesSilentSummary), const Offset(600, 0));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text(l10n.peerCapturesSilentSummary), findsNothing);
+
+    // The peer says it again (as it does on every launch): the notice stays dismissed.
+    core.peerSaysCapturesSilent(true);
+    await tester.pump();
+    expect(find.text(l10n.peerCapturesSilentSummary), findsNothing);
+  });
 }

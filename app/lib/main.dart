@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'src/app.dart';
 import 'src/core/app_config.dart';
+import 'src/core/app_locale.dart';
 import 'src/core/background_delivery.dart';
+import 'src/core/privacy_prefs.dart';
+import 'src/core/profile_name.dart';
 import 'src/core/rust_nightdrop_core.dart';
 import 'src/rust/frb_generated.dart';
 
@@ -14,6 +17,9 @@ Future<void> main() async {
   // Shared config (donation addresses, copy) from assets/app_config.json — the single source
   // of truth synced from config/app_config.json by `make config`.
   await AppConfig.load();
+  await AppLocale.load();
+  await ProfileName.load();
+  await PrivacyPrefs.load();
   // Load the Rust security core (flutter_rust_bridge). The native lib is built and
   // bundled by the platform build (see README "Wiring the Rust core").
   await RustLib.init();

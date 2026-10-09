@@ -41,7 +41,10 @@ void main() {
   }
 
   Future<void> openExit(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.tap(find.byKey(const ValueKey('profile-button')));
+    await tester.pumpAndSettle();
+    // Exit lives under Profile, below the fold of the 600 px test screen: bring it into view.
+    await tester.ensureVisible(find.text('Exit'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Exit'));
     await tester.pumpAndSettle();
@@ -51,7 +54,7 @@ void main() {
     final core = await pumpHome(tester);
     await openExit(tester);
 
-    expect(find.text('Exit Night Drop?'), findsOneWidget);
+    expect(find.text('Exit CyberDog?'), findsOneWidget);
     expect(find.textContaining('identity and chats stay'), findsOneWidget,
         reason: 'the harmless way out must say it is harmless, next to the one that is not');
     expect(find.textContaining('up to 24 hours'), findsOneWidget,

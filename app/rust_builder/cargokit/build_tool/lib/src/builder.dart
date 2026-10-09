@@ -155,6 +155,10 @@ class RustBuilder {
   /// Returns the path of directory containing build artifacts.
   Future<String> build() async {
     final extraArgs = [...?_buildOptions?.flags];
+    // The fork's normal delivery path uses direct HTTPS to the relay. Keep it enabled even when
+    // WebTunnel is disabled for a platform: HTTPS relay support is pure Rust/rustls and does not
+    // depend on BoringSSL or the Tor feature.
+    extraArgs.addAll(['--features', 'https-relay']);
     if (_webtunnelEnabled) {
       extraArgs.addAll(['--features', 'webtunnel']);
     }

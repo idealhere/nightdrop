@@ -220,6 +220,20 @@ pub struct PersistedFile {
     pub data: String,
 }
 
+/// An already-sealed user-message frame that has not yet reached either the peer or a relay.
+///
+/// Persisting the ciphertext is load-bearing for transport failover. The sender's Double Ratchet
+/// has already advanced by the time this exists, so after a process/core rebuild we cannot safely
+/// recreate the same frame from plaintext/history. We therefore keep the exact sealed bytes and
+/// retry them verbatim on the next transport. The outer PersistedState is itself encrypted at rest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedPendingSend {
+    pub contact_id: String,
+    pub msg_id: String,
+    /// Base64-encoded sealed wire-frame bytes.
+    pub bytes: String,
+}
+
 /// A chat-delete `Closed` signal (§11.6) that hasn't reached a relay yet, persisted so a delete
 /// survives an app restart before the poller's retry lands (otherwise a delete during a relay/arti
 /// outage, followed by a restart, would silently never notify the peer).
@@ -260,11 +274,52 @@ pub struct PersistedInvite {
 }
 
 /// The full device state written to disk.
+/// One entry of a group's history: who sent it (identity key; empty for our own) and the message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedGroupMessage {
+    #[serde(default)]
+    pub sender: String,
+    pub message: PersistedMessage,
+}
+
+/// A group chat as saved: its members by identity key and its history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedGroup {
+    pub id: String,
+    pub name: String,
+    pub creator: String,
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub left: bool,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub disappearing_secs: u64,
+    /// Acknowledgements collected so far for our messages not yet delivered to everyone.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub acks: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<PersistedGroupMessage>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedState {
     pub account_pickle: String,
     pub address: String,
     pub chats: Vec<PersistedChat>,
+    /// Group chats. `#[serde(default)]` so state saved before groups existed still loads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<PersistedGroup>,
+    /// Contacts whose build announced group support. `#[serde(default)]` for forward-compat.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups_peers: Vec<String>,
+    /// The public pre-key of our standing address, once one has been made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address_key: Option<String>,
+    /// Pending chats that began with a request to the standing address.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub address_requests: Vec<String>,
+    /// Digests of requests already received at the standing address (replay detection).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub address_hellos: Vec<String>,
     /// Attachment bytes bundled into a backup so it's self-contained. Empty in the at-rest
     /// state file (media lives in sealed sibling files there). `#[serde(default)]` +
     /// skip-empty keeps older blobs loadable and the state file small.
@@ -284,6 +339,11 @@ pub struct PersistedState {
     pub discovered_relays: Vec<String>,
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub directory_version: u64,
+    /// User-message frames that have already advanced the Double Ratchet but have not yet reached
+    /// either a peer or a relay. Persist the exact ciphertext so a restart or HTTPS→Tor transport
+    /// switch retries it verbatim instead of silently stranding a "queued" message.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_sends: Vec<PersistedPendingSend>,
     /// Undelivered chat-delete `Closed` signals (§11.6), persisted so a delete isn't lost across a
     /// restart before the retry lands. `#[serde(default)]` for forward-compat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -422,11 +482,17 @@ mod tests {
             account_pickle: "pk".into(),
             address: addr.into(),
             chats: Vec::new(),
+            groups: Vec::new(),
+            groups_peers: Vec::new(),
+            address_key: None,
+            address_requests: Vec::new(),
+            address_hellos: Vec::new(),
             media: Vec::new(),
             onion_keys: Vec::new(),
             my_relays: Vec::new(),
             discovered_relays: Vec::new(),
             directory_version: 0,
+            pending_sends: Vec::new(),
             pending_control: Vec::new(),
             pending_invites: Vec::new(),
             poll_seed: None,

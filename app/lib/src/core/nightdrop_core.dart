@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'app_locale.dart';
 import 'models.dart';
 
 /// Strip the `AnyhowException(...)` wrapper the Rust bridge puts around core errors, so the UI
@@ -18,10 +19,17 @@ String cleanCoreError(Object error) {
 String identitySetupError(Object error) {
   final msg = cleanCoreError(error);
   if (msg.toLowerCase().contains('launch onion service')) {
-    return 'Night Drop may already be running, or another copy is using its data. '
-        'Close the other window, then try again.';
+    return AppLocale.pick(
+      'CyberDog may already be running, or another copy is using its data. '
+          'Close the other window, then try again.',
+      'Возможно, CyberDog уже запущен или его данные использует другая копия. '
+          'Закройте другое окно и попробуйте снова.',
+    );
   }
-  return 'Could not set up your identity: $msg';
+  return AppLocale.pick(
+    'Could not set up your identity: $msg',
+    'Не удалось создать личность: $msg',
+  );
 }
 
 /// The UI's single seam to the security core.
@@ -68,13 +76,6 @@ abstract class NightdropCore extends ChangeNotifier {
 
   /// Snooze the backup reminder for a while (on "Later").
   Future<void> snoozeBackupReminder() async {}
-
-  /// Whether to show the "0.2 won't message 0.1 apps" notice: until dismissed, and once more after
-  /// each update to a later 0.1.x. Defaults false (e.g. the mock).
-  Future<bool> shouldShowProtocolBreakNotice() async => false;
-
-  /// Dismiss that notice for this version.
-  Future<void> dismissProtocolBreakNotice() async {}
 
   /// Tell the core whether the app is foreground or background. Backgrounded, the core polls
   /// far less often (battery/data), and new messages raise a local notification.
@@ -158,6 +159,64 @@ abstract class NightdropCore extends ChangeNotifier {
 
   /// Messages for a given contact, oldest first.
   List<Message> messagesFor(String contactId);
+
+  /// Our standing address: a link that does not expire and can be given to anyone. Whoever has it
+  /// can send a chat request, which waits in [incomingRequests] until we accept or decline it.
+  Future<String> myAddress() => throw UnsupportedError('no standing address');
+
+  /// The pending requests that came through the standing address. A request from someone we
+  /// showed a code to is accepted for us; these are not — an address can reach anyone.
+  Set<String> get addressRequests => const {};
+
+  // --- Groups --------------------------------------------------------------------------------
+  //
+  // A group message goes to each member separately over the 1:1 chat we already have with them,
+  // so every member has to be a contact. The defaults describe a core without groups.
+
+  /// Every group chat.
+  List<Group> get groups => const [];
+
+  /// A group's messages, oldest first. [Message.senderId] names who sent each one.
+  List<Message> groupMessagesFor(String groupId) => const [];
+
+  /// How we appear in [Group.members].
+  String get myIdentityKey => '';
+
+  /// The contacts that can be added to a group: their app is new enough to understand groups.
+  Set<String> get groupCapableContacts => const {};
+
+  /// Received group messages the user has not seen yet (for the list badge).
+  int groupUnreadCount(String groupId) => 0;
+
+  /// The group is on screen: everything in it counts as seen.
+  void markGroupRead(String groupId) {}
+
+  /// Create a group of us plus [memberIds] (contact ids). Returns the new group's id.
+  Future<String> createGroup(String name, List<String> memberIds) =>
+      throw UnsupportedError('groups are not available');
+
+  Future<void> sendGroupMessage(String groupId, String text) async {}
+
+  /// Send a photo ([kind] "image") or video ("video") to a group.
+  Future<void> sendGroupMedia(String groupId, List<int> data, String mime, String kind) async {}
+
+  /// Delete one of our own group messages for everyone ([Message.unsendId]).
+  Future<void> unsendGroupMessage(String groupId, String id) async {}
+
+  /// Set a group's disappearing-messages timer in seconds (0 = off). Any member may.
+  Future<void> setGroupDisappearing(String groupId, int secs) async {}
+
+  /// Add contacts to a group we created.
+  Future<void> addGroupMembers(String groupId, List<String> memberIds) async {}
+
+  /// Remove a member from a group we created.
+  Future<void> removeGroupMember(String groupId, String memberId) async {}
+
+  /// Leave a group. It stays on this device, read-only, until deleted.
+  Future<void> leaveGroup(String groupId) async {}
+
+  /// Remove a group from this device, leaving it first if we had not already.
+  Future<void> deleteGroup(String groupId) async {}
 
   /// How many received messages in this chat the user hasn't seen yet (for the list badge).
   int unreadCount(String contactId);

@@ -1,0 +1,182 @@
+import 'app_locale.dart';
+
+/// In-chat system notices are written by the core in English and stored in the chat history as
+/// plain text, so they are translated here, at display time. That keeps old history readable in
+/// whichever language is selected now, and leaves the stored text and the wire format untouched.
+///
+/// Each entry is a distinctive fragment of the English notice and its Russian wording.
+///
+/// A few notices are long explanations in the core's wording. In the stream of messages they are
+/// shown short, in both languages ([_compact]); the place to read more is the screen they point to.
+const _compact = <(String, String, String)>[
+  ('re-paired', 'Safety code changed', 'Код безопасности изменён'),
+  ('Re-paired with a new secure session', 'Safety code changed', 'Код безопасности изменён'),
+  ('enabled 24h server storage', 'Undelivered kept on server · 24 h', 'Хранение недоставленных · 24 ч'),
+  ('Your chat request was approved', 'Request accepted · you can chat', 'Запрос принят · можно общаться'),
+  ('safety number verified', 'They verified the safety code', 'Собеседник проверил код безопасности'),
+  ('cleared their verification', 'They cleared their verification', 'Собеседник снял проверку кода'),
+  ('disabled server storage', 'Server storage is off', 'Хранение на сервере выключено'),
+];
+
+/// Whether this notice is about a changed safety code, and so worth a "Verify" beside it.
+bool noticeAsksToVerify(String text) =>
+    text.contains('re-paired') || text.contains('Re-paired with a new secure session');
+
+const _notices = <(String, String)>[
+  (
+    're-paired with a new secure session. Your earlier',
+    'Собеседник выполнил сопряжение заново, начата новая защищённая сессия. Прежняя проверка '
+        'больше не действует — сверьте код безопасности ещё раз, прежде чем доверять этому чату.',
+  ),
+  (
+    're-paired, starting a new secure session',
+    'Собеседник выполнил сопряжение заново, начата новая защищённая сессия. Сверьте код '
+        'безопасности, если хотите убедиться, что это он.',
+  ),
+  (
+    'Re-paired with a new secure session',
+    'Сопряжение выполнено заново, начата новая защищённая сессия. Сверьте код безопасности ещё '
+        'раз, если хотите убедиться, кто это.',
+  ),
+  (
+    'enabled 24h server storage',
+    'Собеседник включил хранение на сервере на 24 ч для этого чата. Сообщения хранятся на '
+        'ретрансляторе в зашифрованном виде до 24 часов.',
+  ),
+  (
+    'disabled server storage',
+    'Собеседник выключил хранение на сервере для этого чата. Сообщения остаются только на '
+        'ваших устройствах.',
+  ),
+  ('Your chat request was approved', 'Ваш запрос на чат одобрен. Можно начинать общение.'),
+  (
+    'invite code has already been used',
+    'Этот код приглашения уже использован. Попросите новый код, чтобы начать чат.',
+  ),
+  (
+    'deleted this chat',
+    'Собеседник удалил этот чат. Чтобы продолжить общение, нужно создать новый чат.',
+  ),
+  ('took a screenshot of this chat', 'Собеседник сделал скриншот этого чата.'),
+  ('You took a screenshot', 'Сделан скриншот · собеседник уведомлён'),
+  (
+    'keeping a backup of this chat',
+    'Собеседник хранит резервную копию этого чата, поэтому ваши сообщения могут оставаться в '
+        'его копии.',
+  ),
+  (
+    'safety number verified',
+    'Собеседник отметил код безопасности этого чата как проверенный. Сверьте его и сами, чтобы '
+        'убедиться — это лишь то, что вам сообщили.',
+  ),
+  (
+    'cleared their verification',
+    'Собеседник снял отметку о проверке кода безопасности этого чата.',
+  ),
+  (
+    'connection address changed',
+    'Адрес подключения собеседника изменился; сообщения будут доходить, как и раньше.',
+  ),
+  ('You created the group', 'Вы создали группу.'),
+  ('You were added to the group', 'Вас добавили в группу.'),
+  ('You left the group', 'Вы вышли из группы.'),
+  ('You added a member to the group', 'Вы добавили участника в группу.'),
+  ('You removed a member from the group', 'Вы исключили участника из группы.'),
+  ('You were removed from the group', 'Вас исключили из группы.'),
+  ('A member was added to the group', 'В группу добавлен участник.'),
+  ('A member was removed from the group', 'Участник исключён из группы.'),
+  ('A member left the group', 'Участник вышел из группы.'),
+  (
+    'Waiting for the other person to accept',
+    'Ждём, пока собеседник примет чат. Сообщения не будут доставлены, пока он не примет.',
+  ),
+];
+
+final _timer =
+    RegExp(r'^(\S+ )?(You|The other person|A member) set disappearing messages to (.+)\.$');
+final _span = RegExp(r'^(\d+) (week|day|hour|minute|second)\(s\)$');
+const _units = {'week': 'нед.', 'day': 'дн.', 'hour': 'ч', 'minute': 'мин', 'second': 'с'};
+
+/// The leading pictogram the core put on a notice ("" when there is none). The chat screen
+/// turns it into a small outline icon.
+String noticeMarker(String text) {
+  final marker = _marker(text);
+  return marker.isEmpty ? '' : marker.trimRight();
+}
+
+/// The notice text in the current language, without its leading pictogram.
+String noticeBody(String text) {
+  final localized = localizeSystemNotice(text);
+  final marker = _marker(localized);
+  return marker.isEmpty ? localized : localized.substring(marker.length);
+}
+
+/// The notice as it should be shown in the current language.
+String localizeSystemNotice(String text) {
+  final russian = AppLocale.current.value == AppLocale.russian;
+  for (final (fragment, en, ru) in _compact) {
+    if (text.contains(fragment)) return '${_marker(text)}${russian ? ru : en}';
+  }
+  // Who set the timer is in the detail; the stream only needs what it is now.
+  final timer = _timer.firstMatch(text);
+  if (timer != null) {
+    final span = timer.group(3)!;
+    return '${timer.group(1) ?? ''}'
+        '${russian ? 'Исчезающие сообщения' : 'Disappearing messages'} · '
+        '${russian ? _duration(span) : _durationEn(span)}';
+  }
+  return systemNoticeDetail(text);
+}
+
+/// The notice in full, in the current language: what the stream's short form expands to when it
+/// is tapped. Equal to [localizeSystemNotice] for a notice that has no shorter form.
+String systemNoticeDetail(String text) {
+  if (AppLocale.current.value != AppLocale.russian) {
+    // One notice is shortened in English too, so it stays a single compact line.
+    return text.contains('You took a screenshot')
+        ? '${_marker(text)}Screenshot taken · the other person was told'
+        : text;
+  }
+
+  final timer = _timer.firstMatch(text);
+  if (timer != null) {
+    final who = switch (timer.group(2)) {
+      'You' => 'Вы установили',
+      'A member' => 'Участник установил',
+      _ => 'Собеседник установил',
+    };
+    return '${timer.group(1) ?? ''}$who исчезающие сообщения: ${_duration(timer.group(3)!)}.';
+  }
+  for (final (fragment, russian) in _notices) {
+    if (text.contains(fragment)) return '${_marker(text)}$russian';
+  }
+  return text;
+}
+
+/// The full sentence behind a shortened notice, without its pictogram; null when the stream
+/// already shows all there is.
+String? noticeDetail(String text) {
+  final full = systemNoticeDetail(text);
+  if (full == localizeSystemNotice(text)) return null;
+  final marker = _marker(full);
+  return marker.isEmpty ? full : full.substring(marker.length);
+}
+
+String _durationEn(String label) {
+  if (label == 'off') return 'off';
+  final span = _span.firstMatch(label);
+  const units = {'week': 'wk', 'day': 'd', 'hour': 'h', 'minute': 'min', 'second': 's'};
+  return span == null ? label : '${span.group(1)} ${units[span.group(2)]}';
+}
+
+String _duration(String label) {
+  if (label == 'off') return 'выкл';
+  final span = _span.firstMatch(label);
+  return span == null ? label : '${span.group(1)} ${_units[span.group(2)]}';
+}
+
+/// The leading pictogram of the original notice, kept so the two languages look alike.
+String _marker(String text) {
+  final first = text.split(' ').first;
+  return first.isNotEmpty && first.codeUnitAt(0) > 127 ? '$first ' : '';
+}

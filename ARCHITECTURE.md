@@ -1,7 +1,14 @@
 # Night Drop — Architecture
 
-A privacy-first 1:1 messenger. No server-side keys, no logs, P2P over an anonymity
-network, with messages stored on-device by default. Anonymous identities only.
+A privacy-first 1:1 messenger. No server-side keys, with messages stored on-device by default.
+
+> **Fork transport note:** this fork adds an optional clearnet HTTPS relay path for reliability
+> while preserving the same E2E encryption. HTTPS is encrypted but **not anonymous**: the hosting
+> and network layers can observe source IP addresses and timing. Tor/WebTunnel remains the
+> anonymity/censorship path. The fork-specific routing contract lives in
+> `docs/design/https-primary-transport.md`; where older text below says every relay request is
+> anonymous/Tor-only, that statement applies to the original onion path, not the optional HTTPS
+> ingress.
 
 This document is the design source of truth. It precedes implementation; sections
 marked _(planned)_ describe intended structure, not existing code.
@@ -14,12 +21,14 @@ marked _(planned)_ describe intended structure, not existing code.
 - End-to-end encryption where **only sender and receiver** can read messages.
 - **No server-side keys, no logs.** Any server component handles only opaque,
   E2E-encrypted blobs and learns as little metadata as possible.
-- **P2P first**; minimal server usage only where strictly necessary.
+- **E2E first**; prefer direct P2P on the anonymity path, while this fork may use an untrusted
+  HTTPS relay as the normal delivery path for reliability.
 - **Anonymous identities only** — no phone numbers, emails, or accounts.
 - **On-device storage by default**; optional 24h server storage to reduce device
   space, with a **visible in-chat warning to both parties** while it is active.
 - Cross-platform: iOS, Android, Windows, Linux, macOS — from one codebase.
-- Communication tunneled through **Tor** (pluggable for other anonymity networks).
+- **Tor/WebTunnel** remains available for anonymity and censorship resistance; the fork may also
+  use direct HTTPS relay delivery when the user prioritizes reachability over IP anonymity.
 - Accept donations without accounts: **privacy coins** (Monero, Zcash) and Bitcoin via **silent payments**.
 
 **Non-Goals (v1)**
@@ -197,8 +206,22 @@ on a re-pair (new session) exactly like `verified`.
 
 ## 6. Messaging & Transport
 
-- **Hot path:** onion-to-onion. Each client reaches the peer via Tor (`arti`); when
-  both are online, messages flow directly, ratcheted per-message.
+### 6.0 Fork transport profile: reliability-first
+
+The fork keeps the E2E frame format and relay mailbox semantics unchanged but adds a second network
+route. A logical relay may expose **both** `https://.../v1/relay` and its v3 onion; both endpoints
+must terminate at the same `RelayCore`/store before they are used as failover alternatives.
+Independent relays remain independent stores and are made redundant only by the existing fan-out +
+deduplication logic.
+
+Direct HTTPS is **not an anonymity transport**. It is allowed only for already-E2E-encrypted relay
+requests, and the UI must describe it as an encrypted connection rather than an anonymous one.
+
+- **Original/private hot path:** onion-to-onion. Each client reaches the peer via Tor (`arti`);
+  when both are online, messages flow directly, ratcheted per-message.
+- **Fork fast path:** HTTPS/443 to the untrusted relay, carrying only the existing sealed mailbox
+  protocol. If that endpoint is unavailable, the same logical relay may be reached over its onion
+  endpoint via Tor/WebTunnel.
 - **Bridges (censorship circumvention):** where the public Tor relays are IP-blocked, the
   core loads **vanilla bridge lines** from `bridges.txt` in the Tor state dir and routes
   through them (arti `bridge-client`). Where even bridge IPs are DPI-blocked,

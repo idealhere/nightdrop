@@ -12,12 +12,18 @@ import 'package:open_filex/open_filex.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../app.dart';
+import '../../core/app_locale.dart';
 import '../../core/nightdrop_core.dart';
+import '../../core/privacy_prefs.dart';
 import '../../core/media_cache.dart';
 import '../../core/models.dart';
 import '../../core/screenshot_detector.dart';
+import '../../core/system_notices.dart';
+import '../../theme/cyberdog.dart';
 import '../backup/backup_actions.dart';
+import 'contact_profile_screen.dart';
 import 'verify_screen.dart';
+import 'voice.dart';
 
 /// Downscale + recompress an image to JPEG so it's small enough to move over Tor quickly.
 /// Runs in a background isolate (via [compute]). Returns the original bytes on failure.
@@ -348,6 +354,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Pick an attachment and send it. [burnSecs] > 0 sends it as a burn message, in which case
   /// no thumbnail is generated at all — a preview of an unrevealed message would give away the
   /// content the feature exists to withhold, so it must not be produced, let alone transmitted.
+  /// The composer is showing the voice recorder.
+  bool _recordingVoice = false;
+
+  Future<void> _sendVoice(Uint8List audio) async {
+    setState(() => _recordingVoice = false);
+    await _sendMedia(audio, kVoiceMime, kVoiceKind, const <int>[]);
+  }
+
+  void _voiceCancelled(String? error) {
+    setState(() => _recordingVoice = false);
+    if (error != null) _toast(error);
+  }
+
   Future<void> _attachMedia({int burnSecs = 0}) async {
     final l10n = AppLocalizations.of(context)!;
     final result = await FilePicker.pickFiles(
@@ -376,11 +395,86 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       bytes = await compute(compressImage, bytes);
       mime = 'image/jpeg';
     }
-    if (burnSecs > 0) {
-      await _sendBurnMedia(bytes, mime, isVideo ? 'video' : 'image', burnSecs);
+    var burn = burnSecs;
+    if (!isVideo && burn == 0) {
+      final once = await _confirmPhoto(Uint8List.fromList(bytes));
+      if (once == null) return; // cancelled
+      if (once) burn = kViewOnceSecs;
+    }
+    if (burn > 0) {
+      await _sendBurnMedia(bytes, mime, isVideo ? 'video' : 'image', burn);
     } else {
       await _sendMedia(bytes, mime, isVideo ? 'video' : 'image', thumb);
     }
+  }
+
+  /// Show the photo about to be sent, with the one choice that belongs to this moment. Returns
+  /// null if cancelled, otherwise whether it should be viewable once.
+  Future<bool?> _confirmPhoto(Uint8List bytes) async {
+    if (!mounted) return null;
+    final l10n = AppLocalizations.of(context)!;
+    // View once rides the burn path, so it needs the same assurance that the other app will not
+    // simply keep the photo.
+    final supported =
+        _contact(NightdropScope.of(context))?.peerSupportsBurn == true;
+    var once = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          scrollable: true,
+          contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(bytes, height: 220, fit: BoxFit.cover),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(l10n.viewOnce),
+                subtitle: supported ? null : Text(l10n.burnUnsupported),
+                value: once,
+                onChanged: supported
+                    ? (v) => setState(() => once = v ?? false)
+                    : null,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, once),
+              child: Text(l10n.sendAction),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Open a view-once photo. It is marked viewed as soon as it is decrypted — before the viewer
+  /// is even on screen — so closing the app mid-view cannot buy a second look. The viewer shows
+  /// the bytes already in memory; the bubble behind it only says the photo was viewed.
+  Future<void> _openViewOnce(Message m) async {
+    final core = NightdropScope.of(context);
+    final Uint8List data;
+    try {
+      data = Uint8List.fromList(await core.mediaBytes(m.mediaId));
+    } catch (_) {
+      return;
+    }
+    await core.markBurnViewed(widget.contactId, m.burnId);
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _ImageViewer(
+          bytes: Future.value(data), title: formatBytes(m.mediaSize)),
+    ));
   }
 
   Future<void> _sendBurnMedia(
@@ -413,26 +507,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return data ?? const [];
     } catch (_) {
       return const [];
-    }
-  }
-
-  /// Paste text from the clipboard into the composer at the cursor. (Image paste was dropped
-  /// with the `pasteboard` plugin — the last KGP-warning dependency; send a picture with the
-  /// attach button instead, which also compresses it for Tor.)
-  Future<void> _paste() async {
-    final l10n = AppLocalizations.of(context)!;
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text;
-    if (text != null && text.isNotEmpty) {
-      final sel = _input.selection;
-      final base = _input.text;
-      if (sel.isValid) {
-        _input.text = base.replaceRange(sel.start, sel.end, text);
-      } else {
-        _input.text = base + text;
-      }
-    } else {
-      _toast(l10n.nothingToPaste);
     }
   }
 
@@ -552,7 +626,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Long-press menu for one of our own eligible messages: edit or unsend.
+  /// Long-press menu for a message: copy its text, and for one of our own recent messages also
+  /// edit or unsend.
   Future<void> _showMessageMenu(Message message) async {
     final l10n = AppLocalizations.of(context)!;
     final action = await showModalBottomSheet<String>(
@@ -561,22 +636,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: Text(l10n.edit),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: Text(l10n.deleteForEveryone),
-              onTap: () => Navigator.pop(context, 'unsend'),
-            ),
+            if (message.canCopy)
+              ListTile(
+                key: const ValueKey('message-copy'),
+                leading: const Icon(Icons.copy_outlined),
+                title: Text(l10n.copyText),
+                onTap: () => Navigator.pop(context, 'copy'),
+              ),
+            // A photo or video can be removed but not edited.
+            if (message.canEdit)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: Text(l10n.edit),
+                onTap: () => Navigator.pop(context, 'edit'),
+              ),
+            if (message.canUnsend)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: Text(l10n.deleteForEveryone),
+                onTap: () => Navigator.pop(context, 'unsend'),
+              ),
           ],
         ),
       ),
     );
     if (!mounted || action == null) return;
-    if (action == 'edit') {
+    if (action == 'copy') {
+      await Clipboard.setData(ClipboardData(text: message.text));
+      _toast(l10n.textCopied);
+    } else if (action == 'edit') {
       await _editMessage(message);
     } else if (action == 'unsend') {
       await _unsendMessage(message);
@@ -591,7 +679,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(l10n.deleteForEveryoneTitle),
-        content: Text(l10n.unsendBody),
+        content: Text(message.isText ? l10n.unsendBody : l10n.unsendMediaBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -607,7 +695,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (confirm != true || !mounted) return;
     try {
       await NightdropScope.of(context)
-          .unsendMessage(widget.contactId, message.msgId);
+          .unsendMessage(widget.contactId, message.unsendId);
     } catch (e) {
       _toast(l10n.couldNotDelete(e.toString()));
     }
@@ -691,6 +779,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final l10n = AppLocalizations.of(context)!;
     final options = <String, int>{
       l10n.disappearingOff: 0,
+      l10n.disappearing5Minutes: 300,
       l10n.disappearing1Hour: 3600,
       l10n.disappearing1Day: 86400,
       l10n.disappearing1Week: 604800,
@@ -763,65 +852,76 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _lastCount = messages.length;
           _scrollToEnd();
         }
+        void openVerify() => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => VerifyScreen(contactId: contact.id, name: contact.theirName),
+              ),
+            );
         return Scaffold(
           appBar: AppBar(
-            title: Column(
+            // Tapping the name opens the contact's profile, where the verify button lives.
+            title: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ContactProfileScreen(contactId: contact.id),
+                      ),
+                    ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+              CyberDogAvatar(seed: contact.id, label: contact.headerName, radius: 17),
+              const SizedBox(width: 10),
+              Flexible(
+                  child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(child: Text(contact.displayName)),
-                    if (contact.showIdentityTag) ...[
-                      const SizedBox(width: 6),
-                      IdentityTag(tag: contact.identityTag),
-                    ],
-                    if (contact.verified) ...[
-                      const SizedBox(width: 6),
-                      Icon(Icons.verified_user,
-                          semanticLabel: l10n.verified,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary),
-                    ],
+                    Flexible(
+                      child: Text(contact.headerName, overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 8),
+                    Transform.scale(
+                      scale: 0.82,
+                      alignment: Alignment.centerLeft,
+                      child: UserRankBadge(rank: contact.rank),
+                    ),
                   ],
                 ),
-                Text(
-                  shortId(contact.id),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.normal,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        shortId(contact.id),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
-            ),
-            // Only the two icons that show a setting's state stay in the bar; everything else is
-            // in the overflow menu. Seven icons filled a phone's app bar edge to edge, and the
-            // verify shield sat right beside Back, so reaching for Back opened the verify screen.
-            // Verification state is still visible without it: the badge beside the name, and the
-            // unverified banner (which opens the same screen).
+            )),
+            ])),
+            // One icon, for the one thing worth a glance: whether this contact is verified. It
+            // opens the safety-number screen. Server storage and the timer live in the menu —
+            // they are settings, changed rarely, and their state has its own line when it is on.
             actions: [
+              // The shield is the whole statement: amber with a mark while nobody has compared
+              // safety numbers, violet with a tick once they have. It used to be repeated in a
+              // line under the header; one of the two was enough.
               IconButton(
-                tooltip: contact.remoteStorage
-                    ? l10n.storedServerTooltipOn
-                    : l10n.storedServerTooltipOff,
+                key: const ValueKey('security-state'),
+                tooltip: contact.verified ? l10n.securityLineVerified : l10n.securityLineUnverified,
                 icon: Icon(
-                  contact.remoteStorage ? Icons.cloud : Icons.cloud_off,
+                  contact.verified ? Icons.verified_user : Icons.gpp_maybe_outlined,
+                  color: contact.verified ? CyberDog.accentLight : _unverifiedAmber,
                 ),
-                onPressed: () => core.setRemoteStorage(
-                  widget.contactId,
-                  !contact.remoteStorage,
-                ),
-              ),
-              IconButton(
-                tooltip: contact.disappearingSecs > 0
-                    ? l10n.disappearingTooltipOn(
-                        _disappearingLabel(contact.disappearingSecs))
-                    : l10n.disappearingTooltipOff,
-                icon: Icon(contact.disappearingSecs > 0
-                    ? Icons.timer
-                    : Icons.timer_off_outlined),
-                onPressed: () => _pickDisappearing(contact),
+                onPressed: openVerify,
               ),
               PopupMenuButton<String>(
                 tooltip: l10n.more,
@@ -836,6 +936,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       );
+                    case 'storage':
+                      core.setRemoteStorage(widget.contactId, !contact.remoteStorage);
+                    case 'timer':
+                      _pickDisappearing(contact);
                     case 'name':
                       _nameContact(contact);
                     case 'rename':
@@ -853,6 +957,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           ? Icons.verified_user
                           : Icons.shield_outlined,
                       l10n.verifySafetyNumber),
+                  _menuItem(
+                      'timer',
+                      contact.disappearingSecs > 0 ? Icons.timer : Icons.timer_off_outlined,
+                      l10n.disappearingMessages),
+                  _menuItem(
+                      'storage',
+                      contact.remoteStorage ? Icons.cloud : Icons.cloud_off,
+                      contact.remoteStorage ? l10n.menuServerStorageOn : l10n.menuServerStorageOff),
                   _menuItem('name', Icons.drive_file_rename_outline,
                       l10n.nameContactTooltip),
                   _menuItem('rename', Icons.badge_outlined,
@@ -867,55 +979,67 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
           body: Column(
             children: [
-              if (awaitingApproval) const _AwaitingApprovalBanner(),
-              // Nudge toward safety-number verification once the chat is live and still unverified.
-              // Tapping opens the same VerifyScreen as the app-bar shield. Suppressed while awaiting
-              // approval (nothing to verify yet).
-              if (!awaitingApproval && !contact.verified)
-                _UnverifiedBanner(
-                  onVerify: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => VerifyScreen(
-                        contactId: contact.id,
-                        name: contact.theirName,
-                      ),
-                    ),
-                  ),
-                ),
               if (contact.remoteStorage)
                 _RemoteStorageBanner(healthy: contact.remoteStorageHealthy),
-              if (contact.peerBackedUp) const _PeerBackupBanner(),
+              if (contact.peerBackedUp)
+                _SwipeAway(
+                  noticeKey: 'backup:${contact.id}',
+                  child: const _PeerBackupBanner(),
+                ),
               // Shown to the SENDER, and only when the peer has actually said so. A null here
               // means "they have not told us" and deliberately shows nothing — claiming either
               // answer without evidence is worse than staying quiet.
-              if (contact.peerCapturesSilent == true) const _PeerCapturesSilentBanner(),
-              if (contact.peerOnOldVersion) const _PeerOnOldVersionBanner(),
+              if (contact.peerCapturesSilent == true)
+                _SwipeAway(
+                  noticeKey: 'captures:${contact.id}',
+                  child: const _PeerCapturesSilentBanner(),
+                ),
+              if (contact.peerOnOldVersion)
+                _SwipeAway(
+                  noticeKey: 'oldversion:${contact.id}',
+                  child: const _PeerOnOldVersionBanner(),
+                ),
               _SilenceBanner(lastSeenSecs: contact.lastSeenSecs),
               Expanded(
                 child: visibleMessages.isEmpty
-                    ? Center(child: Text(l10n.sayHi))
+                    ? const SizedBox.shrink()
                     : ListView.builder(
                         controller: _scroll,
                         padding: const EdgeInsets.all(12),
                         itemCount: visibleMessages.length,
                         itemBuilder: (context, i) {
                           final m = visibleMessages[i];
+                          final before = i > 0 ? visibleMessages[i - 1] : null;
+                          // The same notice twice in a row says nothing the first did not.
+                          if (m.system &&
+                              before != null &&
+                              before.system &&
+                              noticeBody(before.text) == noticeBody(m.text)) {
+                            return const SizedBox.shrink();
+                          }
                           final row = m.system
-                              ? _SystemNotice(text: m.text)
+                              ? _SystemNotice(
+                                  text: m.text,
+                                  onVerify: noticeAsksToVerify(m.text) ? openVerify : null,
+                                )
                               : _Bubble(
                                   message: m,
-                                  senderName: m.fromMe
-                                      ? contact.myName
-                                      : contact.theirName,
+                                  senderName: contact.headerName,
+                                  // Our own messages are on the right; that is name enough. Theirs
+                                  // carry the name once, at the start of a run of messages.
+                                  showSender: !m.fromMe &&
+                                      (before == null || before.system || before.fromMe),
                                   // Right-click (desktop) or long-press (mobile) own recent/
                                   // queued text to edit or unsend it.
-                                  onLongPress: m.canEdit
+                                  onLongPress: m.canCopy || m.canUnsend
                                       ? () => _showMessageMenu(m)
                                       : null,
                                   onReveal: m.isBurnHidden && !m.fromMe
-                                      ? () => NightdropScope.of(context)
-                                          .markBurnViewed(
-                                              widget.contactId, m.burnId)
+                                      ? () => m.isViewOnce && m.isImage
+                                          ? _openViewOnce(m)
+                                          : NightdropScope.of(context)
+                                              .markBurnViewed(
+                                                  widget.contactId, m.burnId)
                                       : null,
                                 );
                           // A day separator above the first message of each calendar day
@@ -931,14 +1055,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         },
                       ),
               ),
-              _Composer(
-                controller: _input,
-                onSend: _send,
-              onBurn: _offerBurn,
-              onBurnAttach: _offerBurnMedia,
-                onAttach: _attachMedia,
-                onPaste: _paste,
-              ),
+              if (_recordingVoice)
+                VoiceRecordingBar(onDone: _sendVoice, onCancel: _voiceCancelled)
+              else
+                _Composer(
+                  controller: _input,
+                  onSend: _send,
+                  onBurn: _offerBurn,
+                  onBurnAttach: _offerBurnMedia,
+                  onAttach: _attachMedia,
+                  onVoice: () => setState(() => _recordingVoice = true),
+                ),
             ],
           ),
         );
@@ -1035,48 +1162,29 @@ class _SilenceBanner extends StatelessWidget {
   }
 }
 
-/// Subtle, tappable nudge shown on an unverified chat. Verification (comparing the safety number
-/// out-of-band) is what actually rules out a MITM on pairing, but it's easy to skip — so we keep a
-/// low-key reminder in front of the user until they verify. Tap → [VerifyScreen].
-class _UnverifiedBanner extends StatelessWidget {
-  const _UnverifiedBanner({required this.onVerify});
+/// The colour of the header shield while the contact is unverified: a caution, not an alarm.
+const _unverifiedAmber = Color(0xFFD98200);
 
-  final VoidCallback onVerify;
+/// An informational notice at the top of a chat that can be swiped away, left or right. It
+/// stays away: the choice is remembered on this device under [noticeKey] — one key for a notice
+/// that says the same thing in every chat, one per contact for a fact about that contact.
+class _SwipeAway extends StatelessWidget {
+  const _SwipeAway({required this.noticeKey, required this.child});
+
+  final String noticeKey;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHighest,
-      child: InkWell(
-        onTap: onVerify,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          child: Row(
-            children: [
-              Icon(Icons.shield_outlined,
-                  size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  AppLocalizations.of(context)!.unverifiedBannerBody,
-                  style:
-                      TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                AppLocalizations.of(context)!.verify,
-                style: TextStyle(
-                  color: scheme.primary,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ListenableBuilder(
+      listenable: PrivacyPrefs.changes,
+      builder: (context, _) => PrivacyPrefs.noticeDismissed(noticeKey)
+          ? const SizedBox.shrink()
+          : Dismissible(
+              key: ValueKey('notice-$noticeKey'),
+              onDismissed: (_) => PrivacyPrefs.dismissNotice(noticeKey),
+              child: child,
+            ),
     );
   }
 }
@@ -1197,82 +1305,110 @@ class _PeerBackupBanner extends StatelessWidget {
   }
 }
 
-/// Persistent status shown to the **joiner** after short-code pairing, until the code provider
-/// accepts the chat (§5). Driven by the core's `await_approval` notice, which it clears on the
-/// approval signal or the first received message — so this banner disappears exactly when the
-/// chat goes live. Messages typed meanwhile still send (queued) but aren't delivered until then.
-class _AwaitingApprovalBanner extends StatelessWidget {
-  const _AwaitingApprovalBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      color: scheme.tertiaryContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: scheme.onTertiaryContainer,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              AppLocalizations.of(context)!.awaitingApprovalBanner,
-              style:
-                  TextStyle(color: scheme.onTertiaryContainer, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// A centered, unobtrusive system notice (chat deleted / approved / code reused).
-class _SystemNotice extends StatelessWidget {
-  const _SystemNotice({required this.text});
+class _SystemNotice extends StatefulWidget {
+  const _SystemNotice({required this.text, this.onVerify});
 
   final String text;
 
+  /// For a notice about a changed safety code: opens the screen where it is checked.
+  final VoidCallback? onVerify;
+
+  @override
+  State<_SystemNotice> createState() => _SystemNoticeState();
+}
+
+/// A small pill in the stream. Where the core's sentence is longer than what the pill shows, a
+/// tap opens it in place.
+class _SystemNoticeState extends State<_SystemNotice> {
+  bool _open = false;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: scheme.onSurfaceVariant,
-          fontSize: 12.5,
-          fontStyle: FontStyle.italic,
+    final icon = _noticeIcons[noticeMarker(widget.text).runes.firstOrNull];
+    final detail = noticeDetail(widget.text);
+    final ink = scheme.onSurfaceVariant;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
+        child: Material(
+          color: CyberDog.panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_open ? 12 : 20),
+            side: const BorderSide(color: CyberDog.hairline),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: detail == null ? null : () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 13, color: scheme.secondary),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      _open && detail != null ? detail : noticeBody(widget.text),
+                      style: TextStyle(color: ink, fontSize: 11.5),
+                    ),
+                  ),
+                  if (widget.onVerify != null) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: widget.onVerify,
+                      child: Text(
+                        AppLocalizations.of(context)!.verify,
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
+/// The core marks each system notice with a pictogram; shown here as a small outline icon.
+const _noticeIcons = <int, IconData>{
+  0x1F4F8: Icons.photo_camera_outlined,
+  0x1F465: Icons.group_outlined,
+  0x2705: Icons.verified_outlined,
+  0x1F511: Icons.key_outlined,
+  0x2601: Icons.cloud_outlined,
+  0x23F1: Icons.timer_outlined,
+  0x26A0: Icons.warning_amber_outlined,
+  0x1F5D1: Icons.delete_outline,
+  0x1F47B: Icons.delete_outline,
+  0x1F5C4: Icons.inventory_2_outlined,
+  0x1F504: Icons.sync,
+  0x23F3: Icons.hourglass_empty,
+};
+
 class _Bubble extends StatelessWidget {
   const _Bubble(
       {required this.message,
       required this.senderName,
+      this.showSender = true,
       this.onLongPress,
       this.onReveal});
 
   final Message message;
   final String senderName;
+
+  /// Whether to print [senderName] above the content.
+  final bool showSender;
 
   /// Called when the recipient taps a blurred burn message to reveal it. Starts the countdown.
   final VoidCallback? onReveal;
@@ -1298,30 +1434,41 @@ class _Bubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             constraints: const BoxConstraints(maxWidth: 320),
             decoration: BoxDecoration(
-              color: mine ? scheme.primary : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16),
+              color: mine ? null : scheme.surfaceContainerHighest,
+              gradient: mine ? CyberDog.outgoing : null,
+              border: mine ? null : Border.all(color: CyberDog.hairline),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: mine
+                  ? null
+                  : const [BoxShadow(color: Color(0x141C3E78), blurRadius: 10, offset: Offset(0, 3))],
             ),
             child: Column(
               crossAxisAlignment:
                   mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                Text(
-                  senderName,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
-                        .withValues(alpha: 0.7),
+                if (showSender) ...[
+                  Text(
+                    senderName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                if (message.isDeleted || message.isBurnExpired)
+                  const SizedBox(height: 2),
+                ],
+                if (message.isDeleted ||
+                    message.isBurnExpired ||
+                    message.isViewedOnce)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                          message.isBurnExpired
-                              ? Icons.local_fire_department_outlined
-                              : Icons.block,
+                          message.isViewedOnce
+                              ? Icons.visibility_off_outlined
+                              : message.isBurnExpired
+                                  ? Icons.local_fire_department_outlined
+                                  : Icons.block,
                           size: 13,
                           color: (mine ? scheme.onPrimary : scheme.onSurface)
                               .withValues(alpha: 0.6)),
@@ -1329,9 +1476,11 @@ class _Bubble extends StatelessWidget {
                       // Flexible: the burn marker is long enough to overflow a narrow bubble.
                       Flexible(
                         child: Text(
-                          message.isBurnExpired
-                              ? l10n.burnExpiredUnopened
-                              : l10n.messageDeleted,
+                          message.isViewedOnce
+                              ? l10n.photoViewed
+                              : message.isBurnExpired
+                                  ? l10n.burnExpiredUnopened
+                                  : l10n.messageDeleted,
                           style: TextStyle(
                             fontStyle: FontStyle.italic,
                             color: (mine ? scheme.onPrimary : scheme.onSurface)
@@ -1368,6 +1517,8 @@ class _Bubble extends StatelessWidget {
                       ],
                     ],
                   )
+                else if (message.isAudio && message.mediaId.isNotEmpty)
+                  VoiceBubble(mediaId: message.mediaId, mine: mine, bytes: message.mediaSize)
                 else
                   _MediaContent(message: message, mine: mine),
                 // "edited" tag once a sender edit replaced the text.
@@ -1389,56 +1540,56 @@ class _Bubble extends StatelessWidget {
                 // actually received — and when a message was lost in flight (2026-08-02) the
                 // sender had no way to tell. Now it reads "Sent" until their device confirms
                 // that exact message, and only then "Delivered".
-                if (mine &&
-                    !message.sending &&
-                    (message.delivery == 'queued' ||
-                        message.delivery == 'sent' ||
-                        message.delivery == 'delivered' ||
-                        message.delivery == 'expired')) ...[
+                // Shown as an icon beside the time, not as a word: "Delivered" under every message
+                // made short messages wide. The word is still there for a screen reader and on
+                // hover. Only "expired" keeps its text — it is the one state that needs acting on.
+                if (_showsDelivery(message, mine) || _hasTime(message.at)) ...[
                   const SizedBox(height: 3),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        switch (message.delivery) {
-                          'queued' => Icons.cloud_upload_outlined,
-                          'expired' => Icons.error_outline,
-                          // Deliberately not a tick. A tick reads as "done", and this state means
-                          // only that the peer's onion answered — the message can still be lost
-                          // there, which is exactly what happened on 2026-08-02. The core puts a
-                          // relay copy behind it if no receipt names it, so this resolves on its
-                          // own to "Held for delivery" and then "Delivered".
-                          'sent' => Icons.schedule,
-                          _ => Icons.done_all,
-                        },
-                        size: 12,
-                        color: scheme.onPrimary.withValues(alpha: 0.75),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        switch (message.delivery) {
-                          'queued' => l10n.deliveryHeld,
-                          'expired' => l10n.deliveryExpired,
-                          'sent' => l10n.deliverySent,
-                          _ => l10n.deliveryDelivered,
-                        },
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            color: scheme.onPrimary.withValues(alpha: 0.75)),
-                      ),
+                      if (_showsDelivery(message, mine)) ...[
+                        Tooltip(
+                          message: _deliveryLabel(l10n, message.delivery),
+                          child: Icon(
+                            switch (message.delivery) {
+                              'queued' => Icons.cloud_upload_outlined,
+                              'expired' => Icons.error_outline,
+                              // Deliberately not a tick. A tick reads as "done", and this state
+                              // means only that the peer's onion answered — the message can still
+                              // be lost there, which is exactly what happened on 2026-08-02. The
+                              // core puts a relay copy behind it if no receipt names it, so this
+                              // resolves on its own to "held" and then "delivered".
+                              'sent' => Icons.schedule,
+                              _ => Icons.done_all,
+                            },
+                            size: 13,
+                            semanticLabel: _deliveryLabel(l10n, message.delivery),
+                            color: scheme.onPrimary.withValues(alpha: 0.75),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        if (message.delivery == 'expired') ...[
+                          Text(
+                            l10n.deliveryExpired,
+                            style: TextStyle(
+                                fontSize: 10.5,
+                                color: scheme.onPrimary.withValues(alpha: 0.75)),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                      ],
+                      // Message time (local clock). Omitted for pre-timestamp history (at == 0).
+                      if (_hasTime(message.at))
+                        Text(
+                          _formatTime(message.at),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
                     ],
-                  ),
-                ],
-                // Message time (local clock). Omitted for pre-timestamp history (at == 0).
-                if (_hasTime(message.at)) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    _formatTime(message.at),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: (mine ? scheme.onPrimary : scheme.onSurfaceVariant)
-                          .withValues(alpha: 0.6),
-                    ),
                   ),
                 ],
               ],
@@ -1490,19 +1641,32 @@ bool _sameDay(DateTime a, DateTime b) {
   return la.year == lb.year && la.month == lb.month && la.day == lb.day;
 }
 
-/// A compact label for a disappearing-messages timer, e.g. "1h", "1d", "1w".
-String _disappearingLabel(int secs) {
-  if (secs <= 0) return 'off';
-  if (secs % 604800 == 0) return '${secs ~/ 604800}w';
-  if (secs % 86400 == 0) return '${secs ~/ 86400}d';
-  if (secs % 3600 == 0) return '${secs ~/ 3600}h';
-  if (secs % 60 == 0) return '${secs ~/ 60}m';
-  return '${secs}s';
-}
+/// Whether a bubble shows a delivery state: our own messages once the core has reported one.
+bool _showsDelivery(Message message, bool mine) =>
+    mine &&
+    !message.sending &&
+    (message.delivery == 'queued' ||
+        message.delivery == 'sent' ||
+        message.delivery == 'delivered' ||
+        message.delivery == 'expired');
 
-/// A 12-hour local clock time, e.g. "3:45 PM" (no `intl` dependency).
+/// The delivery state in words, for the tooltip and for screen readers.
+String _deliveryLabel(AppLocalizations l10n, String delivery) => switch (delivery) {
+      'queued' => l10n.deliveryHeld,
+      'expired' => l10n.deliveryExpired,
+      'sent' => l10n.deliverySent,
+      _ => l10n.deliveryDelivered,
+    };
+
+/// A local clock time: 12-hour in English ("3:45 PM"), 24-hour in Russian ("15:45"). No `intl`
+/// dependency.
+String formatMessageTime(DateTime at) => _formatTime(at);
+
 String _formatTime(DateTime at) {
   final t = at.toLocal();
+  if (AppLocale.current.value == AppLocale.russian) {
+    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
   final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
   final minute = t.minute.toString().padLeft(2, '0');
   return '$hour12:$minute ${t.hour < 12 ? 'AM' : 'PM'}';
@@ -1519,6 +1683,16 @@ String _dayLabel(DateTime at) {
   final day = DateTime(t.year, t.month, t.day);
   final today = DateTime(now.year, now.month, now.day);
   final diff = today.difference(day).inDays;
+  if (AppLocale.current.value == AppLocale.russian) {
+    const russianMonths = [
+      'янв.', 'февр.', 'мар.', 'апр.', 'мая', 'июн.',
+      'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.' //
+    ];
+    if (diff == 0) return 'Сегодня';
+    if (diff == 1) return 'Вчера';
+    final russianYear = t.year == now.year ? '' : ' ${t.year}';
+    return '${t.day} ${russianMonths[t.month - 1]}$russianYear';
+  }
   if (diff == 0) return 'Today';
   if (diff == 1) return 'Yesterday';
   final year = t.year == now.year ? '' : ', ${t.year}';
@@ -1607,11 +1781,36 @@ class _MediaContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuilds when a photo is revealed or the "hide received photos" setting changes.
+    return ListenableBuilder(
+      listenable: PrivacyPrefs.changes,
+      builder: (context, _) => _content(context),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final onColor = mine ? scheme.onPrimary : scheme.onSurface;
     final sizeLabel = formatBytes(message.mediaSize);
     final faint = onColor.withValues(alpha: 0.7);
+
+    // A received photo stays concealed until tapped. The tile below is a placeholder, not the
+    // picture blurred: the image is not decrypted or decoded at all until the user asks for it.
+    if (message.isImage && !mine && PrivacyPrefs.conceals(message.mediaId)) {
+      return GestureDetector(
+        onTap: () => PrivacyPrefs.reveal(message.mediaId),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _hiddenMediaTile(message, onColor),
+            const SizedBox(height: 6),
+            Text(l10n.tapToShowPhoto, style: TextStyle(fontSize: 12, color: faint)),
+          ],
+        ),
+      );
+    }
 
     if (message.isImage) {
       return Column(
@@ -1860,8 +2059,11 @@ class _Composer extends StatelessWidget {
     required this.onBurn,
     required this.onAttach,
     required this.onBurnAttach,
-    required this.onPaste,
+    required this.onVoice,
   });
+
+  /// Start recording a voice message.
+  final VoidCallback onVoice;
 
   final TextEditingController controller;
   final Future<void> Function() onSend;
@@ -1875,7 +2077,6 @@ class _Composer extends StatelessWidget {
 
   /// Long-press / right-click the attach button: send the attachment as a burn message.
   final Future<void> Function(Offset position) onBurnAttach;
-  final Future<void> Function() onPaste;
 
   @override
   Widget build(BuildContext context) {
@@ -1900,16 +2101,13 @@ class _Composer extends StatelessWidget {
                 onSecondaryTap: open,
                 child: IconButton(
                   tooltip: l10n.attachImageOrVideo,
+                  style: _composerTile,
                   icon: const Icon(Icons.attach_file),
                   onPressed: onAttach,
                 ),
               );
             }),
-            IconButton(
-              tooltip: l10n.pasteText,
-              icon: const Icon(Icons.content_paste),
-              onPressed: onPaste,
-            ),
+            const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 controller: controller,
@@ -1919,13 +2117,34 @@ class _Composer extends StatelessWidget {
                 onSubmitted: (_) => onSend(),
                 decoration: InputDecoration(
                   hintText: l10n.messageHint,
-                  border: const OutlineInputBorder(),
+                  filled: true,
+                  fillColor: CyberDog.panel,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: const BorderSide(color: CyberDog.hairline),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: const BorderSide(color: CyberDog.hairline),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: const BorderSide(color: CyberDog.hairlineBright, width: 1.4),
+                  ),
                   contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 ),
               ),
             ),
             const SizedBox(width: 8),
+            IconButton(
+              key: const ValueKey('voice-button'),
+              tooltip: l10n.voiceRecord,
+              style: _composerTile,
+              icon: const Icon(Icons.mic_none),
+              onPressed: onVoice,
+            ),
+            const SizedBox(width: 6),
             Builder(builder: (context) {
               // Long-press covers touch AND a held mouse button; onSecondaryTap covers the
               // right-click a desktop user will reach for first. Both, because supporting only
@@ -1941,9 +2160,9 @@ class _Composer extends StatelessWidget {
               return GestureDetector(
                 onLongPress: open,
                 onSecondaryTap: open,
-                child: IconButton.filled(
+                child: CyberDogSendButton(
+                  key: const ValueKey('send-button'),
                   onPressed: onSend,
-                  icon: const Icon(Icons.send),
                 ),
               );
             }),
@@ -1953,6 +2172,15 @@ class _Composer extends StatelessWidget {
     );
   }
 }
+
+/// The attach and paste buttons share one quiet tile, so the send button stays the accent.
+final _composerTile = IconButton.styleFrom(
+  backgroundColor: CyberDog.panel,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(12),
+    side: const BorderSide(color: CyberDog.hairline),
+  ),
+);
 
 /// One row of the chat's overflow menu: an icon beside its label.
 PopupMenuItem<String> _menuItem(String value, IconData icon, String label) =>
@@ -2058,7 +2286,7 @@ class _BurnBodyState extends State<_BurnBody> {
           SizedBox(
             width: 220,
             child: Text(
-              l10n.burnSenderNote,
+              m.isViewOnce ? l10n.viewOnceSenderNote : l10n.burnSenderNote,
               style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.6)),
             ),
           ),

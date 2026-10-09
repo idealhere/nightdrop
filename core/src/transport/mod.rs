@@ -15,6 +15,7 @@ use crate::Result;
 
 pub mod client_auth;
 pub mod lan;
+pub mod relay_only;
 pub mod tcp;
 
 #[cfg(feature = "tor")]
@@ -107,6 +108,13 @@ pub trait Transport: Send + Sync {
     /// **off the hot path**: it stores the message immediately and hands delivery to the
     /// background poller, so composing a message never blocks the UI on a Tor round-trip (§6).
     fn is_synchronous(&self) -> bool {
+        false
+    }
+
+    /// Whether this transport intentionally has no direct peer path and relies on a relay.
+    /// Used only for route-health semantics: a relay-only client can decide its primary HTTPS
+    /// route is unavailable from repeated relay-poll failures even before the user sends a message.
+    fn is_relay_only(&self) -> bool {
         false
     }
 

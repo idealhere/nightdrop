@@ -79,6 +79,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Contact dco_decode_contact(dynamic raw);
 
   @protected
+  GroupInfo dco_decode_group_info(dynamic raw);
+
+  @protected
+  GroupMessage dco_decode_group_message(dynamic raw);
+
+  @protected
   Identity dco_decode_identity(dynamic raw);
 
   @protected
@@ -89,6 +95,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Contact> dco_decode_list_contact(dynamic raw);
+
+  @protected
+  List<GroupInfo> dco_decode_list_group_info(dynamic raw);
+
+  @protected
+  List<GroupMessage> dco_decode_list_group_message(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -210,6 +222,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Contact sse_decode_contact(SseDeserializer deserializer);
 
   @protected
+  GroupInfo sse_decode_group_info(SseDeserializer deserializer);
+
+  @protected
+  GroupMessage sse_decode_group_message(SseDeserializer deserializer);
+
+  @protected
   Identity sse_decode_identity(SseDeserializer deserializer);
 
   @protected
@@ -220,6 +238,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Contact> sse_decode_list_contact(SseDeserializer deserializer);
+
+  @protected
+  List<GroupInfo> sse_decode_list_group_info(SseDeserializer deserializer);
+
+  @protected
+  List<GroupMessage> sse_decode_list_group_message(
+      SseDeserializer deserializer);
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -350,6 +375,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_contact(Contact self, SseSerializer serializer);
 
   @protected
+  void sse_encode_group_info(GroupInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_group_message(GroupMessage self, SseSerializer serializer);
+
+  @protected
   void sse_encode_identity(Identity self, SseSerializer serializer);
 
   @protected
@@ -361,6 +392,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_contact(List<Contact> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_group_info(
+      List<GroupInfo> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_group_message(
+      List<GroupMessage> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);

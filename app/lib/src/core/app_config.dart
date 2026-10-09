@@ -74,13 +74,13 @@ class AppConfig {
   final List<DonationCoin> donations;
 
   static const AppConfig _fallback = AppConfig(
-    appName: 'Night Drop',
+    appName: 'CyberDog',
     headline: 'Sealed. Dropped. Delivered.',
     tagline:
         'Like a night deposit box: every message is a sealed envelope, dropped for one '
         'person only, opened by no one in between. Anonymous, end-to-end encrypted 1:1 '
         'chat over Tor. No accounts. No phone number. No server-side keys. No logs.',
-    blurb: "Night Drop is free. If it's useful to you, a donation keeps it alive. Monero and "
+    blurb: "CyberDog is free. If it's useful to you, a donation keeps it alive. Monero and "
         "Zcash keep a donation fully private. Bitcoin goes to a silent-payment address, so "
         "donations can't be linked to each other, though amounts stay public. No accounts, no "
         'tracking.',

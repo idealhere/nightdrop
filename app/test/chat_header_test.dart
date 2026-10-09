@@ -43,10 +43,13 @@ void main() {
       expect(find.descendant(of: bar, matching: find.byIcon(gone)), findsNothing,
           reason: '$gone belongs in the overflow menu');
     }
-    expect(find.descendant(of: bar, matching: find.byIcon(Icons.cloud_off)),
+    // One icon in the bar: the contact's verification state. Storage and the timer are settings
+    // and live in the menu.
+    expect(find.descendant(of: bar, matching: find.byKey(const ValueKey('security-state'))),
         findsOneWidget);
-    expect(find.descendant(of: bar, matching: find.byIcon(Icons.timer_off_outlined)),
-        findsOneWidget);
+    for (final gone in [Icons.cloud_off, Icons.timer_off_outlined]) {
+      expect(find.descendant(of: bar, matching: find.byIcon(gone)), findsNothing);
+    }
 
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();

@@ -39,7 +39,7 @@ void main() {
     await tester.pumpWidget(NightdropApp(core: _LockedCore()));
     await tester.pump(); // let _Root run start() in its post-frame callback
 
-    expect(find.text('Night Drop is locked'), findsOneWidget);
+    expect(find.text('CyberDog is locked'), findsOneWidget);
     expect(find.text('Create my identity'), findsNothing);
   });
 
@@ -116,7 +116,7 @@ void main() {
     await tester.tap(find.text('Unlock'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Night Drop is locked'), findsNothing);
+    expect(find.text('CyberDog is locked'), findsNothing);
   });
 
   // The duress secret (#3) must be indistinguishable from a normal unlock at the screen: it
@@ -133,7 +133,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(core.wiped, isTrue, reason: 'the duress secret must trigger the wipe');
-    expect(find.text('Night Drop is locked'), findsNothing);
+    expect(find.text('CyberDog is locked'), findsNothing);
     expect(find.text("That didn't unlock it. Try again."), findsNothing);
   });
 

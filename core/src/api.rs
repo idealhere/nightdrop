@@ -85,6 +85,19 @@ static RELAY_POLL_NOW: AtomicBool = AtomicBool::new(true);
 const RELAY_POLL_FOREGROUND: Duration = Duration::from_secs(15);
 const RELAY_POLL_BACKGROUND: Duration = Duration::from_secs(5 * 60);
 
+/// The cadences above assume a direct connection carries live messages and the relay only holds
+/// mail for someone who was away. On the HTTPS-first transport there is no direct connection:
+/// **every** message waits on the relay for the next poll, so those cadences are the delivery
+/// delay itself — up to 15 s with the chat open, up to five minutes with the app in the
+/// background. A round here is plain HTTPS rather than Tor circuits, which is what made frequent
+/// rounds expensive, so the relay is asked far more often. (Holding a request open until mail
+/// arrives would be better still; that needs the relay's cooperation and is not done yet.)
+const RELAY_POLL_FOREGROUND_PRIMARY: Duration = Duration::from_secs(2);
+const RELAY_POLL_BACKGROUND_PRIMARY: Duration = Duration::from_secs(30);
+
+/// Set when the relay is the only path messages take ([`NightdropCore::new_https_relay`]).
+static RELAY_IS_PRIMARY: AtomicBool = AtomicBool::new(false);
+
 /// While a short-code invite is outstanding, the inviter polls the rendezvous this often so
 /// answering a joiner's SPAKE2 opener feels near-instant (pairing is a brief, attended flow).
 const RELAY_POLL_PAIRING: Duration = Duration::from_secs(2);
@@ -276,7 +289,7 @@ pub struct ServerBackupInfo {
     pub expires_at_secs: u64,
 }
 
-/// A 1:1 conversation partner. Names default to "Anon" and are per-chat (§4).
+/// A 1:1 conversation partner. Names default to "NightDog" and are per-chat (§4).
 #[derive(Clone, Debug)]
 pub struct Contact {
     pub id: String,
@@ -367,6 +380,29 @@ pub struct AppUpdate {
     pub latest: String,
     /// Whether `latest` is strictly newer. `false` means say nothing at all.
     pub update_available: bool,
+}
+
+/// A group chat (UI-facing). Members are named by identity key — the same string as a
+/// [`Contact::id`] — and include the local user.
+#[derive(Clone, Debug)]
+pub struct GroupInfo {
+    pub id: String,
+    pub name: String,
+    pub members: Vec<String>,
+    /// Identity key of the member who created the group.
+    pub creator: String,
+    /// We left this group, or were removed from it: it is read-only.
+    pub left: bool,
+    /// The group's disappearing-messages timer in seconds; 0 = off.
+    pub disappearing_secs: u64,
+}
+
+/// One entry in a group's history (UI-facing).
+#[derive(Clone, Debug)]
+pub struct GroupMessage {
+    /// Identity key of the member who sent it; empty for our own messages and local notices.
+    pub sender: String,
+    pub message: ChatMessage,
 }
 
 /// One message in a conversation (UI-facing).
@@ -716,6 +752,8 @@ impl Inner {
             // a chat paired before the feature shipped would otherwise never hear it, leaving
             // burn unavailable for precisely the contacts someone already talks to.
             self.me.announce_burns();
+            // Group support (`Frame::Groups`), same cadence and the same once-per-run guard.
+            self.me.announce_groups();
             // Our app version (`Frame::Version`), same cadence and the same once-per-run guard.
             self.me.announce_version();
             // v2 mailbox handles (`mailbox-handles.md`): offer our contribution to every chat not
@@ -782,6 +820,58 @@ impl Inner {
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "tor")]
+fn wan_relay_from_spec(
+    transport: &crate::transport::tor::TorTransport,
+    spec: String,
+) -> Result<RelayClient> {
+    use crate::relay_client::failover::{failover_dialer, FailoverRoute};
+
+    // A vertical bar separates multiple NETWORK ENDPOINTS of the SAME logical relay/store:
+    //   https://relay.example/v1/relay|abcdef....onion
+    // It must never be used for independent relay stores; those need the existing multi-relay
+    // fan-out so destructive take/fetch operations remain correct.
+    let endpoints: Vec<String> = spec
+        .split('|')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if endpoints.is_empty() {
+        anyhow::bail!("relay endpoint spec is empty");
+    }
+
+    let mut routes = Vec::with_capacity(endpoints.len());
+    for (index, endpoint) in endpoints.iter().enumerate() {
+        let dialer = if endpoint.starts_with("https://") {
+            #[cfg(feature = "https-relay")]
+            {
+                crate::relay_client::https::https_relay_dialer(endpoint)?
+            }
+            #[cfg(not(feature = "https-relay"))]
+            {
+                anyhow::bail!(
+                    "this build has an HTTPS relay endpoint but was compiled without --features https-relay"
+                )
+            }
+        } else {
+            transport.make_relay_dialer(endpoint.clone())
+        };
+        routes.push(FailoverRoute::new(
+            format!("endpoint-{}", index + 1),
+            dialer,
+        ));
+    }
+
+    let display_addr = endpoints[0].clone();
+    let dialer = if routes.len() == 1 {
+        routes.remove(0).dialer
+    } else {
+        failover_dialer(routes)
+    };
+    Ok(RelayClient::with_dialer_for(display_addr, dialer))
 }
 
 /// The application core. State lives behind a mutex so a background poller can drive the
@@ -988,6 +1078,70 @@ impl NightdropCore {
         })
     }
 
+    /// Reliability-first WAN core: no direct peer listener, all delivery goes through an
+    /// HTTPS relay mailbox. This starts without bootstrapping Tor, so it can become usable quickly
+    /// on networks where Tor is slow or blocked. Message/session crypto is identical to every other
+    /// transport; only network metadata changes (direct HTTPS is NOT anonymous).
+    ///
+    /// This method is intentionally added at the Rust API first. Flutter bindings are regenerated
+    /// only after the core/relay tests are green, so a half-wired mobile entry point cannot ship.
+    #[cfg(feature = "https-relay")]
+    pub fn new_https_relay(
+        relay_url: String,
+        persist_path: Option<String>,
+        persist_key: Option<String>,
+    ) -> Result<NightdropCore> {
+        let dialer = crate::relay_client::https::https_relay_dialer(&relay_url)?;
+        let relay = RelayClient::with_dialer_for(relay_url, dialer);
+        let transport = crate::transport::relay_only::RelayOnlyTransport::new();
+        RELAY_IS_PRIMARY.store(true, Ordering::Relaxed);
+
+        let persist = match (persist_path, persist_key) {
+            (Some(path), Some(key)) => Some((path, decode_store_key(&key)?)),
+            _ => None,
+        };
+        let restore = persist
+            .as_ref()
+            .filter(|(path, _)| std::path::Path::new(path).exists());
+        let mut me = match restore {
+            Some((path, key)) => {
+                let state = crate::storage::load_from_file(path, key)?;
+                Node::restore(&state, Box::new(transport), key)?
+            }
+            None => Node::with_identity(LocalIdentity::generate(), Box::new(transport)),
+        };
+        me.set_require_authorization(true);
+        me.set_relay(relay);
+
+        if let Some((path, key)) = &persist {
+            let dir = std::path::Path::new(path)
+                .parent()
+                .map(|p| p.join("nightdrop-media"))
+                .unwrap_or_else(|| std::path::PathBuf::from("nightdrop-media"));
+            me.set_media_store(dir.to_string_lossy().into_owned(), *key);
+        }
+
+        // A state restored from Tor/LAN may carry a different historical direct address. In
+        // relay-only mode this announces the marker through the E2E channel; peers then fail direct
+        // immediately and use the same mailbox instead of wasting time dialing a stale onion.
+        me.announce_address_if_changed();
+
+        let inner = Arc::new(Mutex::new(Inner {
+            me,
+            demo: None,
+            pending_backup: None,
+            persist: persist.map(|(p, k)| Persist::new(p, k)),
+        }));
+        inner.lock().unwrap().save();
+
+        let poller = StopSignal::new();
+        spawn_poller(Arc::clone(&inner), Arc::clone(&poller));
+        Ok(Self {
+            inner,
+            poller: Some(poller),
+        })
+    }
+
     /// Real core over the **embedded Tor transport** (the production WAN path, §6): this
     /// device gets a reachable `.onion`, so two peers pair and converse over any network
     /// (LTE included) with no public IP or port-forwarding. Requires the crate built with
@@ -1008,6 +1162,32 @@ impl NightdropCore {
         persist_path: Option<String>,
         persist_key: Option<String>,
     ) -> Result<NightdropCore> {
+        // Reliability-first fork: the existing FFI method is also the mobile entry point for a
+        // direct HTTPS relay. Reusing this signature avoids shipping stale generated bindings while
+        // preserving the persistence arguments Android already passes. A bare https:// endpoint
+        // means "relay-only fast path"; a bundle containing '|' still boots Tor because it names
+        // HTTPS + onion endpoints of the SAME logical relay and needs the onion fallback.
+        if relay_addr
+            .as_deref()
+            .is_some_and(|addr| addr.starts_with("https://") && !addr.contains('|'))
+        {
+            #[cfg(feature = "https-relay")]
+            {
+                return Self::new_https_relay(
+                    relay_addr.expect("checked above"),
+                    persist_path,
+                    persist_key,
+                );
+            }
+            #[cfg(not(feature = "https-relay"))]
+            {
+                let _ = (state_dir, persist_path, persist_key);
+                anyhow::bail!(
+                    "this build was compiled without HTTPS relay support (rebuild with --features https-relay)"
+                )
+            }
+        }
+
         #[cfg(feature = "tor")]
         {
             retire_previous_tor_core();
@@ -1060,11 +1240,12 @@ impl NightdropCore {
                     write_onion_key(dir, key, &material)?;
                 }
             }
-            // Reach the relay over Tor: build a dialer from the transport's arti client before it
-            // is moved into the node (a relay `.onion` can't be reached over plain TCP).
-            let relay = relay_addr.map(|onion| {
-                RelayClient::with_dialer_for(onion.clone(), transport.make_relay_dialer(onion))
-            });
+            // Build the relay before the transport is moved into the node. The spec may name the
+            // same logical relay through HTTPS first and its onion endpoint second, separated by
+            // '|'. Endpoint failover is safe only because both paths reach the same RelayCore/store.
+            let relay = relay_addr
+                .map(|spec| wan_relay_from_spec(&transport, spec))
+                .transpose()?;
             // Restore from the existing file, or start a fresh identity.
             let restore = persist
                 .as_ref()
@@ -1158,10 +1339,10 @@ impl NightdropCore {
                 // identity is read from there for this run and sealed afterwards.
                 None,
             )?;
-            // Build the relay dialer over Tor before the transport is moved into the node.
-            let relay = relay_addr.map(|onion| {
-                RelayClient::with_dialer_for(onion.clone(), transport.make_relay_dialer(onion))
-            });
+            // Rebuild the same logical relay endpoint bundle before moving the transport.
+            let relay = relay_addr
+                .map(|spec| wan_relay_from_spec(&transport, spec))
+                .transpose()?;
             // Rebuild the node from the same decrypted state (pickles decrypt with bkey).
             let mut me = Node::restore(&state, Box::new(transport), &bkey)?;
             me.set_require_authorization(true);
@@ -1244,12 +1425,9 @@ impl NightdropCore {
                 // identity is read from there for this run and sealed afterwards.
                 None,
             )?;
-            // Build the relay dialer before the transport is moved into the node; it both
+            // Build the same logical relay endpoint bundle before moving the transport; it both
             // fetches the backup and stays attached for store-and-forward afterwards.
-            let relay = RelayClient::with_dialer_for(
-                relay_addr.clone(),
-                transport.make_relay_dialer(relay_addr),
-            );
+            let relay = wan_relay_from_spec(&transport, relay_addr)?;
             let mut me = Node::restore_from_server(&relay, &password, Box::new(transport))?;
             me.set_require_authorization(true);
             if let Some(sd) = &state_dir {
@@ -1553,7 +1731,7 @@ impl NightdropCore {
         let mut g = self.lock();
         let bundle = g.me.publish_bundle();
         let qr_payload = format!(
-            "nightdrop://pair?addr={}&ik={}&otk={}",
+            "cyberdog://pair?addr={}&ik={}&otk={}",
             g.me.address(),
             bundle.identity_key,
             bundle.one_time_key
@@ -1980,6 +2158,142 @@ impl NightdropCore {
         Ok(())
     }
 
+    /// Our standing address: a link that does not expire. Anyone who has it can send a chat
+    /// request ([`connect_via_qr`](Self::connect_via_qr) takes it like any invite), which then
+    /// waits for us to accept it.
+    pub fn my_address(&self) -> Result<String> {
+        let mut g = self.lock();
+        let address = g.me.my_address()?;
+        g.save();
+        Ok(address)
+    }
+
+    /// The pending requests that came through the standing address, by contact id. Unlike a
+    /// request from someone we showed a code to, these are for the user to accept or decline.
+    pub fn address_requests(&self) -> Vec<String> {
+        self.lock().me.address_requests()
+    }
+
+    /// Our own identity key — how we appear in a group's member list.
+    pub fn my_identity_key(&self) -> String {
+        self.lock().me.identity_key()
+    }
+
+    /// Every group chat, sorted by name.
+    pub fn groups(&self) -> Vec<GroupInfo> {
+        self.lock()
+            .me
+            .groups()
+            .into_iter()
+            .map(
+                |(id, name, members, creator, left, disappearing_secs)| GroupInfo {
+                    id,
+                    name,
+                    members,
+                    creator,
+                    left,
+                    disappearing_secs,
+                },
+            )
+            .collect()
+    }
+
+    /// One group's history, oldest first.
+    pub fn group_messages(&self, group_id: &str) -> Vec<GroupMessage> {
+        self.lock().me.group_messages(group_id)
+    }
+
+    /// The contacts that can be added to a group: their build has announced group support.
+    pub fn group_capable_contacts(&self) -> Vec<String> {
+        let g = self.lock();
+        g.me.contacts()
+            .into_iter()
+            .map(|c| c.id)
+            .filter(|id| g.me.peer_supports_groups(id))
+            .collect()
+    }
+
+    /// Create a group of us plus `member_ids` (contact ids) and tell each member. Returns the
+    /// new group's id. Errors if a member is not an open chat or their build predates groups.
+    pub fn create_group(&self, name: &str, member_ids: Vec<String>) -> Result<String> {
+        let mut g = self.lock();
+        let id = g.me.create_group(name, &member_ids)?;
+        g.save();
+        Ok(id)
+    }
+
+    /// Send a text message to a group: one separately encrypted copy per member.
+    pub fn send_group_message(&self, group_id: &str, text: &str) -> Result<()> {
+        let mut g = self.lock();
+        let sent = g.me.send_group(group_id, text);
+        // Saved even when no copy went out: the message is already in the local history.
+        g.save();
+        sent
+    }
+
+    /// Send a photo or video to a group. `kind` is "image"/"video", `mime` like "image/jpeg".
+    pub fn send_group_media(
+        &self,
+        group_id: &str,
+        data: Vec<u8>,
+        mime: String,
+        kind: String,
+    ) -> Result<()> {
+        let mut g = self.lock();
+        let sent = g.me.send_group_media(group_id, &data, &mime, &kind);
+        g.save();
+        sent
+    }
+
+    /// Unsend ("delete for everyone") one of our own group messages: `id` is a text message's
+    /// `msg_id` or an attachment's `transfer_id`. Same 15-minute rule as a 1:1 chat.
+    pub fn unsend_group_message(&self, group_id: &str, id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.unsend_group_message(group_id, id)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Set a group's disappearing-messages timer in seconds (0 = off). Any member may.
+    pub fn set_group_disappearing(&self, group_id: &str, secs: u64) -> Result<()> {
+        let mut g = self.lock();
+        g.me.set_group_disappearing(group_id, secs)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Add contacts to a group we created.
+    pub fn add_group_members(&self, group_id: &str, member_ids: Vec<String>) -> Result<()> {
+        let mut g = self.lock();
+        let added = g.me.add_group_members(group_id, &member_ids);
+        g.save();
+        added
+    }
+
+    /// Remove a member from a group we created.
+    pub fn remove_group_member(&self, group_id: &str, member_id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.remove_group_member(group_id, member_id)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Leave a group. It stays on this device, read-only, until deleted.
+    pub fn leave_group(&self, group_id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.leave_group(group_id)?;
+        g.save();
+        Ok(())
+    }
+
+    /// Remove a group from this device, leaving it first if we had not already.
+    pub fn delete_group(&self, group_id: &str) -> Result<()> {
+        let mut g = self.lock();
+        g.me.delete_group(group_id);
+        g.save();
+        Ok(())
+    }
+
     /// Unsend ("delete for both") one of our own messages (`msg_id` from [`ChatMessage`]).
     /// Same eligibility as [`edit_message`](Self::edit_message): within 15 minutes, or while
     /// still queued (then the relay blob is recalled so the peer never receives it). The
@@ -2002,7 +2316,7 @@ impl NightdropCore {
 
     /// Give a contact a nickname that only you see (`contact-naming.md`). Never sent, so a peer
     /// can neither read it nor set it; empty clears it. This is the answer to a contact list of
-    /// identical "Anon"s — the peer's own name is their choice, and may be missing or duplicated.
+    /// identical "NightDog"s — the peer's own name is their choice, and may be missing or duplicated.
     pub fn set_local_name(&self, contact_id: &str, name: &str) -> Result<()> {
         let mut g = self.lock();
         g.me.set_local_name(contact_id, name)?;
@@ -2550,12 +2864,13 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
                 let g = inner.lock().unwrap_or_else(|e| e.into_inner());
                 g.me.has_pending_invites()
             };
-            let interval = if pairing {
-                RELAY_POLL_PAIRING
-            } else if background {
-                RELAY_POLL_BACKGROUND
-            } else {
-                RELAY_POLL_FOREGROUND
+            let primary = RELAY_IS_PRIMARY.load(Ordering::Relaxed);
+            let interval = match (pairing, background, primary) {
+                (true, _, _) => RELAY_POLL_PAIRING,
+                (false, true, true) => RELAY_POLL_BACKGROUND_PRIMARY,
+                (false, true, false) => RELAY_POLL_BACKGROUND,
+                (false, false, true) => RELAY_POLL_FOREGROUND_PRIMARY,
+                (false, false, false) => RELAY_POLL_FOREGROUND,
             };
             // Due only when no drain is in flight; `&&` keeps a poll-now request queued meanwhile.
             let relay_due = drain_job.is_none()
@@ -2663,12 +2978,13 @@ fn spawn_poller(inner: Arc<Mutex<Inner>>, stop: Arc<StopSignal>) {
     });
 }
 
-/// Parse `nightdrop://pair?addr=...&ik=...&otk=...` into (address, pre-key bundle).
+/// Parse `cyberdog://pair?addr=...&ik=...&otk=...` into (address, pre-key bundle). The scheme is
+/// not looked at, so a link written by an older build (`nightdrop://pair?…`) parses the same.
 pub(crate) fn parse_invite(payload: &str) -> Result<(String, PreKeyBundle)> {
     let query = payload
         .split_once("://pair?")
         .map(|(_, q)| q)
-        .ok_or_else(|| anyhow::anyhow!("not a Night Drop invite"))?;
+        .ok_or_else(|| anyhow::anyhow!("not a CyberDog invite"))?;
     let (mut addr, mut ik, mut otk) = (None, None, None);
     for kv in query.split('&') {
         if let Some((k, v)) = kv.split_once('=') {
@@ -2731,6 +3047,9 @@ mod tests {
     fn background_relay_polling_runs_at_the_designed_cadence() {
         const { assert!(RELAY_POLL_BACKGROUND.as_secs() == 300) };
         const { assert!(RELAY_POLL_FOREGROUND.as_secs() < RELAY_POLL_BACKGROUND.as_secs()) };
+        // Where the relay is the only path, it is asked more often than where it is a fallback.
+        const { assert!(RELAY_POLL_FOREGROUND_PRIMARY.as_secs() < RELAY_POLL_FOREGROUND.as_secs()) };
+        const { assert!(RELAY_POLL_BACKGROUND_PRIMARY.as_secs() < RELAY_POLL_BACKGROUND.as_secs()) };
     }
 
     /// A memory transport that reports itself asynchronous, as Tor does, so messages go through the
@@ -3509,7 +3828,7 @@ mod tests {
         assert!(core.contacts().is_empty());
 
         let contact = core.open_chat(None).unwrap();
-        assert_eq!(contact.their_name, "Anon");
+        assert_eq!(contact.their_name, "NightDog");
         assert_eq!(core.contacts().len(), 1);
 
         let history = core.send_message(&contact.id, "hello").unwrap();
@@ -3563,7 +3882,7 @@ mod tests {
 
         core.set_my_name(&contact.id, "   ").unwrap();
         let c = core.contacts().into_iter().next().unwrap();
-        assert_eq!(c.my_name, "Anon");
+        assert_eq!(c.my_name, "NightDog");
     }
 
     #[test]
@@ -3823,6 +4142,76 @@ mod tests {
         let code2 = a.create_short_code_invite().unwrap();
         let slot2 = code2.split_once('-').unwrap().0;
         assert!(join(&b, &a, &format!("{slot2}-wrong-secret-words-x")).is_err());
+    }
+
+    #[cfg(feature = "https-relay")]
+    #[test]
+    fn bare_https_new_tor_entrypoint_builds_without_tor_feature() {
+        let core = NightdropCore::new_tor(
+            None,
+            Some("https://localhost/v1/relay".to_string()),
+            None,
+            None,
+        )
+        .expect("bare HTTPS relay should construct without bootstrapping Tor");
+
+        assert!(!core.identity().id.is_empty());
+        core.shutdown();
+    }
+
+    #[test]
+    fn relay_only_clients_pair_and_chat_without_a_peer_socket() {
+        use crate::transport::relay_only::RelayOnlyTransport;
+        use std::time::Duration;
+
+        let relay = RelayClient::new(RelayServer::spawn("127.0.0.1:0").unwrap().to_string());
+        let a = NightdropCore::new_with_transport(
+            Box::new(RelayOnlyTransport::new()),
+            Some(relay.clone()),
+            false,
+        );
+        let b = NightdropCore::new_with_transport(
+            Box::new(RelayOnlyTransport::new()),
+            Some(relay),
+            false,
+        );
+
+        // The short-code handshake itself lives in relay mailboxes. No direct peer listener is
+        // available on either side, so the Hello and every later frame must also use the relay.
+        let code = a.create_short_code_invite().unwrap();
+        let b_contact = std::thread::scope(|s| {
+            let joiner = s.spawn(|| b.join_via_short_code(&code));
+            while !joiner.is_finished() {
+                a.poll_once().unwrap();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            joiner.join().unwrap().unwrap().id
+        });
+
+        // The joiner's first-contact Hello was queued because the direct path is intentionally
+        // absent. Drain it, approve, then let the approval make the same relay round trip back.
+        a.poll_once().unwrap();
+        let a_contact = a
+            .incoming_requests()
+            .first()
+            .expect("relay-only inviter receives the pairing request")
+            .id
+            .clone();
+        a.authorize(&a_contact, true).unwrap();
+        a.poll_once().unwrap();
+        b.poll_once().unwrap();
+
+        b.send_message(&b_contact, "https-first mailbox path")
+            .unwrap();
+        // Non-synchronous transports defer delivery off the UI/core-lock path. The sender tick
+        // queues the sealed frame; the receiver tick drains and decrypts it.
+        b.poll_once().unwrap();
+        a.poll_once().unwrap();
+
+        assert!(a
+            .messages(&a_contact)
+            .iter()
+            .any(|m| !m.from_me && m.text == "https-first mailbox path"));
     }
 
     #[test]

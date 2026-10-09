@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
-import '../bridges/bridges_screen.dart';
 import '../../app.dart';
 import '../../core/background_delivery.dart';
 import '../../core/backup_errors.dart';
+import '../../core/app_locale.dart';
 import '../../core/backup_files.dart';
 import '../../core/nightdrop_core.dart';
+import '../../theme/brand.dart';
+import '../../theme/cyberdog.dart';
 
 /// First-run screen. No sign-up — just generate an anonymous, device-held identity.
 class OnboardingScreen extends StatefulWidget {
@@ -102,6 +104,38 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     // believing they are covered.
     if (!await BackgroundDelivery.ensurePermission()) return;
     await BackgroundDelivery.setEnabled(true);
+  }
+
+  /// The first screen offers one way in for people who already have a backup; which kind is
+  /// asked here, not there.
+  Future<void> _chooseRestore() async {
+    final l10n = AppLocalizations.of(context)!;
+    final fromServer = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(l10n.restoreFromBackupFile),
+              onTap: () => Navigator.pop(context, false),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: Text(l10n.restoreFromServerBackup),
+              onTap: () => Navigator.pop(context, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (fromServer == null) return;
+    if (fromServer) {
+      await _restoreFromServer();
+    } else {
+      await _restore();
+    }
   }
 
   Future<void> _create() async {
@@ -256,15 +290,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
+      // The bar only carries the language switch; the content keeps the full screen height.
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        actions: [
+          TextButton(
+            onPressed: AppLocale.toggle,
+            child: Text(l10n.switchLanguage),
+          ),
+        ],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('👻', style: TextStyle(fontSize: 72)),
-              const SizedBox(height: 16),
-              Text(l10n.appTitle, style: theme.textTheme.headlineMedium),
+              const CyberDogLogo(size: 112),
+              const SizedBox(height: 20),
+              const BrandTitle(fontSize: 32),
               const SizedBox(height: 8),
               Text(
                 l10n.onboardingTagline,
@@ -307,25 +352,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ],
               const SizedBox(height: 8),
               TextButton(
-                onPressed: _busy ? null : _restore,
-                child: Text(l10n.restoreFromBackupFile),
-              ),
-              TextButton(
-                onPressed: _busy ? null : _restoreFromServer,
-                child: Text(l10n.restoreFromServerBackup),
-              ),
-              // The bridge editor must be reachable BEFORE an identity exists. Creating one
-              // bootstraps Tor (`create_bootstrapped`, 120s timeout), so where Tor is blocked
-              // identity creation cannot succeed — and every other route to this screen is behind
-              // HomeScreen, which only renders once an identity exists. Without this link the
-              // censorship feature is locked behind the censorship it exists to defeat.
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => Navigator.of(context).push(MaterialPageRoute<void>(
-                          builder: (_) => const BridgesScreen(),
-                        )),
-                child: Text(l10n.onboardingTorBlocked),
+                onPressed: _busy ? null : _chooseRestore,
+                child: Text(l10n.restoreFromBackup),
               ),
             ],
           ),

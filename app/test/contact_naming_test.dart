@@ -5,7 +5,7 @@ import 'package:night_drop/src/core/models.dart';
 import 'package:night_drop/src/core/mock_nightdrop_core.dart';
 import 'package:night_drop/src/features/chat/chat_screen.dart';
 
-/// A core with two contacts who both left themselves as "Anon" — the reported problem.
+/// A core with two contacts who both left themselves as "NightDog" — the reported problem.
 class _TwoAnonsCore extends MockNightdropCore {
   Future<List<Contact>> pairTwo() async {
     await createIdentity();
@@ -26,11 +26,12 @@ void main() {
     return core;
   }
 
-  // The reported failure: a list of identical "Anon"s, with no way to tell which chat is which.
+  // The reported failure: a list of identical "NightDog"s, with no way to tell which chat is which.
   // Sending to the wrong person is a confidentiality failure produced by the UI.
   testWidgets('two unnamed contacts are distinguishable by their identity tag', (tester) async {
     await pumpList(tester);
 
+    // Neither chose a name, so both read "Anon" — the rank is no longer part of a name.
     expect(find.text('Anon'), findsNWidgets(2));
     expect(find.text('K7QF2M'), findsOneWidget);
     expect(find.text('X3TWB9'), findsOneWidget);

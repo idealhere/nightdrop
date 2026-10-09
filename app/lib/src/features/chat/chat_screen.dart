@@ -1163,7 +1163,7 @@ class _SilenceBanner extends StatelessWidget {
 }
 
 /// The colour of the header shield while the contact is unverified: a caution, not an alarm.
-const _unverifiedAmber = Color(0xFFFFB74D);
+const _unverifiedAmber = Color(0xFFD98200);
 
 /// An informational notice at the top of a chat that can be swiped away, left or right. It
 /// stays away: the choice is remembered on this device under [noticeKey] — one key for a notice

@@ -163,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
       tooltip: l10n.newChat,
       backgroundColor: CyberDog.accent,
       onPressed: _newAction,
-      child: const CyberDogMark(size: 30, color: Color(0xFFF5F2FF)),
+      child: const CyberDogMark(size: 30, color: Color(0xFFFFFFFF)),
     );
     return Scaffold(
       appBar: AppBar(
@@ -225,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : NavigationBar(
               height: 56,
               backgroundColor: CyberDog.panel,
-              indicatorColor: CyberDog.accent.withValues(alpha: 0.22),
+              indicatorColor: CyberDog.accent.withValues(alpha: 0.14),
               selectedIndex: _tab,
               onDestinationSelected: (i) => setState(() => _tab = i),
               destinations: [

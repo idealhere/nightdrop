@@ -3,24 +3,27 @@ import 'package:flutter/material.dart';
 /// CyberDog design tokens used by the chat screen. One place for the colours, radii and glows so
 /// the rest of the app can adopt them screen by screen.
 abstract final class CyberDog {
-  static const accent = Color(0xFF7657FF);
-  static const accentLight = Color(0xFF9B7BFF);
-  static const accentDark = Color(0xFF5638D7);
-  static const violetSoft = Color(0xFFCFC2FF);
-  static const hairline = Color(0x2E8278FF);
-  static const hairlineBright = Color(0x80825AFF);
-  static const panel = Color(0xFF0D1225);
-  static const rankInk = Color(0xFF7F86A6);
+  static const accent = Color(0xFF1F6FFF);
+  static const accentLight = Color(0xFF2A7BFF);
+  static const accentDark = Color(0xFF1557D8);
+
+  /// The ink of an earned rank. (The name dates from the violet palette.)
+  static const violetSoft = Color(0xFF1557D8);
+  static const hairline = Color(0x3D7A9BD6);
+  static const hairlineBright = Color(0x991F6FFF);
+  static const panel = Color(0xFFFFFFFF);
+  static const rankInk = Color(0xFF8E99AA);
 
   static const outgoing = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF7556FF), Color(0xFF5D37EE)],
+    // Deep enough at both ends for the white text of an outgoing message.
+    colors: [Color(0xFF1F7BFF), Color(0xFF1A5AE8)],
   );
 
   /// The only glow in the chat: a faint one under the send button, slightly stronger on press.
-  static const glow = [BoxShadow(color: Color(0x337657FF), blurRadius: 12)];
-  static const glowPressed = [BoxShadow(color: Color(0x667657FF), blurRadius: 16)];
+  static const glow = [BoxShadow(color: Color(0x4D1F6FFF), blurRadius: 12)];
+  static const glowPressed = [BoxShadow(color: Color(0x801F6FFF), blurRadius: 16)];
 }
 
 /// The CyberDog mark: an angular dog's head facing right, drawn as a few vector strokes so it stays
@@ -107,7 +110,7 @@ class UserRankBadge extends StatelessWidget {
 
   static const _labels = {'nightdog': 'NIGHTDOG', 'cyberdog': 'CYBERDOG'};
 
-  /// Ranks that have been earned are drawn in the brand violet; the starting rank stays muted.
+  /// Ranks that have been earned are drawn in the brand blue; the starting rank stays muted.
   static const _earned = {'cyberdog'};
 
   final String rank;
@@ -142,7 +145,7 @@ class UserRankBadge extends StatelessWidget {
   }
 }
 
-/// The send button: a violet rounded square carrying the mark. On press the mark nudges right
+/// The send button: a blue rounded square carrying the mark. On press the mark nudges right
 /// and the glow strengthens slightly.
 class CyberDogSendButton extends StatefulWidget {
   const CyberDogSendButton({super.key, required this.onPressed, this.semanticLabel});
@@ -185,7 +188,7 @@ class _CyberDogSendButtonState extends State<CyberDogSendButton> {
           child: AnimatedSlide(
             duration: const Duration(milliseconds: 120),
             offset: _down ? const Offset(.1, 0) : Offset.zero,
-            child: const CyberDogMark(size: 28, color: Color(0xFFF5F2FF)),
+            child: const CyberDogMark(size: 28, color: Color(0xFFFFFFFF)),
           ),
         ),
       ),

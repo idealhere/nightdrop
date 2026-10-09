@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#090C1E</color>
-    <!-- The window colour shown before Flutter draws its first frame: the app's night sky. -->
-    <color name="launch_background">#070A12</color>
+    <!-- The window colour shown before Flutter draws its first frame: the app's light backdrop. -->
+    <color name="launch_background">#F6F8FC</color>
 </resources>
